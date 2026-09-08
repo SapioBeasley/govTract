@@ -27,6 +27,9 @@ pnpm-debug.log*
 # vercel
 .vercel
 
+# ingestion/browser diagnostics
+/.artifacts/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
