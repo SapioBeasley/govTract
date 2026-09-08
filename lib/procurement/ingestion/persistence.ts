@@ -2,14 +2,17 @@ import { createHash } from "node:crypto";
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { closeDb, getDb } from "@/lib/db/client";
 import {
+  ingestionRecordErrors,
   ingestionRunPages,
   ingestionRuns,
   opportunities,
+  opportunityClassifications,
   opportunityDocuments,
   sourceRecords,
 } from "@/lib/db/schema";
 
 export type IngestionStatus = "running" | "complete" | "partial" | "failed";
+export type SourceRecordChange = "inserted" | "updated" | "unchanged";
 
 export interface PersistableDocument {
   sourceDocumentKey: string;
@@ -21,21 +24,34 @@ export interface PersistableDocument {
   sourceMetadata: Record<string, unknown>;
 }
 
-export interface PersistableOpportunityRecord {
+export interface PersistableClassification {
+  sourceClassificationKey: string;
+  scheme: string;
+  code?: string | null;
+  name: string;
+  sourceMetadata: Record<string, unknown>;
+}
+
+export interface PersistableSourceRecord {
   sourceRecordId: string;
   sourceRevisionId?: string | null;
   sourceModifiedAt?: Date | null;
   canonicalUrl?: string | null;
   rawPayload: Record<string, unknown>;
+}
+
+export interface PersistableOpportunityRecord extends PersistableSourceRecord {
   solicitationNumber?: string | null;
   title: string;
   description?: string | null;
   status?: string | null;
+  sourceStatus?: string | null;
   opportunityType?: string | null;
   agencyName?: string | null;
   agencySlug?: string | null;
   departments: string[];
   categories: string[];
+  classifications?: PersistableClassification[];
   publishedAt?: Date | null;
   issueAt?: Date | null;
   dueAt?: Date | null;
@@ -88,21 +104,18 @@ export async function startIngestionRun(input: {
   return run.id;
 }
 
-export async function persistIngestionPage(input: {
+export async function persistRawIngestionPage(input: {
   runId: string;
-  source: string;
-  agency?: string;
   pageNumber: number;
   cursor: Record<string, unknown>;
   reportedTotal: number;
   rawPayload: Record<string, unknown>;
-  records: PersistableOpportunityRecord[];
-}): Promise<PagePersistenceCounts> {
+  recordCount: number;
+}) {
   const db = getDb();
   const now = new Date();
-  const pageHash = hashPayload(input.rawPayload);
+  const payloadHash = hashPayload(input.rawPayload);
 
-  // Preserve the original source page before any normalization happens.
   await db
     .insert(ingestionRunPages)
     .values({
@@ -110,9 +123,9 @@ export async function persistIngestionPage(input: {
       pageNumber: input.pageNumber,
       cursor: input.cursor,
       reportedTotal: input.reportedTotal,
-      recordCount: input.records.length,
+      recordCount: input.recordCount,
       rawPayload: input.rawPayload,
-      payloadHash: pageHash,
+      payloadHash,
       fetchedAt: now,
     })
     .onConflictDoUpdate({
@@ -120,185 +133,12 @@ export async function persistIngestionPage(input: {
       set: {
         cursor: input.cursor,
         reportedTotal: input.reportedTotal,
-        recordCount: input.records.length,
+        recordCount: input.recordCount,
         rawPayload: input.rawPayload,
-        payloadHash: pageHash,
+        payloadHash,
         fetchedAt: now,
       },
     });
-
-  const counts: PagePersistenceCounts = { inserted: 0, updated: 0, unchanged: 0 };
-
-  for (const record of input.records) {
-    const recordHash = hashPayload(record.rawPayload);
-    const [existing] = await db
-      .select({ id: sourceRecords.id, payloadHash: sourceRecords.payloadHash })
-      .from(sourceRecords)
-      .where(
-        and(
-          eq(sourceRecords.source, input.source),
-          eq(sourceRecords.sourceRecordId, record.sourceRecordId),
-        ),
-      )
-      .limit(1);
-
-    let sourceRecordPk: string;
-    let changed = false;
-
-    if (!existing) {
-      const [created] = await db
-        .insert(sourceRecords)
-        .values({
-          source: input.source,
-          sourceRecordId: record.sourceRecordId,
-          sourceRevisionId: record.sourceRevisionId,
-          sourceModifiedAt: record.sourceModifiedAt,
-          sourceAgency: input.agency,
-          canonicalUrl: record.canonicalUrl,
-          rawPayload: record.rawPayload,
-          payloadHash: recordHash,
-          firstSeenAt: now,
-          lastSeenAt: now,
-          lastIngestionRunId: input.runId,
-          isActive: true,
-          updatedAt: now,
-        })
-        .returning({ id: sourceRecords.id });
-
-      if (!created) throw new Error(`Failed to insert source record ${record.sourceRecordId}`);
-      sourceRecordPk = created.id;
-      counts.inserted += 1;
-      changed = true;
-    } else if (existing.payloadHash !== recordHash) {
-      sourceRecordPk = existing.id;
-      await db
-        .update(sourceRecords)
-        .set({
-          sourceRevisionId: record.sourceRevisionId,
-          sourceModifiedAt: record.sourceModifiedAt,
-          sourceAgency: input.agency,
-          canonicalUrl: record.canonicalUrl,
-          rawPayload: record.rawPayload,
-          payloadHash: recordHash,
-          lastSeenAt: now,
-          lastIngestionRunId: input.runId,
-          isActive: true,
-          updatedAt: now,
-        })
-        .where(eq(sourceRecords.id, existing.id));
-      counts.updated += 1;
-      changed = true;
-    } else {
-      sourceRecordPk = existing.id;
-      await db
-        .update(sourceRecords)
-        .set({
-          lastSeenAt: now,
-          lastIngestionRunId: input.runId,
-          isActive: true,
-        })
-        .where(eq(sourceRecords.id, existing.id));
-      counts.unchanged += 1;
-    }
-
-    if (!changed) {
-      await db
-        .update(opportunities)
-        .set({ lastSeenAt: now, isActive: true })
-        .where(
-          and(
-            eq(opportunities.source, input.source),
-            eq(opportunities.sourceOpportunityId, record.sourceRecordId),
-          ),
-        );
-      continue;
-    }
-
-    const [opportunity] = await db
-      .insert(opportunities)
-      .values({
-        sourceRecordId: sourceRecordPk,
-        source: input.source,
-        sourceOpportunityId: record.sourceRecordId,
-        sourceRevisionId: record.sourceRevisionId,
-        solicitationNumber: record.solicitationNumber,
-        title: record.title,
-        description: record.description,
-        status: record.status,
-        opportunityType: record.opportunityType,
-        agencyName: record.agencyName,
-        agencySlug: record.agencySlug,
-        departments: record.departments,
-        categories: record.categories,
-        publishedAt: record.publishedAt,
-        issueAt: record.issueAt,
-        dueAt: record.dueAt,
-        canonicalUrl: record.canonicalUrl,
-        location: record.location ?? {},
-        isActive: true,
-        firstSeenAt: now,
-        lastSeenAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [opportunities.source, opportunities.sourceOpportunityId],
-        set: {
-          sourceRecordId: sourceRecordPk,
-          sourceRevisionId: record.sourceRevisionId,
-          solicitationNumber: record.solicitationNumber,
-          title: record.title,
-          description: record.description,
-          status: record.status,
-          opportunityType: record.opportunityType,
-          agencyName: record.agencyName,
-          agencySlug: record.agencySlug,
-          departments: record.departments,
-          categories: record.categories,
-          publishedAt: record.publishedAt,
-          issueAt: record.issueAt,
-          dueAt: record.dueAt,
-          canonicalUrl: record.canonicalUrl,
-          location: record.location ?? {},
-          isActive: true,
-          lastSeenAt: now,
-          updatedAt: now,
-        },
-      })
-      .returning({ id: opportunities.id });
-
-    if (!opportunity) throw new Error(`Failed to upsert opportunity ${record.sourceRecordId}`);
-
-    for (const document of record.documents ?? []) {
-      await db
-        .insert(opportunityDocuments)
-        .values({
-          opportunityId: opportunity.id,
-          sourceDocumentKey: document.sourceDocumentKey,
-          sourceDocumentId: document.sourceDocumentId,
-          name: document.name,
-          url: document.url,
-          mimeType: document.mimeType,
-          fileSizeBytes: document.fileSizeBytes,
-          sourceMetadata: document.sourceMetadata,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            opportunityDocuments.opportunityId,
-            opportunityDocuments.sourceDocumentKey,
-          ],
-          set: {
-            sourceDocumentId: document.sourceDocumentId,
-            name: document.name,
-            url: document.url,
-            mimeType: document.mimeType,
-            fileSizeBytes: document.fileSizeBytes,
-            sourceMetadata: document.sourceMetadata,
-            updatedAt: now,
-          },
-        });
-    }
-  }
 
   await db
     .update(ingestionRuns)
@@ -306,15 +146,282 @@ export async function persistIngestionPage(input: {
       checkpoint: input.cursor,
       reportedTotal: input.reportedTotal,
       pagesFetched: input.pageNumber,
-      recordsSeen: sql`${ingestionRuns.recordsSeen} + ${input.records.length}`,
-      insertedCount: sql`${ingestionRuns.insertedCount} + ${counts.inserted}`,
-      updatedCount: sql`${ingestionRuns.updatedCount} + ${counts.updated}`,
-      unchangedCount: sql`${ingestionRuns.unchangedCount} + ${counts.unchanged}`,
       updatedAt: now,
     })
     .where(eq(ingestionRuns.id, input.runId));
+}
 
-  return counts;
+export async function persistSourceRecord(input: {
+  runId: string;
+  source: string;
+  agency?: string;
+  record: PersistableSourceRecord;
+}): Promise<{ sourceRecordPk: string; change: SourceRecordChange }> {
+  const db = getDb();
+  const now = new Date();
+  const recordHash = hashPayload(input.record.rawPayload);
+  const [existing] = await db
+    .select({ id: sourceRecords.id, payloadHash: sourceRecords.payloadHash })
+    .from(sourceRecords)
+    .where(
+      and(
+        eq(sourceRecords.source, input.source),
+        eq(sourceRecords.sourceRecordId, input.record.sourceRecordId),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    const [created] = await db
+      .insert(sourceRecords)
+      .values({
+        source: input.source,
+        sourceRecordId: input.record.sourceRecordId,
+        sourceRevisionId: input.record.sourceRevisionId,
+        sourceModifiedAt: input.record.sourceModifiedAt,
+        sourceAgency: input.agency,
+        canonicalUrl: input.record.canonicalUrl,
+        rawPayload: input.record.rawPayload,
+        payloadHash: recordHash,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        lastIngestionRunId: input.runId,
+        isActive: true,
+        updatedAt: now,
+      })
+      .returning({ id: sourceRecords.id });
+
+    if (!created) throw new Error(`Failed to insert source record ${input.record.sourceRecordId}`);
+    return { sourceRecordPk: created.id, change: "inserted" };
+  }
+
+  if (existing.payloadHash !== recordHash) {
+    await db
+      .update(sourceRecords)
+      .set({
+        sourceRevisionId: input.record.sourceRevisionId,
+        sourceModifiedAt: input.record.sourceModifiedAt,
+        sourceAgency: input.agency,
+        canonicalUrl: input.record.canonicalUrl,
+        rawPayload: input.record.rawPayload,
+        payloadHash: recordHash,
+        lastSeenAt: now,
+        lastIngestionRunId: input.runId,
+        isActive: true,
+        updatedAt: now,
+      })
+      .where(eq(sourceRecords.id, existing.id));
+    return { sourceRecordPk: existing.id, change: "updated" };
+  }
+
+  await db
+    .update(sourceRecords)
+    .set({
+      lastSeenAt: now,
+      lastIngestionRunId: input.runId,
+      isActive: true,
+    })
+    .where(eq(sourceRecords.id, existing.id));
+  return { sourceRecordPk: existing.id, change: "unchanged" };
+}
+
+export async function persistNormalizedOpportunity(input: {
+  source: string;
+  sourceRecordPk: string;
+  record: PersistableOpportunityRecord;
+}) {
+  const db = getDb();
+  const now = new Date();
+
+  const [opportunity] = await db
+    .insert(opportunities)
+    .values({
+      sourceRecordId: input.sourceRecordPk,
+      source: input.source,
+      sourceOpportunityId: input.record.sourceRecordId,
+      sourceRevisionId: input.record.sourceRevisionId,
+      solicitationNumber: input.record.solicitationNumber,
+      title: input.record.title,
+      description: input.record.description,
+      status: input.record.status,
+      sourceStatus: input.record.sourceStatus,
+      opportunityType: input.record.opportunityType,
+      agencyName: input.record.agencyName,
+      agencySlug: input.record.agencySlug,
+      departments: input.record.departments,
+      categories: input.record.categories,
+      publishedAt: input.record.publishedAt,
+      issueAt: input.record.issueAt,
+      dueAt: input.record.dueAt,
+      canonicalUrl: input.record.canonicalUrl,
+      location: input.record.location ?? {},
+      isActive: true,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [opportunities.source, opportunities.sourceOpportunityId],
+      set: {
+        sourceRecordId: input.sourceRecordPk,
+        sourceRevisionId: input.record.sourceRevisionId,
+        solicitationNumber: input.record.solicitationNumber,
+        title: input.record.title,
+        description: input.record.description,
+        status: input.record.status,
+        sourceStatus: input.record.sourceStatus,
+        opportunityType: input.record.opportunityType,
+        agencyName: input.record.agencyName,
+        agencySlug: input.record.agencySlug,
+        departments: input.record.departments,
+        categories: input.record.categories,
+        publishedAt: input.record.publishedAt,
+        issueAt: input.record.issueAt,
+        dueAt: input.record.dueAt,
+        canonicalUrl: input.record.canonicalUrl,
+        location: input.record.location ?? {},
+        isActive: true,
+        lastSeenAt: now,
+        updatedAt: now,
+      },
+    })
+    .returning({ id: opportunities.id });
+
+  if (!opportunity) throw new Error(`Failed to upsert opportunity ${input.record.sourceRecordId}`);
+
+  const documentKeys: string[] = [];
+  for (const document of input.record.documents ?? []) {
+    documentKeys.push(document.sourceDocumentKey);
+    await db
+      .insert(opportunityDocuments)
+      .values({
+        opportunityId: opportunity.id,
+        sourceDocumentKey: document.sourceDocumentKey,
+        sourceDocumentId: document.sourceDocumentId,
+        name: document.name,
+        url: document.url,
+        mimeType: document.mimeType,
+        fileSizeBytes: document.fileSizeBytes,
+        sourceMetadata: document.sourceMetadata,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          opportunityDocuments.opportunityId,
+          opportunityDocuments.sourceDocumentKey,
+        ],
+        set: {
+          sourceDocumentId: document.sourceDocumentId,
+          name: document.name,
+          url: document.url,
+          mimeType: document.mimeType,
+          fileSizeBytes: document.fileSizeBytes,
+          sourceMetadata: document.sourceMetadata,
+          updatedAt: now,
+        },
+      });
+  }
+
+  if (documentKeys.length > 0) {
+    await db
+      .delete(opportunityDocuments)
+      .where(
+        and(
+          eq(opportunityDocuments.opportunityId, opportunity.id),
+          notInArray(opportunityDocuments.sourceDocumentKey, documentKeys),
+        ),
+      );
+  } else {
+    await db
+      .delete(opportunityDocuments)
+      .where(eq(opportunityDocuments.opportunityId, opportunity.id));
+  }
+
+  const classificationKeys: string[] = [];
+  for (const classification of input.record.classifications ?? []) {
+    classificationKeys.push(classification.sourceClassificationKey);
+    await db
+      .insert(opportunityClassifications)
+      .values({
+        opportunityId: opportunity.id,
+        sourceClassificationKey: classification.sourceClassificationKey,
+        scheme: classification.scheme,
+        code: classification.code,
+        name: classification.name,
+        sourceMetadata: classification.sourceMetadata,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          opportunityClassifications.opportunityId,
+          opportunityClassifications.sourceClassificationKey,
+        ],
+        set: {
+          scheme: classification.scheme,
+          code: classification.code,
+          name: classification.name,
+          sourceMetadata: classification.sourceMetadata,
+          updatedAt: now,
+        },
+      });
+  }
+
+  if (classificationKeys.length > 0) {
+    await db
+      .delete(opportunityClassifications)
+      .where(
+        and(
+          eq(opportunityClassifications.opportunityId, opportunity.id),
+          notInArray(opportunityClassifications.sourceClassificationKey, classificationKeys),
+        ),
+      );
+  } else {
+    await db
+      .delete(opportunityClassifications)
+      .where(eq(opportunityClassifications.opportunityId, opportunity.id));
+  }
+}
+
+export async function recordPagePersistenceCounts(input: {
+  runId: string;
+  counts: PagePersistenceCounts;
+}) {
+  const db = getDb();
+  await db
+    .update(ingestionRuns)
+    .set({
+      insertedCount: sql`${ingestionRuns.insertedCount} + ${input.counts.inserted}`,
+      updatedCount: sql`${ingestionRuns.updatedCount} + ${input.counts.updated}`,
+      unchangedCount: sql`${ingestionRuns.unchangedCount} + ${input.counts.unchanged}`,
+      updatedAt: new Date(),
+    })
+    .where(eq(ingestionRuns.id, input.runId));
+}
+
+export async function recordIngestionRecordError(input: {
+  runId: string;
+  pageNumber: number;
+  sourceRecordId?: string | null;
+  stage: string;
+  error: string;
+  rawPayload?: Record<string, unknown> | null;
+}) {
+  const db = getDb();
+  await db.insert(ingestionRecordErrors).values({
+    ingestionRunId: input.runId,
+    pageNumber: input.pageNumber,
+    sourceRecordId: input.sourceRecordId,
+    stage: input.stage,
+    error: input.error,
+    rawPayload: input.rawPayload,
+  });
+  await db
+    .update(ingestionRuns)
+    .set({
+      recordErrorCount: sql`${ingestionRuns.recordErrorCount} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(ingestionRuns.id, input.runId));
 }
 
 export async function reconcileCompleteScope(input: {
@@ -357,7 +464,10 @@ export async function finishIngestionRun(input: {
   status: Exclude<IngestionStatus, "running">;
   reportedTotal: number | null;
   pagesFetched: number;
+  recordsSeen: number;
   checkpoint: Record<string, unknown>;
+  paginationComplete: boolean;
+  normalizationComplete: boolean;
   error?: string;
 }) {
   const db = getDb();
@@ -368,7 +478,10 @@ export async function finishIngestionRun(input: {
       completedAt: new Date(),
       reportedTotal: input.reportedTotal,
       pagesFetched: input.pagesFetched,
+      recordsSeen: input.recordsSeen,
       checkpoint: input.checkpoint,
+      paginationComplete: input.paginationComplete,
+      normalizationComplete: input.normalizationComplete,
       error: input.error,
       updatedAt: new Date(),
     })

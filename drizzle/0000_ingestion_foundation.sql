@@ -13,6 +13,9 @@ CREATE TABLE public.ingestion_runs (
   inserted_count integer NOT NULL DEFAULT 0 CHECK (inserted_count >= 0),
   updated_count integer NOT NULL DEFAULT 0 CHECK (updated_count >= 0),
   unchanged_count integer NOT NULL DEFAULT 0 CHECK (unchanged_count >= 0),
+  record_error_count integer NOT NULL DEFAULT 0 CHECK (record_error_count >= 0),
+  pagination_complete boolean NOT NULL DEFAULT false,
+  normalization_complete boolean NOT NULL DEFAULT false,
   error text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -37,6 +40,20 @@ CREATE TABLE public.ingestion_run_pages (
 
 CREATE INDEX ingestion_run_pages_run_idx
   ON public.ingestion_run_pages (ingestion_run_id, page_number);
+
+CREATE TABLE public.ingestion_record_errors (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingestion_run_id uuid NOT NULL REFERENCES public.ingestion_runs(id) ON DELETE CASCADE,
+  page_number integer NOT NULL CHECK (page_number > 0),
+  source_record_id text,
+  stage text NOT NULL,
+  error text NOT NULL,
+  raw_payload jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ingestion_record_errors_run_idx
+  ON public.ingestion_record_errors (ingestion_run_id, page_number);
 
 CREATE TABLE public.source_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -72,6 +89,7 @@ CREATE TABLE public.opportunities (
   title text NOT NULL,
   description text,
   status text,
+  source_status text,
   opportunity_type text,
   agency_name text,
   agency_slug text,
@@ -111,3 +129,19 @@ CREATE TABLE public.opportunity_documents (
 
 CREATE INDEX opportunity_documents_opportunity_idx
   ON public.opportunity_documents (opportunity_id);
+
+CREATE TABLE public.opportunity_classifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  opportunity_id uuid NOT NULL REFERENCES public.opportunities(id) ON DELETE CASCADE,
+  source_classification_key text NOT NULL,
+  scheme text NOT NULL,
+  code text,
+  name text NOT NULL,
+  source_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (opportunity_id, source_classification_key)
+);
+
+CREATE INDEX opportunity_classifications_scheme_code_idx
+  ON public.opportunity_classifications (scheme, code);

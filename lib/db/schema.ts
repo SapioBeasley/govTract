@@ -32,6 +32,9 @@ export const ingestionRuns = pgTable(
     insertedCount: integer("inserted_count").notNull().default(0),
     updatedCount: integer("updated_count").notNull().default(0),
     unchangedCount: integer("unchanged_count").notNull().default(0),
+    recordErrorCount: integer("record_error_count").notNull().default(0),
+    paginationComplete: boolean("pagination_complete").notNull().default(false),
+    normalizationComplete: boolean("normalization_complete").notNull().default(false),
     error: text("error"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(jsonObject),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -67,6 +70,25 @@ export const ingestionRunPages = pgTable(
       table.pageNumber,
     ),
     index("ingestion_run_pages_run_idx").on(table.ingestionRunId, table.pageNumber),
+  ],
+);
+
+export const ingestionRecordErrors = pgTable(
+  "ingestion_record_errors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ingestionRunId: uuid("ingestion_run_id")
+      .notNull()
+      .references(() => ingestionRuns.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    sourceRecordId: text("source_record_id"),
+    stage: text("stage").notNull(),
+    error: text("error").notNull(),
+    rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("ingestion_record_errors_run_idx").on(table.ingestionRunId, table.pageNumber),
   ],
 );
 
@@ -117,6 +139,7 @@ export const opportunities = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     status: text("status"),
+    sourceStatus: text("source_status"),
     opportunityType: text("opportunity_type"),
     agencyName: text("agency_name"),
     agencySlug: text("agency_slug"),
@@ -170,5 +193,32 @@ export const opportunityDocuments = pgTable(
       table.sourceDocumentKey,
     ),
     index("opportunity_documents_opportunity_idx").on(table.opportunityId),
+  ],
+);
+
+export const opportunityClassifications = pgTable(
+  "opportunity_classifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    opportunityId: uuid("opportunity_id")
+      .notNull()
+      .references(() => opportunities.id, { onDelete: "cascade" }),
+    sourceClassificationKey: text("source_classification_key").notNull(),
+    scheme: text("scheme").notNull(),
+    code: text("code"),
+    name: text("name").notNull(),
+    sourceMetadata: jsonb("source_metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(jsonObject),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("opportunity_classifications_opportunity_key_uidx").on(
+      table.opportunityId,
+      table.sourceClassificationKey,
+    ),
+    index("opportunity_classifications_scheme_code_idx").on(table.scheme, table.code),
   ],
 );

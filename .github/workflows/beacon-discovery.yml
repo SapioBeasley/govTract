@@ -23,7 +23,6 @@ on:
       - "lib/db/**"
       - "lib/procurement/**"
       - "drizzle/**"
-      - "drizzle.config.ts"
       - "package.json"
 
 permissions:
@@ -63,6 +62,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Test Beacon normalization
+        run: npm run test:beacon-normalize
 
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon

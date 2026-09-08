@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:beacon-normalize": "tsx --test lib/procurement/sources/beacon/normalize.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts"
   },

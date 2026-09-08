@@ -4,13 +4,19 @@ import puppeteer, { type HTTPResponse, type Page } from "puppeteer";
 import {
   closeDb,
   finishIngestionRun,
-  persistIngestionPage,
+  persistNormalizedOpportunity,
+  persistRawIngestionPage,
+  persistSourceRecord,
   reconcileCompleteScope,
+  recordIngestionRecordError,
+  recordPagePersistenceCounts,
   startIngestionRun,
   type PagePersistenceCounts,
+  type SourceRecordChange,
 } from "../lib/procurement/ingestion/persistence";
 import {
   normalizeBeaconSolicitation,
+  toBeaconSourceRecord,
   type BeaconDate,
   type BeaconSolicitation,
 } from "../lib/procurement/sources/beacon/normalize";
@@ -54,6 +60,7 @@ interface SolicitationRecord {
   refnum?: string;
   title: string;
   status?: string;
+  sourceStatus?: string;
   type?: string;
   publishedAt?: string;
   modifiedAt?: string;
@@ -86,7 +93,11 @@ interface RunSummary {
   discoveredPageSize: number;
   pageSize: number;
   reportedTotal: number | null;
+  sourceRecordCount: number;
   solicitationCount: number;
+  recordErrorCount: number;
+  paginationComplete: boolean;
+  normalizationComplete: boolean;
   networkCandidateCount: number;
   paginationMethod: "graphql-offset";
   terminalReason: string;
@@ -108,9 +119,7 @@ function redactUrl(rawUrl: string) {
     const sensitive = /token|auth|signature|session|secret|password|email|key/i;
 
     for (const key of url.searchParams.keys()) {
-      if (sensitive.test(key)) {
-        url.searchParams.set(key, "[REDACTED]");
-      }
+      if (sensitive.test(key)) url.searchParams.set(key, "[REDACTED]");
     }
 
     return url.toString();
@@ -138,9 +147,7 @@ async function extractCanonicalUrls(page: Page) {
     try {
       const url = new URL(href);
       const match = url.pathname.match(solicitationPathPattern);
-      if (match) {
-        urls.set(match[1].toLowerCase(), `${url.origin}${url.pathname}`);
-      }
+      if (match) urls.set(match[1].toLowerCase(), `${url.origin}${url.pathname}`);
     } catch {
       // Ignore malformed hrefs.
     }
@@ -198,9 +205,7 @@ async function captureResponse(
 
 function findListSolicitationsRequest(network: NetworkEntry[]) {
   for (const entry of network) {
-    if (!entry.url.includes("operation=ListSolicitations") || !entry.postData) {
-      continue;
-    }
+    if (!entry.url.includes("operation=ListSolicitations") || !entry.postData) continue;
 
     try {
       const payload = JSON.parse(entry.postData) as GraphQlPayload;
@@ -228,11 +233,7 @@ async function fetchGraphQlPage(
 ) {
   const payload: GraphQlPayload = {
     ...template,
-    variables: {
-      ...template.variables,
-      start,
-      pageSize,
-    },
+    variables: { ...template.variables, start, pageSize },
   };
 
   const result = await page.evaluate(
@@ -244,11 +245,7 @@ async function fetchGraphQlPage(
         body: JSON.stringify(requestBody),
       });
 
-      return {
-        ok: response.ok,
-        status: response.status,
-        body: await response.text(),
-      };
+      return { ok: response.ok, status: response.status, body: await response.text() };
     },
     { requestUrl: endpoint, requestBody: payload },
   );
@@ -268,12 +265,18 @@ async function fetchGraphQlPage(
 
   const list = parsed.data?.solicitations;
   if (!list || !Array.isArray(list.data) || typeof list.total !== "number") {
-    throw new Error(
-      `Beacon ListSolicitations response shape changed for start=${start}`,
-    );
+    throw new Error(`Beacon ListSolicitations response shape changed for start=${start}`);
   }
 
   return { parsed, total: list.total, rows: list.data };
+}
+
+function incrementCount(counts: PagePersistenceCounts, change: SourceRecordChange) {
+  counts[change] += 1;
+}
+
+function errorText(error: unknown) {
+  return error instanceof Error ? error.stack ?? error.message : String(error);
 }
 
 async function main() {
@@ -287,12 +290,9 @@ async function main() {
   const network: NetworkEntry[] = [];
   const pendingCaptures = new Set<Promise<void>>();
   const solicitations = new Map<string, SolicitationRecord>();
+  const seenSourceIds = new Set<string>();
   const seenPageSignatures = new Set<string>();
-  const persistenceCounts: PagePersistenceCounts = {
-    inserted: 0,
-    updated: 0,
-    unchanged: 0,
-  };
+  const persistenceCounts: PagePersistenceCounts = { inserted: 0, updated: 0, unchanged: 0 };
   let ingestionRunId: string | null = null;
   let pagesVisited = 0;
   let reportedTotal: number | null = null;
@@ -302,29 +302,22 @@ async function main() {
   let terminalReason = "unknown";
   let status: RunSummary["status"] = "failed";
   let runError: string | undefined;
+  let recordErrorCount = 0;
+  let paginationComplete = false;
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-    ],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   });
 
   try {
     if (PERSIST) {
-      if (!process.env.DATABASE_URL) {
-        throw new Error("BEACON_PERSIST=true requires DATABASE_URL");
-      }
+      if (!process.env.DATABASE_URL) throw new Error("BEACON_PERSIST=true requires DATABASE_URL");
       ingestionRunId = await startIngestionRun({
         source: SOURCE,
         scope: SCOPE,
         agency: AGENCY_SLUG,
-        metadata: {
-          startUrl: START_URL,
-          paginationMethod: "graphql-offset",
-        },
+        metadata: { startUrl: START_URL, paginationMethod: "graphql-offset" },
       });
       console.log(`BEACON_INGESTION_RUN id=${ingestionRunId}`);
     } else {
@@ -353,29 +346,19 @@ async function main() {
     );
     await waitForSettled(page);
 
-    await page.screenshot({
-      path: join(ARTIFACT_DIR, "listing.png"),
-      fullPage: true,
-    });
+    await page.screenshot({ path: join(ARTIFACT_DIR, "listing.png"), fullPage: true });
     await writeFile(join(ARTIFACT_DIR, "listing.html"), await page.content(), "utf8");
 
     const canonicalUrls = await extractCanonicalUrls(page);
     const listRequest = findListSolicitationsRequest(network);
-    if (!listRequest) {
-      throw new Error(
-        "Beacon page did not expose a ListSolicitations GraphQL request",
-      );
-    }
+    if (!listRequest) throw new Error("Beacon page did not expose a ListSolicitations GraphQL request");
 
     const requestedPageSize = Number(listRequest.payload.variables.pageSize);
     if (Number.isInteger(requestedPageSize) && requestedPageSize > 0) {
       discoveredPageSize = requestedPageSize;
       pageSize = requestedPageSize;
     }
-
-    if (Number.isInteger(PAGE_SIZE_OVERRIDE) && PAGE_SIZE_OVERRIDE > 0) {
-      pageSize = PAGE_SIZE_OVERRIDE;
-    }
+    if (Number.isInteger(PAGE_SIZE_OVERRIDE) && PAGE_SIZE_OVERRIDE > 0) pageSize = PAGE_SIZE_OVERRIDE;
 
     const initialStart = Number(listRequest.payload.variables.start);
     console.log(
@@ -395,18 +378,9 @@ async function main() {
       );
       reportedTotal = result.total;
 
-      const pageIds = result.rows.map((row) => row.id).filter(Boolean);
-      const signature = pageIds.slice().sort().join("|");
       console.log(
         `BEACON_GRAPHQL_PAGE page=${pageNumber} start=${start} pageSize=${pageSize} rows=${result.rows.length} total=${result.total}`,
       );
-
-      if (seenPageSignatures.has(signature)) {
-        terminalReason = "repeated-graphql-page-signature";
-        status = "partial";
-        break;
-      }
-      seenPageSignatures.add(signature);
 
       await writeFile(
         join(rawPageDirectory, `page-${String(pageNumber).padStart(3, "0")}.json`),
@@ -414,67 +388,155 @@ async function main() {
         "utf8",
       );
 
-      const normalizedRecords = result.rows
-        .filter((row) => Boolean(row.id))
-        .map((row) => {
-          const sourceId = row.id.toLowerCase();
-          const canonicalUrl =
-            canonicalUrls.get(sourceId) ??
-            `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${sourceId}`;
-          return normalizeBeaconSolicitation({
-            row,
-            canonicalUrl,
-            agencySlug: AGENCY_SLUG,
-          });
-        });
-
       if (ingestionRunId) {
-        const pageCounts = await persistIngestionPage({
+        await persistRawIngestionPage({
           runId: ingestionRunId,
-          source: SOURCE,
-          agency: AGENCY_SLUG,
           pageNumber,
           cursor: { start, pageSize },
           reportedTotal: result.total,
           rawPayload: result.parsed as unknown as Record<string, unknown>,
-          records: normalizedRecords,
-        });
-        persistenceCounts.inserted += pageCounts.inserted;
-        persistenceCounts.updated += pageCounts.updated;
-        persistenceCounts.unchanged += pageCounts.unchanged;
-        console.log(
-          `BEACON_DB_PAGE page=${pageNumber} inserted=${pageCounts.inserted} updated=${pageCounts.updated} unchanged=${pageCounts.unchanged}`,
-        );
-      }
-
-      for (const normalized of normalizedRecords) {
-        const row = result.rows.find(
-          (candidate) => candidate.id.toLowerCase() === normalized.sourceRecordId,
-        );
-        if (!row || solicitations.has(normalized.sourceRecordId)) continue;
-        solicitations.set(normalized.sourceRecordId, {
-          sourceId: normalized.sourceRecordId,
-          ...(row.revisionId ? { revisionId: row.revisionId } : {}),
-          ...(row.refnum ? { refnum: row.refnum } : {}),
-          title: normalized.title,
-          ...(row.status ? { status: row.status } : {}),
-          ...(row.type ? { type: row.type } : {}),
-          ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
-          ...(row.modifiedAt ? { modifiedAt: row.modifiedAt } : {}),
-          ...(row.issueDate ? { issueDate: row.issueDate } : {}),
-          ...(row.dueDate ? { dueDate: row.dueDate } : {}),
-          ...(normalized.departments.length > 0
-            ? { departments: normalized.departments }
-            : {}),
-          url: normalized.canonicalUrl ??
-            `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${normalized.sourceRecordId}`,
-          page: pageNumber,
+          recordCount: result.rows.length,
         });
       }
 
-      if (solicitations.size >= result.total) {
-        terminalReason = "graphql-total-reached";
-        status = "complete";
+      const pageIds = result.rows
+        .map((row) => (typeof row.id === "string" ? row.id.trim().toLowerCase() : ""))
+        .filter(Boolean);
+      const signature = [...pageIds].sort().join("|");
+      if (seenPageSignatures.has(signature)) {
+        terminalReason = "repeated-graphql-page-signature";
+        status = "partial";
+        break;
+      }
+      seenPageSignatures.add(signature);
+
+      const pageCounts: PagePersistenceCounts = { inserted: 0, updated: 0, unchanged: 0 };
+
+      for (const row of result.rows) {
+        const rawSourceId = typeof row.id === "string" ? row.id.trim().toLowerCase() : "";
+        if (rawSourceId) seenSourceIds.add(rawSourceId);
+        const canonicalUrl = rawSourceId
+          ? canonicalUrls.get(rawSourceId) ??
+            `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${rawSourceId}`
+          : START_URL;
+
+        let sourceRecordPk: string | null = null;
+        try {
+          const sourceRecord = toBeaconSourceRecord({ row, canonicalUrl });
+          if (ingestionRunId) {
+            const persisted = await persistSourceRecord({
+              runId: ingestionRunId,
+              source: SOURCE,
+              agency: AGENCY_SLUG,
+              record: sourceRecord,
+            });
+            sourceRecordPk = persisted.sourceRecordPk;
+            incrementCount(pageCounts, persisted.change);
+          }
+        } catch (error) {
+          recordErrorCount += 1;
+          const message = errorText(error);
+          console.error(`BEACON_RECORD_ERROR page=${pageNumber} stage=source-persistence sourceId=${rawSourceId || "unknown"} ${message}`);
+          if (ingestionRunId) {
+            await recordIngestionRecordError({
+              runId: ingestionRunId,
+              pageNumber,
+              sourceRecordId: rawSourceId || null,
+              stage: "source-persistence",
+              error: message,
+              rawPayload: row,
+            });
+          }
+          continue;
+        }
+
+        let normalized;
+        try {
+          normalized = normalizeBeaconSolicitation({
+            row,
+            canonicalUrl,
+            agencySlug: AGENCY_SLUG,
+            canonicalStatus: SCOPE,
+          });
+        } catch (error) {
+          recordErrorCount += 1;
+          const message = errorText(error);
+          console.error(`BEACON_RECORD_ERROR page=${pageNumber} stage=normalization sourceId=${rawSourceId || "unknown"} ${message}`);
+          if (ingestionRunId) {
+            await recordIngestionRecordError({
+              runId: ingestionRunId,
+              pageNumber,
+              sourceRecordId: rawSourceId || null,
+              stage: "normalization",
+              error: message,
+              rawPayload: row,
+            });
+          }
+          continue;
+        }
+
+        try {
+          if (ingestionRunId && sourceRecordPk) {
+            await persistNormalizedOpportunity({
+              source: SOURCE,
+              sourceRecordPk,
+              record: normalized,
+            });
+          }
+        } catch (error) {
+          recordErrorCount += 1;
+          const message = errorText(error);
+          console.error(`BEACON_RECORD_ERROR page=${pageNumber} stage=canonical-persistence sourceId=${normalized.sourceRecordId} ${message}`);
+          if (ingestionRunId) {
+            await recordIngestionRecordError({
+              runId: ingestionRunId,
+              pageNumber,
+              sourceRecordId: normalized.sourceRecordId,
+              stage: "canonical-persistence",
+              error: message,
+              rawPayload: row,
+            });
+          }
+          continue;
+        }
+
+        if (!solicitations.has(normalized.sourceRecordId)) {
+          solicitations.set(normalized.sourceRecordId, {
+            sourceId: normalized.sourceRecordId,
+            ...(row.revisionId ? { revisionId: row.revisionId } : {}),
+            ...(row.refnum ? { refnum: row.refnum } : {}),
+            title: normalized.title,
+            ...(normalized.status ? { status: normalized.status } : {}),
+            ...(normalized.sourceStatus ? { sourceStatus: normalized.sourceStatus } : {}),
+            ...(row.type ? { type: row.type } : {}),
+            ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
+            ...(row.modifiedAt ? { modifiedAt: row.modifiedAt } : {}),
+            ...(row.issueDate ? { issueDate: row.issueDate } : {}),
+            ...(row.dueDate ? { dueDate: row.dueDate } : {}),
+            ...(normalized.departments.length > 0 ? { departments: normalized.departments } : {}),
+            url: normalized.canonicalUrl ??
+              `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${normalized.sourceRecordId}`,
+            page: pageNumber,
+          });
+        }
+      }
+
+      if (ingestionRunId) {
+        await recordPagePersistenceCounts({ runId: ingestionRunId, counts: pageCounts });
+      }
+      persistenceCounts.inserted += pageCounts.inserted;
+      persistenceCounts.updated += pageCounts.updated;
+      persistenceCounts.unchanged += pageCounts.unchanged;
+      console.log(
+        `BEACON_DB_PAGE page=${pageNumber} inserted=${pageCounts.inserted} updated=${pageCounts.updated} unchanged=${pageCounts.unchanged} recordErrors=${recordErrorCount}`,
+      );
+
+      if (seenSourceIds.size >= result.total) {
+        paginationComplete = true;
+        terminalReason = recordErrorCount > 0
+          ? "record-errors-after-complete-pagination"
+          : "graphql-total-reached";
+        status = recordErrorCount > 0 ? "partial" : "complete";
         break;
       }
 
@@ -493,9 +555,10 @@ async function main() {
     if (reportedTotal === 0) {
       terminalReason = "graphql-total-zero";
       status = "partial";
+      paginationComplete = false;
     }
   } catch (error) {
-    runError = error instanceof Error ? error.stack ?? error.message : String(error);
+    runError = errorText(error);
     terminalReason = "exception";
     status = "failed";
     console.error(runError);
@@ -504,13 +567,15 @@ async function main() {
     await browser.close();
   }
 
+  const normalizationComplete = paginationComplete && recordErrorCount === 0;
+
   if (ingestionRunId) {
     try {
-      if (status === "complete" && reportedTotal !== null && reportedTotal > 0) {
+      if (status === "complete" && normalizationComplete && reportedTotal !== null && reportedTotal > 0) {
         await reconcileCompleteScope({
           source: SOURCE,
           agency: AGENCY_SLUG,
-          seenSourceRecordIds: [...solicitations.keys()],
+          seenSourceRecordIds: [...seenSourceIds],
         });
       }
       await finishIngestionRun({
@@ -518,11 +583,14 @@ async function main() {
         status,
         reportedTotal,
         pagesFetched: pagesVisited,
+        recordsSeen: seenSourceIds.size,
         checkpoint: lastCheckpoint,
+        paginationComplete,
+        normalizationComplete,
         error: runError,
       });
     } catch (error) {
-      const persistenceError = error instanceof Error ? error.stack ?? error.message : String(error);
+      const persistenceError = errorText(error);
       runError = runError ? `${runError}\nPersistence finalization: ${persistenceError}` : persistenceError;
       terminalReason = "persistence-finalization-failed";
       status = "failed";
@@ -559,7 +627,11 @@ async function main() {
     discoveredPageSize,
     pageSize,
     reportedTotal,
+    sourceRecordCount: seenSourceIds.size,
     solicitationCount: solicitationList.length,
+    recordErrorCount,
+    paginationComplete,
+    normalizationComplete,
     networkCandidateCount: networkCandidates.length,
     paginationMethod: "graphql-offset",
     terminalReason,
@@ -580,13 +652,11 @@ async function main() {
   console.log(`BEACON_SUMMARY ${JSON.stringify(summary)}`);
   for (const record of solicitationList) {
     console.log(
-      `SOLICITATION sourceId=${record.sourceId} page=${record.page} refnum=${JSON.stringify(record.refnum ?? null)} title=${JSON.stringify(record.title)} url=${record.url}`,
+      `SOLICITATION sourceId=${record.sourceId} page=${record.page} status=${JSON.stringify(record.status ?? null)} sourceStatus=${JSON.stringify(record.sourceStatus ?? null)} refnum=${JSON.stringify(record.refnum ?? null)} title=${JSON.stringify(record.title)} url=${record.url}`,
     );
   }
 
-  if (status !== "complete") {
-    process.exitCode = 1;
-  }
+  if (status !== "complete") process.exitCode = 1;
 }
 
 void main();
