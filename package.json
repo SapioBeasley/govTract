@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ingest:beacon:discover": "tsx scripts/beacon-discover.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
@@ -24,7 +25,9 @@
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "postcss": "^8.5.6",
+    "puppeteer": "^24.22.3",
     "tailwindcss": "^4.3.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.2"
   }
 }
