@@ -6,6 +6,7 @@ const START_URL =
   process.env.BEACON_START_URL ??
   "https://www.beaconbid.com/solicitations/city-of-houston/open";
 const MAX_PAGES = Number(process.env.BEACON_MAX_PAGES ?? "100");
+const PAGE_SIZE_OVERRIDE = Number(process.env.BEACON_PAGE_SIZE ?? "0");
 const ARTIFACT_DIR = process.env.BEACON_ARTIFACT_DIR ?? ".artifacts/beacon";
 const RESPONSE_BODY_LIMIT = Number(
   process.env.BEACON_RESPONSE_BODY_LIMIT ?? String(2 * 1024 * 1024),
@@ -85,6 +86,7 @@ interface RunSummary {
   completedAt: string;
   status: "complete" | "partial" | "failed";
   pagesVisited: number;
+  discoveredPageSize: number;
   pageSize: number;
   reportedTotal: number | null;
   solicitationCount: number;
@@ -286,6 +288,7 @@ async function main() {
   const seenPageSignatures = new Set<string>();
   let pagesVisited = 0;
   let reportedTotal: number | null = null;
+  let discoveredPageSize = 50;
   let pageSize = 50;
   let terminalReason = "unknown";
   let status: RunSummary["status"] = "failed";
@@ -339,12 +342,17 @@ async function main() {
 
     const requestedPageSize = Number(listRequest.payload.variables.pageSize);
     if (Number.isInteger(requestedPageSize) && requestedPageSize > 0) {
+      discoveredPageSize = requestedPageSize;
       pageSize = requestedPageSize;
+    }
+
+    if (Number.isInteger(PAGE_SIZE_OVERRIDE) && PAGE_SIZE_OVERRIDE > 0) {
+      pageSize = PAGE_SIZE_OVERRIDE;
     }
 
     const initialStart = Number(listRequest.payload.variables.start);
     console.log(
-      `BEACON_PAGINATION_DISCOVERED method=graphql-offset start=${Number.isFinite(initialStart) ? initialStart : 0} pageSize=${pageSize}`,
+      `BEACON_PAGINATION_DISCOVERED method=graphql-offset start=${Number.isFinite(initialStart) ? initialStart : 0} discoveredPageSize=${discoveredPageSize} effectivePageSize=${pageSize}`,
     );
 
     for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
@@ -456,6 +464,7 @@ async function main() {
     completedAt: new Date().toISOString(),
     status,
     pagesVisited,
+    discoveredPageSize,
     pageSize,
     reportedTotal,
     solicitationCount: solicitationList.length,
