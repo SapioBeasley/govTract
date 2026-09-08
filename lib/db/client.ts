@@ -3,7 +3,17 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 let sqlClient: ReturnType<typeof postgres> | null = null;
-let database: ReturnType<typeof drizzle<typeof schema>> | null = null;
+
+function createDatabase(databaseUrl: string) {
+  sqlClient = postgres(databaseUrl, {
+    max: 1,
+    prepare: false,
+    idle_timeout: 20,
+  });
+  return drizzle(sqlClient, { schema });
+}
+
+let database: ReturnType<typeof createDatabase> | null = null;
 
 export function getDb() {
   if (database) return database;
@@ -13,12 +23,7 @@ export function getDb() {
     throw new Error("DATABASE_URL is required for database-backed ingestion");
   }
 
-  sqlClient = postgres(databaseUrl, {
-    max: 1,
-    prepare: false,
-    idle_timeout: 20,
-  });
-  database = drizzle(sqlClient, { schema });
+  database = createDatabase(databaseUrl);
   return database;
 }
 
