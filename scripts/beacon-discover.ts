@@ -14,12 +14,56 @@ const RESPONSE_BODY_LIMIT = Number(
 const solicitationPathPattern =
   /^\/solicitations\/city-of-houston\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
 
+interface BeaconDate {
+  utcDate?: string;
+  specifiedZone?: string;
+}
+
+interface BeaconSolicitation {
+  id: string;
+  revisionId?: string;
+  refnum?: string;
+  title?: string;
+  status?: string;
+  type?: string;
+  publishedAt?: string;
+  modifiedAt?: string;
+  issueDate?: BeaconDate;
+  dueDate?: BeaconDate;
+  departments?: string[];
+  [key: string]: unknown;
+}
+
+interface ListSolicitationsResponse {
+  data?: {
+    solicitations?: {
+      total?: number;
+      data?: BeaconSolicitation[];
+    };
+  };
+  errors?: unknown;
+}
+
+interface GraphQlPayload {
+  operationName?: string;
+  variables: Record<string, unknown>;
+  query: string;
+}
+
 interface SolicitationRecord {
   sourceId: string;
+  revisionId?: string;
+  refnum?: string;
   title: string;
+  status?: string;
+  type?: string;
+  publishedAt?: string;
+  modifiedAt?: string;
+  issueDate?: BeaconDate;
+  dueDate?: BeaconDate;
+  departments?: string[];
   url: string;
   page: number;
-  evidenceText: string;
 }
 
 interface NetworkEntry {
@@ -41,18 +85,17 @@ interface RunSummary {
   completedAt: string;
   status: "complete" | "partial" | "failed";
   pagesVisited: number;
+  pageSize: number;
+  reportedTotal: number | null;
   solicitationCount: number;
   networkCandidateCount: number;
+  paginationMethod: "graphql-offset";
   terminalReason: string;
   error?: string;
 }
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizeWhitespace(value: string) {
-  return value.replace(/\s+/g, " ").trim();
 }
 
 function redactUrl(rawUrl: string) {
@@ -79,158 +122,27 @@ async function waitForSettled(page: Page) {
   await delay(500);
 }
 
-async function autoScroll(page: Page) {
-  let stableRounds = 0;
-
-  for (let attempt = 0; attempt < 20 && stableRounds < 2; attempt += 1) {
-    const before = await page.evaluate(() => ({
-      height: document.documentElement.scrollHeight,
-      links: document.querySelectorAll(
-        'a[href*="/solicitations/city-of-houston/"]',
-      ).length,
-    }));
-
-    await page.evaluate(() => {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-    });
-    await delay(750);
-
-    const after = await page.evaluate(() => ({
-      height: document.documentElement.scrollHeight,
-      links: document.querySelectorAll(
-        'a[href*="/solicitations/city-of-houston/"]',
-      ).length,
-    }));
-
-    if (before.height === after.height && before.links === after.links) {
-      stableRounds += 1;
-    } else {
-      stableRounds = 0;
-    }
-  }
-}
-
-async function extractSolicitations(page: Page, pageNumber: number) {
-  const anchors = await page.evaluate(() =>
+async function extractCanonicalUrls(page: Page) {
+  const links = await page.evaluate(() =>
     Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))
-      .map((anchor) => {
-        const href = anchor.href;
-        const ownText = anchor.textContent ?? "";
-        const container = anchor.closest(
-          "article, li, tr, [class*='card'], [class*='solicitation'], [class*='bid']",
-        );
-
-        return {
-          href,
-          text: ownText,
-          evidenceText: container?.textContent ?? ownText,
-        };
-      })
-      .filter((entry) => entry.href.includes("/solicitations/city-of-houston/")),
+      .map((anchor) => anchor.href)
+      .filter((href) => href.includes("/solicitations/city-of-houston/")),
   );
 
-  const records = new Map<string, SolicitationRecord>();
-
-  for (const anchor of anchors) {
+  const urls = new Map<string, string>();
+  for (const href of links) {
     try {
-      const url = new URL(anchor.href);
+      const url = new URL(href);
       const match = url.pathname.match(solicitationPathPattern);
-      if (!match) continue;
-
-      const sourceId = match[1].toLowerCase();
-      const title = normalizeWhitespace(anchor.text) || sourceId;
-      const evidenceText = normalizeWhitespace(anchor.evidenceText).slice(0, 2_000);
-
-      records.set(sourceId, {
-        sourceId,
-        title,
-        url: `${url.origin}${url.pathname}`,
-        page: pageNumber,
-        evidenceText,
-      });
+      if (match) {
+        urls.set(match[1].toLowerCase(), `${url.origin}${url.pathname}`);
+      }
     } catch {
-      // Ignore malformed hrefs and continue collecting the rest of the page.
+      // Ignore malformed hrefs.
     }
   }
 
-  return [...records.values()];
-}
-
-async function pageSignature(page: Page, records: SolicitationRecord[]) {
-  if (records.length > 0) {
-    return records
-      .map((record) => record.sourceId)
-      .sort()
-      .join("|");
-  }
-
-  return page.evaluate(() =>
-    (document.body?.innerText ?? "").replace(/\s+/g, " ").slice(0, 10_000),
-  );
-}
-
-async function clickNextPaginationControl(page: Page) {
-  const navigation = page
-    .waitForNavigation({ waitUntil: "networkidle2", timeout: 10_000 })
-    .catch(() => null);
-
-  const result = await page.evaluate(() => {
-    const candidates = Array.from(
-      document.querySelectorAll<HTMLElement>('a, button, [role="button"]'),
-    );
-
-    const scored = candidates
-      .map((element) => {
-        const label = [
-          element.textContent,
-          element.getAttribute("aria-label"),
-          element.getAttribute("title"),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim();
-        const rel = element.getAttribute("rel") ?? "";
-        const disabled =
-          element.getAttribute("aria-disabled") === "true" ||
-          (element instanceof HTMLButtonElement && element.disabled);
-        const style = window.getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        const visible =
-          style.visibility !== "hidden" &&
-          style.display !== "none" &&
-          rect.width > 0 &&
-          rect.height > 0;
-
-        let score = 0;
-        if (/^next(?:\s+page)?$/i.test(label)) score += 100;
-        if (/\bnext\b/i.test(label)) score += 80;
-        if ([">", "›", "»"].includes(label)) score += 60;
-        if (/\bnext\b/i.test(rel)) score += 120;
-
-        return { element, label, score, disabled, visible };
-      })
-      .filter(
-        (candidate) =>
-          candidate.score > 0 && !candidate.disabled && candidate.visible,
-      )
-      .sort((a, b) => b.score - a.score);
-
-    const next = scored[0];
-    if (!next) {
-      return { clicked: false, label: null as string | null };
-    }
-
-    next.element.scrollIntoView({ block: "center" });
-    next.element.click();
-    return { clicked: true, label: next.label };
-  });
-
-  if (!result.clicked) return result;
-
-  await Promise.race([navigation, delay(5_000)]);
-  await waitForSettled(page);
-  return result;
+  return urls;
 }
 
 async function captureResponse(
@@ -280,17 +192,101 @@ async function captureResponse(
   }
 }
 
+function findListSolicitationsRequest(network: NetworkEntry[]) {
+  for (const entry of network) {
+    if (!entry.url.includes("operation=ListSolicitations") || !entry.postData) {
+      continue;
+    }
+
+    try {
+      const payload = JSON.parse(entry.postData) as GraphQlPayload;
+      if (
+        payload.operationName === "ListSolicitations" &&
+        payload.variables &&
+        typeof payload.query === "string"
+      ) {
+        return { endpoint: entry.url, payload };
+      }
+    } catch {
+      // Keep looking for another valid ListSolicitations request.
+    }
+  }
+
+  return null;
+}
+
+async function fetchGraphQlPage(
+  page: Page,
+  endpoint: string,
+  template: GraphQlPayload,
+  start: number,
+  pageSize: number,
+) {
+  const payload: GraphQlPayload = {
+    ...template,
+    variables: {
+      ...template.variables,
+      start,
+      pageSize,
+    },
+  };
+
+  const result = await page.evaluate(
+    async ({ requestUrl, requestBody }) => {
+      const response = await fetch(requestUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: await response.text(),
+      };
+    },
+    { requestUrl: endpoint, requestBody: payload },
+  );
+
+  if (!result.ok) {
+    throw new Error(
+      `Beacon ListSolicitations returned HTTP ${result.status} for start=${start}`,
+    );
+  }
+
+  const parsed = JSON.parse(result.body) as ListSolicitationsResponse;
+  if (parsed.errors) {
+    throw new Error(
+      `Beacon ListSolicitations returned GraphQL errors for start=${start}: ${JSON.stringify(parsed.errors)}`,
+    );
+  }
+
+  const list = parsed.data?.solicitations;
+  if (!list || !Array.isArray(list.data) || typeof list.total !== "number") {
+    throw new Error(
+      `Beacon ListSolicitations response shape changed for start=${start}`,
+    );
+  }
+
+  return { parsed, total: list.total, rows: list.data };
+}
+
 async function main() {
   const startedAt = new Date().toISOString();
   const networkDirectory = join(ARTIFACT_DIR, "network");
   const responseDirectory = join(networkDirectory, "responses");
+  const rawPageDirectory = join(ARTIFACT_DIR, "raw-pages");
   await mkdir(responseDirectory, { recursive: true });
+  await mkdir(rawPageDirectory, { recursive: true });
 
   const network: NetworkEntry[] = [];
   const pendingCaptures = new Set<Promise<void>>();
   const solicitations = new Map<string, SolicitationRecord>();
   const seenPageSignatures = new Set<string>();
   let pagesVisited = 0;
+  let reportedTotal: number | null = null;
+  let pageSize = 50;
   let terminalReason = "unknown";
   let status: RunSummary["status"] = "failed";
   let runError: string | undefined;
@@ -318,61 +314,101 @@ async function main() {
     });
 
     console.log(`BEACON_START ${START_URL}`);
-    const response = await page.goto(START_URL, {
+    const documentResponse = await page.goto(START_URL, {
       waitUntil: "networkidle2",
       timeout: 60_000,
     });
-
     console.log(
-      `BEACON_DOCUMENT status=${response?.status() ?? "unknown"} url=${redactUrl(page.url())}`,
+      `BEACON_DOCUMENT status=${documentResponse?.status() ?? "unknown"} url=${redactUrl(page.url())}`,
     );
     await waitForSettled(page);
 
+    await page.screenshot({
+      path: join(ARTIFACT_DIR, "listing.png"),
+      fullPage: true,
+    });
+    await writeFile(join(ARTIFACT_DIR, "listing.html"), await page.content(), "utf8");
+
+    const canonicalUrls = await extractCanonicalUrls(page);
+    const listRequest = findListSolicitationsRequest(network);
+    if (!listRequest) {
+      throw new Error(
+        "Beacon page did not expose a ListSolicitations GraphQL request",
+      );
+    }
+
+    const requestedPageSize = Number(listRequest.payload.variables.pageSize);
+    if (Number.isInteger(requestedPageSize) && requestedPageSize > 0) {
+      pageSize = requestedPageSize;
+    }
+
+    const initialStart = Number(listRequest.payload.variables.start);
+    console.log(
+      `BEACON_PAGINATION_DISCOVERED method=graphql-offset start=${Number.isFinite(initialStart) ? initialStart : 0} pageSize=${pageSize}`,
+    );
+
     for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
       pagesVisited = pageNumber;
-      await autoScroll(page);
-      await waitForSettled(page);
+      const start = (pageNumber - 1) * pageSize;
+      const result = await fetchGraphQlPage(
+        page,
+        listRequest.endpoint,
+        listRequest.payload,
+        start,
+        pageSize,
+      );
+      reportedTotal = result.total;
 
-      const pageRecords = await extractSolicitations(page, pageNumber);
-      const signature = await pageSignature(page, pageRecords);
-
+      const pageIds = result.rows.map((row) => row.id).filter(Boolean);
+      const signature = pageIds.slice().sort().join("|");
       console.log(
-        `BEACON_PAGE page=${pageNumber} records=${pageRecords.length} url=${redactUrl(page.url())}`,
+        `BEACON_GRAPHQL_PAGE page=${pageNumber} start=${start} pageSize=${pageSize} rows=${result.rows.length} total=${result.total}`,
       );
 
       if (seenPageSignatures.has(signature)) {
-        terminalReason = "repeated-page-signature";
+        terminalReason = "repeated-graphql-page-signature";
         status = "partial";
         break;
       }
       seenPageSignatures.add(signature);
 
-      for (const record of pageRecords) {
-        if (!solicitations.has(record.sourceId)) {
-          solicitations.set(record.sourceId, record);
-        }
-      }
-
-      await page.screenshot({
-        path: join(ARTIFACT_DIR, `page-${String(pageNumber).padStart(3, "0")}.png`),
-        fullPage: true,
-      });
-
-      const html = await page.content();
       await writeFile(
-        join(ARTIFACT_DIR, `page-${String(pageNumber).padStart(3, "0")}.html`),
-        html,
+        join(rawPageDirectory, `page-${String(pageNumber).padStart(3, "0")}.json`),
+        JSON.stringify(result.parsed, null, 2),
         "utf8",
       );
 
-      const next = await clickNextPaginationControl(page);
-      console.log(
-        `BEACON_PAGINATION page=${pageNumber} clicked=${next.clicked} label=${JSON.stringify(next.label)}`,
-      );
+      for (const row of result.rows) {
+        if (!row.id || solicitations.has(row.id)) continue;
+        const sourceId = row.id.toLowerCase();
+        solicitations.set(sourceId, {
+          sourceId,
+          ...(row.revisionId ? { revisionId: row.revisionId } : {}),
+          ...(row.refnum ? { refnum: row.refnum } : {}),
+          title: row.title ?? sourceId,
+          ...(row.status ? { status: row.status } : {}),
+          ...(row.type ? { type: row.type } : {}),
+          ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
+          ...(row.modifiedAt ? { modifiedAt: row.modifiedAt } : {}),
+          ...(row.issueDate ? { issueDate: row.issueDate } : {}),
+          ...(row.dueDate ? { dueDate: row.dueDate } : {}),
+          ...(row.departments ? { departments: row.departments } : {}),
+          url:
+            canonicalUrls.get(sourceId) ??
+            `https://www.beaconbid.com/solicitations/city-of-houston/${sourceId}`,
+          page: pageNumber,
+        });
+      }
 
-      if (!next.clicked) {
-        terminalReason = "no-enabled-next-control";
-        status = solicitations.size > 0 ? "complete" : "partial";
+      if (solicitations.size >= result.total) {
+        terminalReason = "graphql-total-reached";
+        status = "complete";
+        break;
+      }
+
+      if (result.rows.length === 0) {
+        terminalReason = "empty-page-before-total";
+        status = "partial";
         break;
       }
 
@@ -382,8 +418,8 @@ async function main() {
       }
     }
 
-    if (solicitations.size === 0 && status !== "failed") {
-      terminalReason = `${terminalReason};zero-solicitation-links`;
+    if (reportedTotal === 0) {
+      terminalReason = "graphql-total-zero";
       status = "partial";
     }
   } catch (error) {
@@ -420,8 +456,11 @@ async function main() {
     completedAt: new Date().toISOString(),
     status,
     pagesVisited,
+    pageSize,
+    reportedTotal,
     solicitationCount: solicitationList.length,
     networkCandidateCount: networkCandidates.length,
+    paginationMethod: "graphql-offset",
     terminalReason,
     ...(runError ? { error: runError } : {}),
   };
@@ -433,14 +472,9 @@ async function main() {
   );
 
   console.log(`BEACON_SUMMARY ${JSON.stringify(summary)}`);
-  for (const entry of network) {
-    console.log(
-      `NETWORK_CANDIDATE method=${entry.method} status=${entry.status} url=${entry.url}`,
-    );
-  }
   for (const record of solicitationList) {
     console.log(
-      `SOLICITATION sourceId=${record.sourceId} page=${record.page} url=${record.url} title=${JSON.stringify(record.title)}`,
+      `SOLICITATION sourceId=${record.sourceId} page=${record.page} refnum=${JSON.stringify(record.refnum ?? null)} title=${JSON.stringify(record.title)} url=${record.url}`,
     );
   }
 
