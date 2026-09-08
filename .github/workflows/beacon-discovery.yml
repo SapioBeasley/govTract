@@ -1,0 +1,58 @@
+name: Beacon discovery pull
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: Maximum Beacon result pages to traverse
+        required: false
+        default: "100"
+  pull_request:
+    paths:
+      - ".github/workflows/beacon-discovery.yml"
+      - "scripts/beacon-discover.ts"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beacon-city-of-houston-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    name: Pull City of Houston Beacon opportunities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BEACON_START_URL: https://www.beaconbid.com/solicitations/city-of-houston/open
+      BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
+      BEACON_ARTIFACT_DIR: .artifacts/beacon
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Pull and inspect Beacon pages
+        run: npm run ingest:beacon:discover
+
+      - name: Upload sanitized Beacon diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beacon-city-of-houston-${{ github.run_id }}
+          path: .artifacts/beacon
+          if-no-files-found: warn
+          retention-days: 7
