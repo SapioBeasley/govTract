@@ -24,9 +24,11 @@ interface SolicitationRecord {
 
 interface NetworkEntry {
   url: string;
+  method: string;
   status: number;
   resourceType: string;
   contentType: string;
+  postData?: string;
   bodyFile?: string;
   bodyError?: string;
 }
@@ -177,17 +179,6 @@ async function clickNextPaginationControl(page: Page) {
       document.querySelectorAll<HTMLElement>('a, button, [role="button"]'),
     );
 
-    const isVisible = (element: HTMLElement) => {
-      const style = window.getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return (
-        style.visibility !== "hidden" &&
-        style.display !== "none" &&
-        rect.width > 0 &&
-        rect.height > 0
-      );
-    };
-
     const scored = candidates
       .map((element) => {
         const label = [
@@ -203,6 +194,13 @@ async function clickNextPaginationControl(page: Page) {
         const disabled =
           element.getAttribute("aria-disabled") === "true" ||
           (element instanceof HTMLButtonElement && element.disabled);
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        const visible =
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          rect.width > 0 &&
+          rect.height > 0;
 
         let score = 0;
         if (/^next(?:\s+page)?$/i.test(label)) score += 100;
@@ -210,13 +208,11 @@ async function clickNextPaginationControl(page: Page) {
         if ([">", "›", "»"].includes(label)) score += 60;
         if (/\bnext\b/i.test(rel)) score += 120;
 
-        return { element, label, score, disabled };
+        return { element, label, score, disabled, visible };
       })
       .filter(
         (candidate) =>
-          candidate.score > 0 &&
-          !candidate.disabled &&
-          isVisible(candidate.element),
+          candidate.score > 0 && !candidate.disabled && candidate.visible,
       )
       .sort((a, b) => b.score - a.score);
 
@@ -253,11 +249,14 @@ async function captureResponse(
 
   if (!interesting) return;
 
+  const postData = request.postData();
   const entry: NetworkEntry = {
     url: redactUrl(response.url()),
+    method: request.method(),
     status: response.status(),
     resourceType,
     contentType,
+    ...(postData ? { postData: postData.slice(0, RESPONSE_BODY_LIMIT) } : {}),
   };
   const index = network.push(entry) - 1;
 
@@ -434,8 +433,10 @@ async function main() {
   );
 
   console.log(`BEACON_SUMMARY ${JSON.stringify(summary)}`);
-  for (const url of networkCandidates.slice(0, 100)) {
-    console.log(`NETWORK_CANDIDATE ${url}`);
+  for (const entry of network) {
+    console.log(
+      `NETWORK_CANDIDATE method=${entry.method} status=${entry.status} url=${entry.url}`,
+    );
   }
   for (const record of solicitationList) {
     console.log(
