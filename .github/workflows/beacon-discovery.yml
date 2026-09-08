@@ -1,4 +1,4 @@
-name: Beacon discovery pull
+name: Beacon opportunity pull
 
 on:
   workflow_dispatch:
@@ -11,10 +11,18 @@ on:
         description: GraphQL page size (50 matches Beacon; smaller values verify pagination)
         required: false
         default: "50"
+      persist:
+        description: Persist the completed pull to Postgres
+        required: true
+        type: boolean
+        default: true
   pull_request:
     paths:
       - ".github/workflows/beacon-discovery.yml"
       - "scripts/beacon-discover.ts"
+      - "lib/db/**"
+      - "lib/procurement/**"
+      - "drizzle/**"
       - "package.json"
 
 permissions:
@@ -31,11 +39,14 @@ jobs:
     timeout-minutes: 15
     env:
       BEACON_START_URL: https://www.beaconbid.com/solicitations/city-of-houston/open
+      BEACON_AGENCY: city-of-houston
       BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
       # PR checks intentionally use 10 so the current Houston set proves multi-page aggregation.
       # Manual runs default to Beacon's normal 50-row request size.
       BEACON_PAGE_SIZE: ${{ inputs.page_size || '10' }}
+      BEACON_PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Checkout
@@ -52,8 +63,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Pull and inspect Beacon pages
-        run: npm run ingest:beacon:discover
+      - name: Test Beacon normalization
+        run: npm run test:beacon-normalize
+
+      - name: Pull Beacon opportunities
+        run: npm run ingest:beacon
 
       - name: Upload sanitized Beacon diagnostics
         if: always()
