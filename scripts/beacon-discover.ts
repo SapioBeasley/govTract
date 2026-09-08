@@ -1,39 +1,36 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer, { type HTTPResponse, type Page } from "puppeteer";
+import {
+  closeDb,
+  finishIngestionRun,
+  persistIngestionPage,
+  reconcileCompleteScope,
+  startIngestionRun,
+  type PagePersistenceCounts,
+} from "../lib/procurement/ingestion/persistence";
+import {
+  normalizeBeaconSolicitation,
+  type BeaconDate,
+  type BeaconSolicitation,
+} from "../lib/procurement/sources/beacon/normalize";
 
+const SOURCE = "beacon";
+const SCOPE = "open";
+const AGENCY_SLUG = process.env.BEACON_AGENCY ?? "city-of-houston";
 const START_URL =
   process.env.BEACON_START_URL ??
   "https://www.beaconbid.com/solicitations/city-of-houston/open";
 const MAX_PAGES = Number(process.env.BEACON_MAX_PAGES ?? "100");
 const PAGE_SIZE_OVERRIDE = Number(process.env.BEACON_PAGE_SIZE ?? "0");
+const PERSIST = process.env.BEACON_PERSIST === "true";
 const ARTIFACT_DIR = process.env.BEACON_ARTIFACT_DIR ?? ".artifacts/beacon";
 const RESPONSE_BODY_LIMIT = Number(
   process.env.BEACON_RESPONSE_BODY_LIMIT ?? String(2 * 1024 * 1024),
 );
 
 const solicitationPathPattern =
-  /^\/solicitations\/city-of-houston\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
-
-interface BeaconDate {
-  utcDate?: string;
-  specifiedZone?: string;
-}
-
-interface BeaconSolicitation {
-  id: string;
-  revisionId?: string;
-  refnum?: string;
-  title?: string;
-  status?: string;
-  type?: string;
-  publishedAt?: string;
-  modifiedAt?: string;
-  issueDate?: BeaconDate;
-  dueDate?: BeaconDate;
-  departments?: string[];
-  [key: string]: unknown;
-}
+  /^\/solicitations\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
 
 interface ListSolicitationsResponse {
   data?: {
@@ -80,7 +77,7 @@ interface NetworkEntry {
 
 interface RunSummary {
   source: "beacon";
-  agency: "city-of-houston";
+  agency: string;
   startUrl: string;
   startedAt: string;
   completedAt: string;
@@ -93,6 +90,11 @@ interface RunSummary {
   networkCandidateCount: number;
   paginationMethod: "graphql-offset";
   terminalReason: string;
+  persisted: boolean;
+  ingestionRunId?: string;
+  insertedCount: number;
+  updatedCount: number;
+  unchangedCount: number;
   error?: string;
 }
 
@@ -128,7 +130,7 @@ async function extractCanonicalUrls(page: Page) {
   const links = await page.evaluate(() =>
     Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))
       .map((anchor) => anchor.href)
-      .filter((href) => href.includes("/solicitations/city-of-houston/")),
+      .filter((href) => href.includes("/solicitations/")),
   );
 
   const urls = new Map<string, string>();
@@ -286,10 +288,17 @@ async function main() {
   const pendingCaptures = new Set<Promise<void>>();
   const solicitations = new Map<string, SolicitationRecord>();
   const seenPageSignatures = new Set<string>();
+  const persistenceCounts: PagePersistenceCounts = {
+    inserted: 0,
+    updated: 0,
+    unchanged: 0,
+  };
+  let ingestionRunId: string | null = null;
   let pagesVisited = 0;
   let reportedTotal: number | null = null;
   let discoveredPageSize = 50;
   let pageSize = 50;
+  let lastCheckpoint: Record<string, unknown> = { start: 0, pageSize: 50 };
   let terminalReason = "unknown";
   let status: RunSummary["status"] = "failed";
   let runError: string | undefined;
@@ -304,6 +313,24 @@ async function main() {
   });
 
   try {
+    if (PERSIST) {
+      if (!process.env.DATABASE_URL) {
+        throw new Error("BEACON_PERSIST=true requires DATABASE_URL");
+      }
+      ingestionRunId = await startIngestionRun({
+        source: SOURCE,
+        scope: SCOPE,
+        agency: AGENCY_SLUG,
+        metadata: {
+          startUrl: START_URL,
+          paginationMethod: "graphql-offset",
+        },
+      });
+      console.log(`BEACON_INGESTION_RUN id=${ingestionRunId}`);
+    } else {
+      console.log("BEACON_PERSISTENCE disabled");
+    }
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1200 });
     await page.setUserAgent(
@@ -358,6 +385,7 @@ async function main() {
     for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
       pagesVisited = pageNumber;
       const start = (pageNumber - 1) * pageSize;
+      lastCheckpoint = { start, pageSize };
       const result = await fetchGraphQlPage(
         page,
         listRequest.endpoint,
@@ -386,24 +414,60 @@ async function main() {
         "utf8",
       );
 
-      for (const row of result.rows) {
-        if (!row.id || solicitations.has(row.id)) continue;
-        const sourceId = row.id.toLowerCase();
-        solicitations.set(sourceId, {
-          sourceId,
+      const normalizedRecords = result.rows
+        .filter((row) => Boolean(row.id))
+        .map((row) => {
+          const sourceId = row.id.toLowerCase();
+          const canonicalUrl =
+            canonicalUrls.get(sourceId) ??
+            `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${sourceId}`;
+          return normalizeBeaconSolicitation({
+            row,
+            canonicalUrl,
+            agencySlug: AGENCY_SLUG,
+          });
+        });
+
+      if (ingestionRunId) {
+        const pageCounts = await persistIngestionPage({
+          runId: ingestionRunId,
+          source: SOURCE,
+          agency: AGENCY_SLUG,
+          pageNumber,
+          cursor: { start, pageSize },
+          reportedTotal: result.total,
+          rawPayload: result.parsed as unknown as Record<string, unknown>,
+          records: normalizedRecords,
+        });
+        persistenceCounts.inserted += pageCounts.inserted;
+        persistenceCounts.updated += pageCounts.updated;
+        persistenceCounts.unchanged += pageCounts.unchanged;
+        console.log(
+          `BEACON_DB_PAGE page=${pageNumber} inserted=${pageCounts.inserted} updated=${pageCounts.updated} unchanged=${pageCounts.unchanged}`,
+        );
+      }
+
+      for (const normalized of normalizedRecords) {
+        const row = result.rows.find(
+          (candidate) => candidate.id.toLowerCase() === normalized.sourceRecordId,
+        );
+        if (!row || solicitations.has(normalized.sourceRecordId)) continue;
+        solicitations.set(normalized.sourceRecordId, {
+          sourceId: normalized.sourceRecordId,
           ...(row.revisionId ? { revisionId: row.revisionId } : {}),
           ...(row.refnum ? { refnum: row.refnum } : {}),
-          title: row.title ?? sourceId,
+          title: normalized.title,
           ...(row.status ? { status: row.status } : {}),
           ...(row.type ? { type: row.type } : {}),
           ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
           ...(row.modifiedAt ? { modifiedAt: row.modifiedAt } : {}),
           ...(row.issueDate ? { issueDate: row.issueDate } : {}),
           ...(row.dueDate ? { dueDate: row.dueDate } : {}),
-          ...(row.departments ? { departments: row.departments } : {}),
-          url:
-            canonicalUrls.get(sourceId) ??
-            `https://www.beaconbid.com/solicitations/city-of-houston/${sourceId}`,
+          ...(normalized.departments.length > 0
+            ? { departments: normalized.departments }
+            : {}),
+          url: normalized.canonicalUrl ??
+            `https://www.beaconbid.com/solicitations/${AGENCY_SLUG}/${normalized.sourceRecordId}`,
           page: pageNumber,
         });
       }
@@ -440,6 +504,34 @@ async function main() {
     await browser.close();
   }
 
+  if (ingestionRunId) {
+    try {
+      if (status === "complete" && reportedTotal !== null && reportedTotal > 0) {
+        await reconcileCompleteScope({
+          source: SOURCE,
+          agency: AGENCY_SLUG,
+          seenSourceRecordIds: [...solicitations.keys()],
+        });
+      }
+      await finishIngestionRun({
+        runId: ingestionRunId,
+        status,
+        reportedTotal,
+        pagesFetched: pagesVisited,
+        checkpoint: lastCheckpoint,
+        error: runError,
+      });
+    } catch (error) {
+      const persistenceError = error instanceof Error ? error.stack ?? error.message : String(error);
+      runError = runError ? `${runError}\nPersistence finalization: ${persistenceError}` : persistenceError;
+      terminalReason = "persistence-finalization-failed";
+      status = "failed";
+      console.error(persistenceError);
+    } finally {
+      await closeDb();
+    }
+  }
+
   const solicitationList = [...solicitations.values()].sort((a, b) =>
     a.sourceId.localeCompare(b.sourceId),
   );
@@ -458,7 +550,7 @@ async function main() {
 
   const summary: RunSummary = {
     source: "beacon",
-    agency: "city-of-houston",
+    agency: AGENCY_SLUG,
     startUrl: START_URL,
     startedAt,
     completedAt: new Date().toISOString(),
@@ -471,6 +563,11 @@ async function main() {
     networkCandidateCount: networkCandidates.length,
     paginationMethod: "graphql-offset",
     terminalReason,
+    persisted: Boolean(ingestionRunId),
+    ...(ingestionRunId ? { ingestionRunId } : {}),
+    insertedCount: persistenceCounts.inserted,
+    updatedCount: persistenceCounts.updated,
+    unchangedCount: persistenceCounts.unchanged,
     ...(runError ? { error: runError } : {}),
   };
 
