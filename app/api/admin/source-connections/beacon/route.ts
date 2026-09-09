@@ -142,20 +142,38 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify both read and write DB access before consuming the one-time credential. The
-  // update intentionally targets an impossible provider and therefore changes zero rows.
+  // Exercise the same encrypted insert + read-back path used for a real connection, then
+  // remove the disposable row before touching Beacon. This prevents one-time login links
+  // from being consumed when the deployment can read the table but cannot persist rows.
   try {
-    await getSourceConnectionSummary(PROVIDER);
+    const preflight = await saveSourceConnection({
+      provider: PREFLIGHT_PROVIDER,
+      session: createBrowserSessionEnvelope([]),
+      metadata: { preflight: true },
+    });
+
+    if (preflight.provider !== PREFLIGHT_PROVIDER) {
+      throw new Error("Source connection preflight read-back mismatch");
+    }
+
     await getDb()
-      .update(sourceConnections)
-      .set({ updatedAt: new Date() })
+      .delete(sourceConnections)
       .where(eq(sourceConnections.provider, PREFLIGHT_PROVIDER));
   } catch {
+    // Best-effort cleanup in case the insert succeeded but a later preflight step failed.
+    try {
+      await getDb()
+        .delete(sourceConnections)
+        .where(eq(sourceConnections.provider, PREFLIGHT_PROVIDER));
+    } catch {
+      // Never expose database errors or credential material to the client.
+    }
+
     return NextResponse.json(
       {
         error: {
-          code: "database_unavailable",
-          message: "Beacon connection storage is not writable on this deployment.",
+          code: "database_persistence_unavailable",
+          message: "Beacon connection storage cannot persist encrypted sessions on this deployment.",
         },
       },
       { status: 503 },
