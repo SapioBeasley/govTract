@@ -7,6 +7,7 @@ import {
   getBeaconSessionCookies,
   isBeaconPermissionResponse,
   isBeaconRegistrationRequiredResponse,
+  parseBeaconRegistrationProfile,
   parseBeaconSessionProbe,
 } from "./session-transport";
 
@@ -114,6 +115,48 @@ test("recognizes Beacon code 103 and permission responses", () => {
     true,
   );
   assert.equal(isBeaconPermissionResponse(500, JSON.stringify({ code: 103 })), false);
+});
+
+test("parses the connected supplier profile needed for automatic planholder registration", () => {
+  const body = JSON.stringify({
+    role: "supplier",
+    contact: {
+      name: "Test Person",
+      email: "test@example.com",
+      phone: "5551112222",
+      position: "Estimator",
+      location: { regionId: "ustx" },
+    },
+    company: {
+      name: "Example Contractor",
+      specialDesignations: ["example-designation", 42],
+      location: { regionId: "ustx" },
+    },
+  });
+
+  assert.deepEqual(parseBeaconRegistrationProfile(body), {
+    name: "Test Person",
+    email: "test@example.com",
+    phone: "5551112222",
+    position: "Estimator",
+    regionId: "ustx",
+    companyName: "Example Contractor",
+    companyRegionId: "ustx",
+    specialDesignations: ["example-designation"],
+  });
+});
+
+test("does not fabricate an incomplete registration profile", () => {
+  assert.equal(
+    parseBeaconRegistrationProfile(
+      JSON.stringify({
+        role: "supplier",
+        contact: { name: "Test Person", email: "test@example.com" },
+        company: { name: "Example Contractor" },
+      }),
+    ),
+    null,
+  );
 });
 
 test("requires an exact supplier session", () => {
