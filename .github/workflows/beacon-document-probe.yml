@@ -13,21 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe Beacon document endpoints
+      - name: Inspect Beacon document transport
         shell: bash
         run: |
-          set +e
-          key='agency/281287c2-49c0-439e-81d7-315d13b0b4fb/solicitation/1738183668100_32c67f08-7866-4e1a-8255-1e0aa76c6039/InformalGeneralTerms.docx'
-          urls=(
-            "https://documents.beaconbid.com/$key"
-            "https://s3.amazonaws.com/documents.beaconbid.com/$key"
-            "https://s3.us-east-1.amazonaws.com/documents.beaconbid.com/$key"
-            "https://s3.us-east-2.amazonaws.com/documents.beaconbid.com/$key"
-            "https://s3.us-west-1.amazonaws.com/documents.beaconbid.com/$key"
-            "https://s3.us-west-2.amazonaws.com/documents.beaconbid.com/$key"
-          )
-          for url in "${urls[@]}"; do
-            echo "=== $url"
-            curl -sS -D - -o /dev/null --max-time 20 --range 0-0 "$url" | grep -Ei '^(HTTP/|location:|x-amz-bucket-region:|content-type:|content-length:)' || true
-            echo "curl_exit=${PIPESTATUS[0]}"
-          done
+          set -u
+          page='https://www.beaconbid.com/solicitations/city-of-houston/open'
+          curl -fsSL "$page" -o /tmp/beacon.html
+          echo '=== script sources'
+          grep -oE 'src="[^"]+\.js[^"]*"' /tmp/beacon.html | sed -E 's/^src="//;s/"$//' | head -80 | tee /tmp/scripts.txt
+          echo '=== relevant bundle fragments'
+          while IFS= read -r src; do
+            case "$src" in
+              http*) url="$src" ;;
+              //*) url="https:$src" ;;
+              /*) url="https://www.beaconbid.com$src" ;;
+              *) url="https://www.beaconbid.com/$src" ;;
+            esac
+            body=$(curl -fsSL --max-time 20 "$url" 2>/dev/null || true)
+            if [ -n "$body" ]; then
+              matches=$(printf '%s' "$body" | grep -Eio '.{0,180}(presign|pre.?signed|signed.?url|documentSource|download[^a-z]|getobject|s3).{0,240}' | head -30 || true)
+              if [ -n "$matches" ]; then
+                echo "--- $url"
+                printf '%s\n' "$matches"
+              fi
+            fi
+          done < /tmp/scripts.txt
