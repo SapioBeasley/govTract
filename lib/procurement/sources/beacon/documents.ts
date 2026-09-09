@@ -1,5 +1,8 @@
 import type { PersistableDocument } from "@/lib/procurement/documents/persistence";
 
+const BEACON_DOCUMENT_BUCKET = "documents.beaconbid.com";
+const BEACON_PRESIGNED_S3_HOST = "s3.us-west-2.amazonaws.com";
+
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -21,8 +24,45 @@ function parseDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function isAwsPresignedUrl(url: URL) {
+  return (
+    url.searchParams.get("X-Amz-Algorithm") === "AWS4-HMAC-SHA256" &&
+    Boolean(url.searchParams.get("X-Amz-Credential")) &&
+    Boolean(url.searchParams.get("X-Amz-Date")) &&
+    Boolean(url.searchParams.get("X-Amz-Expires")) &&
+    Boolean(url.searchParams.get("X-Amz-Signature")) &&
+    Boolean(url.searchParams.get("X-Amz-SignedHeaders"))
+  );
+}
+
+export function isBeaconPresignedDocumentUrl(input: {
+  url: string;
+  sourceDocumentKey: string;
+}) {
+  try {
+    const url = new URL(input.url);
+    if (url.protocol !== "https:" || url.hostname !== BEACON_PRESIGNED_S3_HOST) return false;
+    if (!isAwsPresignedUrl(url)) return false;
+
+    const decodedPath = decodeURIComponent(url.pathname);
+    return decodedPath === `/${BEACON_DOCUMENT_BUCKET}/${input.sourceDocumentKey}`;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveBeaconDocumentUrl(input: { existingUrl?: string | null }) {
-  return input.existingUrl?.trim() || null;
+  const raw = input.existingUrl?.trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (url.hostname === BEACON_DOCUMENT_BUCKET) return null;
+    if (url.hostname === BEACON_PRESIGNED_S3_HOST && isAwsPresignedUrl(url)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveBeaconDocumentDownloadUrl(input: {
@@ -61,9 +101,8 @@ export function enrichBeaconDocumentMetadata(document: PersistableDocument): Per
 
   return {
     ...document,
-    // Beacon's `bucket` metadata identifies a private S3 bucket; it is not a public hostname.
-    // Only preserve source URLs explicitly supplied by Beacon. Runtime downloads use the
-    // access-controlled /api/planholder/document route instead.
+    // Beacon's bucket metadata and short-lived AWS presigned URLs are transport details,
+    // not durable source URLs. Runtime downloads use Beacon's access-controlled route.
     url: resolveBeaconDocumentUrl({ existingUrl: document.url }),
     sourceModifiedAt:
       document.sourceModifiedAt ?? parseDate(asObject(document.sourceMetadata)?.createdAt),

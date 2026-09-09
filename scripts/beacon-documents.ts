@@ -16,6 +16,7 @@ import {
 } from "../lib/procurement/documents/persistence";
 import {
   enrichBeaconDocumentMetadata,
+  isBeaconPresignedDocumentUrl,
   resolveBeaconDocumentDownloadUrl,
 } from "../lib/procurement/sources/beacon/documents";
 
@@ -60,6 +61,7 @@ interface RetrievedDocument {
   document: PersistableDocument;
   bytesRead: number;
   attemptedDownload: boolean;
+  usedPresignedRedirect?: boolean;
   skipReason?: SkipReason;
   error?: string;
   errorKind?: RetrievalErrorKind;
@@ -105,24 +107,81 @@ function isPermissionResponse(status: number, body: string) {
   }
 }
 
-async function fetchWithTimeout(url: string, init?: RequestInit) {
+async function fetchWithTimeout(
+  url: string,
+  init?: RequestInit,
+  options: { includeSessionCookie?: boolean } = {},
+) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(init?.headers);
   headers.set("user-agent", "govTract/0.1 public-procurement-indexer");
   headers.set("accept", "*/*");
-  if (SESSION_COOKIE) headers.set("cookie", SESSION_COOKIE);
+  if ((options.includeSessionCookie ?? true) && SESSION_COOKIE) {
+    headers.set("cookie", SESSION_COOKIE);
+  }
 
   try {
     return await fetch(url, {
       ...init,
       signal: controller.signal,
       headers,
-      redirect: "follow",
     });
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function resolveBeaconDownloadResponse(input: {
+  downloadUrl: string;
+  sourceDocumentKey: string;
+}) {
+  const gatewayResponse = await fetchWithTimeout(input.downloadUrl, {
+    method: "GET",
+    redirect: "manual",
+  });
+
+  if (gatewayResponse.status >= 300 && gatewayResponse.status < 400) {
+    const location = gatewayResponse.headers.get("location");
+    await gatewayResponse.body?.cancel();
+
+    if (!location) {
+      throw new DocumentRetrievalError(
+        `Beacon document gateway returned HTTP ${gatewayResponse.status} without a redirect location`,
+        "http",
+      );
+    }
+
+    if (
+      !isBeaconPresignedDocumentUrl({
+        url: location,
+        sourceDocumentKey: input.sourceDocumentKey,
+      })
+    ) {
+      throw new DocumentRetrievalError(
+        `Beacon document gateway returned an unexpected redirect target (HTTP ${gatewayResponse.status})`,
+        "http",
+      );
+    }
+
+    const s3Response = await fetchWithTimeout(
+      location,
+      { method: "GET", redirect: "manual" },
+      { includeSessionCookie: false },
+    );
+
+    if (s3Response.status >= 300 && s3Response.status < 400) {
+      await s3Response.body?.cancel();
+      throw new DocumentRetrievalError(
+        `Beacon presigned S3 document unexpectedly redirected again (HTTP ${s3Response.status})`,
+        "http",
+      );
+    }
+
+    return { response: s3Response, usedPresignedRedirect: true };
+  }
+
+  return { response: gatewayResponse, usedPresignedRedirect: false };
 }
 
 async function hashResponseBody(response: Response) {
@@ -200,9 +259,16 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
   }
 
   let response: Response;
+  let usedPresignedRedirect = false;
   try {
-    response = await fetchWithTimeout(downloadUrl, { method: "GET" });
+    const resolved = await resolveBeaconDownloadResponse({
+      downloadUrl,
+      sourceDocumentKey: row.sourceDocumentKey,
+    });
+    response = resolved.response;
+    usedPresignedRedirect = resolved.usedPresignedRedirect;
   } catch (error) {
+    if (error instanceof DocumentRetrievalError) throw error;
     throw new DocumentRetrievalError(`Beacon document request failed: ${errorText(error)}`, "network");
   }
 
@@ -244,6 +310,7 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
     },
     bytesRead: hashed.bytesRead,
     attemptedDownload: true,
+    usedPresignedRedirect,
   };
 }
 
@@ -311,6 +378,7 @@ async function main() {
   }> = [];
   let downloaded = 0;
   let attemptedDownloads = 0;
+  let presignedRedirectCount = 0;
   let bytesRead = 0;
   let processedDocuments = 0;
   let skippedAlreadyHashed = 0;
@@ -349,6 +417,7 @@ async function main() {
       bytesRead += result.bytesRead;
       if (result.attemptedDownload) attemptedDownloads += 1;
       if (result.attemptedDownload && !result.error) downloaded += 1;
+      if (result.usedPresignedRedirect) presignedRedirectCount += 1;
       if (result.skipReason === "already_hashed") skippedAlreadyHashed += 1;
       if (result.skipReason === "unsupported") skippedUnsupported += 1;
       if (result.skipReason === "too_large") skippedTooLarge += 1;
@@ -400,6 +469,7 @@ async function main() {
     processedDocuments,
     attemptedDownloads,
     downloaded,
+    presignedRedirectCount,
     bytesRead,
     skippedAlreadyHashed,
     skippedUnsupported,
