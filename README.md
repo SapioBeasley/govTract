@@ -71,3 +71,11 @@ npm run db:check
 Copy `.env.example` to `.env.local` for local application development. Keep credentials only in local environment files, Vercel environment variables, or GitHub Actions secrets; never commit live database credentials.
 
 For persisted ingestion runs, configure the GitHub Actions repository secret `DATABASE_URL` with the same target PostgreSQL database used by the application.
+
+### Beacon document access
+
+Beacon solicitation metadata can be discovered through the public supplier experience, but individual document downloads can require authenticated planholder access. govTract uses the same `/api/planholder/document/...` route rendered by Beacon's supplier UI and does not bypass the underlying private storage bucket.
+
+When the operator is authorized to download the documents, configure the GitHub Actions repository secret `BEACON_SESSION_COOKIE` with the complete `Cookie` request-header value from that authenticated Beacon session. Treat the value as a credential and renew it when the Beacon session expires. Do not commit it or include it in workflow artifacts.
+
+If protected documents are encountered without an authorized session, document metadata and amendment classification are still retained, but the document-retrieval job fails explicitly instead of falsely reporting a successful hash pass.
