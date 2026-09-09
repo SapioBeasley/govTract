@@ -6,6 +6,7 @@ import {
   buildBeaconCookieHeader,
   getBeaconSessionCookies,
   isBeaconPermissionResponse,
+  isBeaconRegistrationRequiredResponse,
   parseBeaconSessionProbe,
 } from "./session-transport";
 
@@ -94,8 +95,20 @@ test("rejects unsafe cookie header values", () => {
   );
 });
 
+test("recognizes solicitation document registration requirements separately from auth", () => {
+  const body = JSON.stringify({
+    statusCode: 400,
+    error: "Bad Request",
+    message: "Register before requesting these files",
+  });
+  assert.equal(isBeaconRegistrationRequiredResponse(400, body), true);
+  assert.equal(isBeaconRegistrationRequiredResponse(401, body), false);
+  assert.equal(isBeaconPermissionResponse(400, body), false);
+});
+
 test("recognizes Beacon code 103 and permission responses", () => {
   assert.equal(isBeaconPermissionResponse(400, JSON.stringify({ code: 103 })), true);
+  assert.equal(isBeaconPermissionResponse(400, JSON.stringify({ code: "103" })), true);
   assert.equal(
     isBeaconPermissionResponse(403, JSON.stringify({ message: "Planholder permission denied" })),
     true,
