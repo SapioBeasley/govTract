@@ -30,8 +30,9 @@ try {
   await page.evaluate(() => {
     const button = Array.from(document.querySelectorAll('button,[role="button"]')).find((el) => /download package/i.test((el.textContent ?? '').trim()));
     if (!(button instanceof HTMLElement)) throw new Error('Download Package button not found');
-    button.click();
+    button.setAttribute('data-govtract-download-package', 'true');
   });
+  await page.click('[data-govtract-download-package="true"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
 
   const fill = async (label, value) => {
@@ -45,42 +46,53 @@ try {
   await fill('Email address', 'govtract-probe@example.com');
   await fill('Phone', '5555550100');
 
-  async function chooseFirst(buttonText) {
-    await page.evaluate((text) => {
+  async function chooseFirst(buttonText, marker) {
+    await page.evaluate(({ text, marker }) => {
       const dialog = document.querySelector('[role="dialog"]');
       const button = dialog && Array.from(dialog.querySelectorAll('button')).find((el) => (el.textContent ?? '').includes(text));
       if (!(button instanceof HTMLElement)) throw new Error(`Dropdown button not found: ${text}`);
-      button.click();
-    }, buttonText);
-    await page.waitForSelector('[role="option"]', { timeout: 3000 });
-    const options = await page.evaluate(() => Array.from(document.querySelectorAll('[role="option"]')).map((el) => (el.textContent ?? '').trim()).filter(Boolean));
+      button.setAttribute('data-govtract-dropdown', marker);
+    }, { text: buttonText, marker });
+
+    await page.click(`[data-govtract-dropdown="${marker}"]`);
+    await page.waitForSelector('[role="option"]', { visible: true, timeout: 3000 });
+    const options = await page.$$eval('[role="option"]', (els) => els.map((el) => ({
+      text: (el.textContent ?? '').trim(),
+      ariaSelected: el.getAttribute('aria-selected'),
+      ariaDisabled: el.getAttribute('aria-disabled'),
+      role: el.getAttribute('role'),
+    })).filter((x) => x.text));
     console.log('OPTIONS', buttonText, JSON.stringify(options.slice(0, 12)));
-    await page.evaluate(() => {
-      const option = Array.from(document.querySelectorAll('[role="option"]')).find((el) => (el.textContent ?? '').trim());
-      if (!(option instanceof HTMLElement)) throw new Error('No selectable option found');
-      option.click();
-    });
-    await new Promise((r) => setTimeout(r, 250));
+
+    const handles = await page.$$('[role="option"]');
+    if (!handles.length) throw new Error(`No selectable option found for ${buttonText}`);
+    await handles[0].click();
+    await new Promise((r) => setTimeout(r, 350));
+
+    const selected = await page.$eval(`[data-govtract-dropdown="${marker}"]`, (el) => (el.textContent ?? '').trim().replace(/\s+/g, ' '));
+    console.log('SELECTED', buttonText, JSON.stringify(selected));
+    if (selected.includes(buttonText)) throw new Error(`Selection did not commit for ${buttonText}`);
   }
 
-  await chooseFirst('Select your location');
-  await chooseFirst('Select your interest');
+  await chooseFirst('Select your location', 'location');
+  await chooseFirst('Select your interest', 'interest');
 
-  await page.evaluate(() => {
-    const dialog = document.querySelector('[role="dialog"]');
-    const checks = dialog ? Array.from(dialog.querySelectorAll('button[role="checkbox"]')) : [];
-    const consent = checks.at(-1);
-    if (!(consent instanceof HTMLElement)) throw new Error('Consent checkbox not found');
-    consent.click();
-  });
-  await new Promise((r) => setTimeout(r, 250));
+  const checkboxes = await page.$$('[role="dialog"] button[role="checkbox"]');
+  if (!checkboxes.length) throw new Error('Consent checkbox not found');
+  await checkboxes.at(-1).click();
+  await new Promise((r) => setTimeout(r, 300));
 
   const state = await page.evaluate(() => {
     const dialog = document.querySelector('[role="dialog"]');
     const submit = dialog && Array.from(dialog.querySelectorAll('button')).find((el) => (el.textContent ?? '').trim() === 'Submit');
+    const checks = dialog ? Array.from(dialog.querySelectorAll('button[role="checkbox"]')).map((el) => ({
+      checked: el.getAttribute('aria-checked'),
+      state: el.getAttribute('data-state'),
+    })) : [];
     return {
       submitDisabled: submit instanceof HTMLButtonElement ? submit.disabled : null,
       submitClass: submit?.className ?? null,
+      checks,
       selectedText: dialog ? (dialog.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 1500) : null,
     };
   });
@@ -107,8 +119,9 @@ try {
     const submit = dialog && Array.from(dialog.querySelectorAll('button')).find((el) => (el.textContent ?? '').trim() === 'Submit');
     if (!(submit instanceof HTMLButtonElement)) throw new Error('Submit button not found');
     if (submit.disabled) throw new Error('Submit remained disabled after synthetic form completion');
-    submit.click();
+    submit.setAttribute('data-govtract-submit', 'true');
   });
+  await page.click('[data-govtract-submit="true"]');
   await new Promise((r) => setTimeout(r, 1500));
 
   console.log('CAPTURED', JSON.stringify(captured));
