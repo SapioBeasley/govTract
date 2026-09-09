@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { cache } from "react";
 
 import { getDb } from "@/lib/db/client";
 import {
@@ -68,7 +69,11 @@ export type OpportunityDetail = {
   } | null;
 };
 
-export async function getOpportunityDetail(id: string): Promise<OpportunityDetail | null> {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const getOpportunityDetail = cache(async (id: string): Promise<OpportunityDetail | null> => {
+  if (!UUID_PATTERN.test(id)) return null;
+
   const db = getDb();
 
   const [opportunity] = await db
@@ -158,4 +163,4 @@ export async function getOpportunityDetail(id: string): Promise<OpportunityDetai
     documents,
     sourceRecord: sourceRecordRows[0] ?? null,
   };
-}
+});
