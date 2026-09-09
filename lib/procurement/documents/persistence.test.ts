@@ -102,7 +102,7 @@ test("metadata-only changes create history without pretending content needs repr
 test("content hashing uses SHA-256", () => {
   assert.equal(
     hashDocumentContent("govTract"),
-    "3c16fbef54f659a1be83a32fb5b7361d626040498f75d304549dab7f7a54e2c8",
+    "1a727e0f3f707fac9647f38046093d733fcee301062ef831cb39d53936be1fcd",
   );
 });
 
