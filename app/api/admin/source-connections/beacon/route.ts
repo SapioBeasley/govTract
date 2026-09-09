@@ -1,5 +1,8 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { getDb } from "@/lib/db/client";
+import { sourceConnections } from "@/lib/db/source-connections-schema";
 import {
   authenticateBeaconMagicLink,
   BeaconAuthError,
@@ -9,12 +12,17 @@ import {
   getSourceConnectionSummary,
   saveSourceConnection,
 } from "@/lib/source-connections/repository";
-import { getSourceSessionEncryptionKey } from "@/lib/source-connections/session";
+import {
+  createBrowserSessionEnvelope,
+  encryptBrowserSession,
+  getSourceSessionEncryptionKey,
+} from "@/lib/source-connections/session";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const PROVIDER = "beacon";
+const PREFLIGHT_PROVIDER = "__govtract_source_connection_preflight__";
 
 type ConnectRequest = {
   magicLink?: unknown;
@@ -118,29 +126,36 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify persistence prerequisites independently before consuming the one-time credential.
+  // Fully validate the encryption key before consuming a one-time Beacon login credential.
   try {
-    getSourceSessionEncryptionKey();
+    const key = getSourceSessionEncryptionKey();
+    encryptBrowserSession(createBrowserSessionEnvelope([]), key);
   } catch {
     return NextResponse.json(
       {
         error: {
-          code: "encryption_not_configured",
-          message: "Beacon session encryption is not configured on this deployment.",
+          code: "encryption_invalid",
+          message: "Beacon session encryption key is invalid on this deployment.",
         },
       },
       { status: 503 },
     );
   }
 
+  // Verify both read and write DB access before consuming the one-time credential. The
+  // update intentionally targets an impossible provider and therefore changes zero rows.
   try {
     await getSourceConnectionSummary(PROVIDER);
+    await getDb()
+      .update(sourceConnections)
+      .set({ updatedAt: new Date() })
+      .where(eq(sourceConnections.provider, PREFLIGHT_PROVIDER));
   } catch {
     return NextResponse.json(
       {
         error: {
           code: "database_unavailable",
-          message: "Beacon connection storage cannot reach the database on this deployment.",
+          message: "Beacon connection storage is not writable on this deployment.",
         },
       },
       { status: 503 },
