@@ -1,0 +1,43 @@
+name: Issue 69 live Beacon auto registration
+
+on:
+  push:
+    branches:
+      - issue-69-beacon-auth-documents
+    paths:
+      - ".github/workflows/issue-69-live-auto-register.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-documents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
+      BEACON_AGENCY: city-of-houston
+      BEACON_AUTO_REGISTER: "true"
+      BEACON_ARTIFACT_DIR: .artifacts/beacon
+      BEACON_DOCUMENT_CONCURRENCY: "4"
+      BEACON_DOCUMENT_MAX_BYTES: "314572800"
+      BEACON_DOCUMENT_MAX_ERROR_RATE: "0.25"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run test:beacon-documents
+      - name: Retrieve, auto-register, and version Beacon documents
+        run: npm run ingest:beacon:documents
+      - name: Upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-69-auto-register-${{ github.run_id }}
+          path: .artifacts/beacon
+          if-no-files-found: warn
+          retention-days: 7
