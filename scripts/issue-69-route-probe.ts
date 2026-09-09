@@ -6,6 +6,8 @@ import { loadSourceConnectionSession } from "../lib/source-connections/repositor
 const sourceOpportunityId = "4bc0ff91-dee7-4859-823e-345b29dde1e5";
 const sourceDocumentKey =
   "agency/281287c2-49c0-439e-81d7-315d13b0b4fb/solicitation/1788896991406_1d5d7e67-a41b-4643-9d52-4f98d97115e7/PR10359426DiaphramPumps.pdf";
+const userAgent =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36 govTract/0.1 beacon-documents";
 
 async function main() {
   const session = await loadSourceConnectionSession("beacon");
@@ -19,7 +21,7 @@ async function main() {
     headers: {
       accept: "*/*",
       cookie,
-      "user-agent": "govTract/0.1 beacon-route-code-probe",
+      "user-agent": userAgent,
     },
   });
 
