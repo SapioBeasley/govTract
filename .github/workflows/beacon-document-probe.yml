@@ -17,17 +17,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36'
+          curl -sS -A "$ua" -c /tmp/cookies.txt -D /tmp/session-headers.txt \
+            'https://www.beaconbid.com/api/rest/session' -o /tmp/session.json
+          echo '=== session'
+          head -c 1000 /tmp/session.json; echo
           payload='{"operationName":"IntrospectionQuery","variables":{},"query":"query IntrospectionQuery { __schema { queryType { fields { name args { name } } } mutationType { fields { name args { name } } } } }"}'
-          curl -sS --fail-with-body \
+          status=$(curl -sS -A "$ua" -b /tmp/cookies.txt -w '%{http_code}' \
             -H 'content-type: application/json' \
-            -H 'user-agent: govTract/0.1 public-procurement-indexer' \
             --data-binary "$payload" \
             'https://www.beaconbid.com/api/gql?operation=IntrospectionQuery' \
-            -o /tmp/schema.json
+            -o /tmp/schema.json)
+          echo "graphql_status=$status"
           python - <<'PY'
           import json,re
           data=json.load(open('/tmp/schema.json'))
-          print(json.dumps(data, indent=2)[:4000] if 'errors' in data else 'introspection_ok')
+          if 'errors' in data:
+              print(json.dumps(data, indent=2)[:5000])
           schema=data.get('data',{}).get('__schema') or {}
           for root in ('queryType','mutationType'):
               fields=(schema.get(root) or {}).get('fields') or []
