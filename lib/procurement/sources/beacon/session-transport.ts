@@ -10,6 +10,17 @@ function hasUnsafeHeaderCharacters(value: string) {
   return /[\u0000-\u001f\u007f]/.test(value);
 }
 
+function responseMessage(body: string) {
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; error?: unknown };
+    return [parsed.message, parsed.error]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ");
+  } catch {
+    return body;
+  }
+}
+
 export function isBeaconCookieDomain(domain: string) {
   return BEACON_HOSTS.has(normalizeDomain(domain));
 }
@@ -46,12 +57,18 @@ export function buildBeaconCookieHeader(session: BrowserSessionEnvelope) {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
 }
 
+export function isBeaconRegistrationRequiredResponse(status: number, body: string) {
+  if (status !== 400) return false;
+  const message = responseMessage(body);
+  return /register|registration/i.test(message) && /request/i.test(message);
+}
+
 export function isBeaconPermissionResponse(status: number, body: string) {
   if (![400, 401, 403].includes(status)) return false;
 
   try {
     const parsed = JSON.parse(body) as { code?: unknown; message?: unknown };
-    if (parsed.code === 103) return true;
+    if (parsed.code === 103 || parsed.code === "103") return true;
     return (
       typeof parsed.message === "string" &&
       /permission|authori[sz]|planholder|interest list/i.test(parsed.message)
