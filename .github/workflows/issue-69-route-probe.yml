@@ -25,4 +25,4 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npx tsx scripts/issue-69-route-probe.ts
-      # Temporary read-only probe; removed after the response code is classified.
+      # Temporary read-only access-state comparison; removed after classification.
