@@ -24,6 +24,7 @@ import {
   buildBeaconCookieHeader,
   getBeaconSessionCookies,
   isBeaconPermissionResponse,
+  isBeaconRegistrationRequiredResponse,
   parseBeaconSessionProbe,
 } from "../lib/procurement/sources/beacon/session-transport";
 import {
@@ -48,8 +49,13 @@ const MAX_ERROR_RATE = Number(process.env.BEACON_DOCUMENT_MAX_ERROR_RATE ?? "0.2
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36 govTract/0.1 beacon-documents";
 
-type RetrievalErrorKind = "auth_required" | "network" | "http" | "size";
-type SkipReason = "already_hashed" | "unsupported" | "too_large";
+type RetrievalErrorKind =
+  | "auth_required"
+  | "registration_required"
+  | "network"
+  | "http"
+  | "size";
+type SkipReason = "already_hashed" | "unsupported" | "too_large" | "registration_required";
 
 class DocumentRetrievalError extends Error {
   constructor(
@@ -110,6 +116,18 @@ function classifyError(error: unknown): RetrievalErrorKind {
   if (error instanceof DocumentRetrievalError) return error.kind;
   if (error instanceof TypeError) return "network";
   return "http";
+}
+
+function baseDocument(row: DocumentRow) {
+  return enrichBeaconDocumentMetadata({
+    sourceDocumentKey: row.sourceDocumentKey,
+    sourceDocumentId: row.sourceDocumentId,
+    name: row.name,
+    url: row.url,
+    mimeType: row.mimeType,
+    fileSizeBytes: row.fileSizeBytes,
+    sourceMetadata: row.sourceMetadata,
+  });
 }
 
 function toPuppeteerCookies(session: BrowserSessionEnvelope) {
@@ -356,15 +374,7 @@ async function retrieveDocument(
   row: DocumentRow,
   getBeaconCookieHeader: () => Promise<string>,
 ): Promise<RetrievedDocument> {
-  const base = enrichBeaconDocumentMetadata({
-    sourceDocumentKey: row.sourceDocumentKey,
-    sourceDocumentId: row.sourceDocumentId,
-    name: row.name,
-    url: row.url,
-    mimeType: row.mimeType,
-    fileSizeBytes: row.fileSizeBytes,
-    sourceMetadata: row.sourceMetadata,
-  });
+  const base = baseDocument(row);
 
   if (!isSupportedDocumentType(base)) {
     return { document: base, bytesRead: 0, attemptedDownload: false, skipReason: "unsupported" };
@@ -406,6 +416,12 @@ async function retrieveDocument(
 
   if (!response.ok) {
     const body = (await response.text()).slice(0, 1000);
+    if (isBeaconRegistrationRequiredResponse(response.status, body)) {
+      throw new DocumentRetrievalError(
+        "Beacon requires solicitation registration before document retrieval.",
+        "registration_required",
+      );
+    }
     if (isBeaconPermissionResponse(response.status, body)) {
       throw new DocumentRetrievalError(
         `Beacon denied supplier document access (HTTP ${response.status}); reconnect Beacon in govTract.`,
@@ -521,6 +537,7 @@ async function main() {
     kind: RetrievalErrorKind;
     error: string;
   }> = [];
+  const registrationRequiredOpportunities = new Set<string>();
   let downloaded = 0;
   let attemptedDownloads = 0;
   let presignedRedirectCount = 0;
@@ -529,26 +546,46 @@ async function main() {
   let skippedAlreadyHashed = 0;
   let skippedUnsupported = 0;
   let skippedTooLarge = 0;
+  let registrationRequiredDocumentCount = 0;
+  let registrationRequiredAttemptCount = 0;
   let authRequiredCount = 0;
 
   for (const [opportunityId, documents] of byOpportunity) {
+    let registrationRequired = false;
+
     const retrieved = await mapConcurrent(documents, CONCURRENCY, async (row) => {
+      if (registrationRequired) {
+        return {
+          document: baseDocument(row),
+          bytesRead: 0,
+          attemptedDownload: false,
+          skipReason: "registration_required",
+          errorKind: "registration_required",
+        } satisfies RetrievedDocument;
+      }
+
       try {
         return await retrieveDocument(row, getBeaconCookieHeader);
       } catch (error) {
         const message = errorText(error);
         const kind = classifyError(error);
+
+        if (kind === "registration_required") {
+          registrationRequired = true;
+          registrationRequiredOpportunities.add(opportunityId);
+          return {
+            document: baseDocument(row),
+            bytesRead: 0,
+            attemptedDownload: true,
+            skipReason: "registration_required",
+            error: message,
+            errorKind: kind,
+          } satisfies RetrievedDocument;
+        }
+
         errors.push({ opportunityId, sourceDocumentKey: row.sourceDocumentKey, kind, error: message });
         return {
-          document: enrichBeaconDocumentMetadata({
-            sourceDocumentKey: row.sourceDocumentKey,
-            sourceDocumentId: row.sourceDocumentId,
-            name: row.name,
-            url: row.url,
-            mimeType: row.mimeType,
-            fileSizeBytes: row.fileSizeBytes,
-            sourceMetadata: row.sourceMetadata,
-          }),
+          document: baseDocument(row),
           bytesRead: 0,
           attemptedDownload: true,
           error: message,
@@ -556,6 +593,12 @@ async function main() {
         } satisfies RetrievedDocument;
       }
     });
+
+    if (registrationRequired) {
+      console.warn(
+        `BEACON_DOCUMENT_REGISTRATION_REQUIRED opportunity=${opportunityId} sourceOpportunity=${documents[0]?.sourceOpportunityId ?? "unknown"}`,
+      );
+    }
 
     for (const result of retrieved) {
       processedDocuments += 1;
@@ -566,8 +609,12 @@ async function main() {
       if (result.skipReason === "already_hashed") skippedAlreadyHashed += 1;
       if (result.skipReason === "unsupported") skippedUnsupported += 1;
       if (result.skipReason === "too_large") skippedTooLarge += 1;
+      if (result.skipReason === "registration_required") registrationRequiredDocumentCount += 1;
+      if (result.errorKind === "registration_required" && result.attemptedDownload) {
+        registrationRequiredAttemptCount += 1;
+      }
       if (result.errorKind === "auth_required") authRequiredCount += 1;
-      if (result.error) {
+      if (result.error && result.errorKind !== "registration_required") {
         console.error(
           `BEACON_DOCUMENT_ERROR kind=${result.errorKind ?? "unknown"} opportunity=${opportunityId} key=${result.document.sourceDocumentKey} ${result.error}`,
         );
@@ -608,7 +655,12 @@ async function main() {
   }
 
   const retrievalErrorCount = errors.length;
-  const errorRate = attemptedDownloads > 0 ? retrievalErrorCount / attemptedDownloads : 0;
+  const effectiveAttemptedDownloads = Math.max(
+    0,
+    attemptedDownloads - registrationRequiredAttemptCount,
+  );
+  const errorRate =
+    effectiveAttemptedDownloads > 0 ? retrievalErrorCount / effectiveAttemptedDownloads : 0;
   const summary = {
     source: SOURCE,
     agency: AGENCY_SLUG,
@@ -617,12 +669,17 @@ async function main() {
     documentCount: rows.length,
     processedDocuments,
     attemptedDownloads,
+    effectiveAttemptedDownloads,
     downloaded,
     presignedRedirectCount,
     bytesRead,
     skippedAlreadyHashed,
     skippedUnsupported,
     skippedTooLarge,
+    registrationRequiredOpportunityCount: registrationRequiredOpportunities.size,
+    registrationRequiredDocumentCount,
+    registrationRequiredAttemptCount,
+    partialDocumentAccess: registrationRequiredOpportunities.size > 0,
     retrievalErrorCount,
     authRequiredCount,
     errorRate,
@@ -659,13 +716,17 @@ async function main() {
     );
   }
 
-  if (attemptedDownloads > 0 && downloaded === 0 && retrievalErrorCount > 0) {
+  if (
+    effectiveAttemptedDownloads > 0 &&
+    downloaded === 0 &&
+    retrievalErrorCount > 0
+  ) {
     throw new Error(
-      `Beacon document retrieval failed systemically: 0/${attemptedDownloads} attempted downloads succeeded. See documents/errors.json.`,
+      `Beacon document retrieval failed systemically: 0/${effectiveAttemptedDownloads} non-registration download attempts succeeded. See documents/errors.json.`,
     );
   }
 
-  if (attemptedDownloads > 0 && errorRate > MAX_ERROR_RATE) {
+  if (effectiveAttemptedDownloads > 0 && errorRate > MAX_ERROR_RATE) {
     throw new Error(
       `Beacon document retrieval error rate ${(errorRate * 100).toFixed(1)}% exceeded BEACON_DOCUMENT_MAX_ERROR_RATE=${MAX_ERROR_RATE}. See documents/errors.json.`,
     );
