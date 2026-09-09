@@ -28,6 +28,8 @@ type ConnectRequest = {
   magicLink?: unknown;
 };
 
+type AuthenticatedBeacon = Awaited<ReturnType<typeof authenticateBeaconMagicLink>>;
+
 function publicSummary(
   summary: Awaited<ReturnType<typeof getSourceConnectionSummary>>,
 ) {
@@ -126,7 +128,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Fully validate the encryption key before consuming a one-time Beacon login credential.
   try {
     const key = getSourceSessionEncryptionKey();
     encryptBrowserSession(createBrowserSessionEnvelope([]), key);
@@ -142,9 +143,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Exercise the same encrypted insert + read-back path used for a real connection, then
-  // remove the disposable row before touching Beacon. This prevents one-time login links
-  // from being consumed when the deployment can read the table but cannot persist rows.
   try {
     const preflight = await saveSourceConnection({
       provider: PREFLIGHT_PROVIDER,
@@ -160,13 +158,12 @@ export async function POST(request: Request) {
       .delete(sourceConnections)
       .where(eq(sourceConnections.provider, PREFLIGHT_PROVIDER));
   } catch {
-    // Best-effort cleanup in case the insert succeeded but a later preflight step failed.
     try {
       await getDb()
         .delete(sourceConnections)
         .where(eq(sourceConnections.provider, PREFLIGHT_PROVIDER));
     } catch {
-      // Never expose database errors or credential material to the client.
+      // Best-effort cleanup only.
     }
 
     return NextResponse.json(
@@ -180,19 +177,10 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const authenticated = await authenticateBeaconMagicLink(body.magicLink);
-    const summary = await saveSourceConnection({
-      provider: PROVIDER,
-      accountIdentifier: authenticated.accountIdentifier,
-      session: authenticated.session,
-      metadata: {
-        authMethod: "magic_link",
-        beaconRole: authenticated.role,
-      },
-    });
+  let authenticated: AuthenticatedBeacon;
 
-    return NextResponse.json({ connection: publicSummary(summary) });
+  try {
+    authenticated = await authenticateBeaconMagicLink(body.magicLink);
   } catch (error) {
     if (error instanceof BeaconAuthError) {
       const status =
@@ -213,14 +201,37 @@ export async function POST(request: Request) {
       );
     }
 
-    // Do not log the exception text here: upstream browser/network exceptions can contain
-    // the one-time magic URL. The response intentionally contains no credential material.
-    console.error("Beacon connection failed with an unexpected server error");
+    console.error("Beacon authentication failed with an unexpected server error");
     return NextResponse.json(
       {
         error: {
-          code: "connection_failed",
-          message: "Beacon connected, but govTract could not save the session. Request a new login link and try again.",
+          code: "session_capture_failed",
+          message: "Beacon authenticated, but govTract could not capture a reusable supplier session. Request a new login link and try again.",
+        },
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const summary = await saveSourceConnection({
+      provider: PROVIDER,
+      accountIdentifier: authenticated.accountIdentifier,
+      session: authenticated.session,
+      metadata: {
+        authMethod: "magic_link",
+        beaconRole: authenticated.role,
+      },
+    });
+
+    return NextResponse.json({ connection: publicSummary(summary) });
+  } catch {
+    console.error("Beacon session persistence failed after successful authentication");
+    return NextResponse.json(
+      {
+        error: {
+          code: "session_persistence_failed",
+          message: "Beacon authenticated, but govTract could not persist the encrypted session. Request a new login link and try again.",
         },
       },
       { status: 500 },
