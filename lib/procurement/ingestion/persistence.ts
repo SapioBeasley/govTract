@@ -7,22 +7,17 @@ import {
   ingestionRuns,
   opportunities,
   opportunityClassifications,
-  opportunityDocuments,
   sourceRecords,
 } from "@/lib/db/schema";
+import {
+  persistOpportunityDocumentSet,
+  type PersistableDocument,
+} from "@/lib/procurement/documents/persistence";
+
+export type { PersistableDocument } from "@/lib/procurement/documents/persistence";
 
 export type IngestionStatus = "running" | "complete" | "partial" | "failed";
 export type SourceRecordChange = "inserted" | "updated" | "unchanged";
-
-export interface PersistableDocument {
-  sourceDocumentKey: string;
-  sourceDocumentId?: string | null;
-  name: string;
-  url?: string | null;
-  mimeType?: string | null;
-  fileSizeBytes?: number | null;
-  sourceMetadata: Record<string, unknown>;
-}
 
 export interface PersistableClassification {
   sourceClassificationKey: string;
@@ -289,53 +284,10 @@ export async function persistNormalizedOpportunity(input: {
 
   if (!opportunity) throw new Error(`Failed to upsert opportunity ${input.record.sourceRecordId}`);
 
-  const documentKeys: string[] = [];
-  for (const document of input.record.documents ?? []) {
-    documentKeys.push(document.sourceDocumentKey);
-    await db
-      .insert(opportunityDocuments)
-      .values({
-        opportunityId: opportunity.id,
-        sourceDocumentKey: document.sourceDocumentKey,
-        sourceDocumentId: document.sourceDocumentId,
-        name: document.name,
-        url: document.url,
-        mimeType: document.mimeType,
-        fileSizeBytes: document.fileSizeBytes,
-        sourceMetadata: document.sourceMetadata,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          opportunityDocuments.opportunityId,
-          opportunityDocuments.sourceDocumentKey,
-        ],
-        set: {
-          sourceDocumentId: document.sourceDocumentId,
-          name: document.name,
-          url: document.url,
-          mimeType: document.mimeType,
-          fileSizeBytes: document.fileSizeBytes,
-          sourceMetadata: document.sourceMetadata,
-          updatedAt: now,
-        },
-      });
-  }
-
-  if (documentKeys.length > 0) {
-    await db
-      .delete(opportunityDocuments)
-      .where(
-        and(
-          eq(opportunityDocuments.opportunityId, opportunity.id),
-          notInArray(opportunityDocuments.sourceDocumentKey, documentKeys),
-        ),
-      );
-  } else {
-    await db
-      .delete(opportunityDocuments)
-      .where(eq(opportunityDocuments.opportunityId, opportunity.id));
-  }
+  await persistOpportunityDocumentSet({
+    opportunityId: opportunity.id,
+    documents: input.record.documents ?? [],
+  });
 
   const classificationKeys: string[] = [];
   for (const classification of input.record.classifications ?? []) {
