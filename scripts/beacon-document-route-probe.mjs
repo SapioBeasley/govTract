@@ -16,7 +16,7 @@ try {
   page.on('request', (request) => {
     if (!interesting(request.url())) return;
     const post = request.postData();
-    console.log('REQ', request.method(), request.url(), post ? post.slice(0, 3000) : '');
+    console.log('REQ', request.method(), request.url(), post ? post.slice(0, 5000) : '');
   });
   page.on('response', (response) => {
     if (!interesting(response.url())) return;
@@ -28,23 +28,34 @@ try {
   console.log('PAGE', response?.status(), page.url());
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  const candidates = await page.evaluate((needle) => {
-    const all = Array.from(document.querySelectorAll('*'));
-    return all
-      .filter((el) => (el.textContent ?? '').trim() === needle)
-      .map((el) => ({
+  const structure = await page.evaluate((needle) => {
+    const exact = Array.from(document.querySelectorAll('*')).find(
+      (el) => (el.textContent ?? '').trim() === needle,
+    );
+    if (!exact) return { found: false };
+    const ancestors = [];
+    let el = exact;
+    for (let i = 0; i < 10 && el; i += 1, el = el.parentElement) {
+      const controls = Array.from(el.querySelectorAll('button,a,[role="button"]')).map((control) => ({
+        tag: control.tagName,
+        text: (control.textContent ?? '').trim().slice(0, 200),
+        title: control.getAttribute('title'),
+        ariaLabel: control.getAttribute('aria-label'),
+        href: control instanceof HTMLAnchorElement ? control.href : null,
+        className: typeof control.className === 'string' ? control.className : '',
+      }));
+      ancestors.push({
+        depth: i,
         tag: el.tagName,
-        text: (el.textContent ?? '').trim(),
-        href: el instanceof HTMLAnchorElement ? el.href : null,
-        role: el.getAttribute('role'),
         className: typeof el.className === 'string' ? el.className : '',
-        parentTag: el.parentElement?.tagName ?? null,
-        parentHref: el.parentElement instanceof HTMLAnchorElement ? el.parentElement.href : null,
-        parentRole: el.parentElement?.getAttribute('role') ?? null,
-      }))
-      .slice(0, 20);
+        role: el.getAttribute('role'),
+        controls: controls.slice(0, 10),
+        html: el.outerHTML.slice(0, 1800),
+      });
+    }
+    return { found: true, ancestors };
   }, wanted);
-  console.log('CANDIDATES', JSON.stringify(candidates));
+  console.log('STRUCTURE', JSON.stringify(structure));
 
   const clicked = await page.evaluate((needle) => {
     const exact = Array.from(document.querySelectorAll('*')).find(
@@ -52,14 +63,29 @@ try {
     );
     if (!exact) return { ok: false, reason: 'not-found' };
     let el = exact;
-    for (let i = 0; i < 6 && el; i += 1, el = el.parentElement) {
-      if (el instanceof HTMLAnchorElement || el instanceof HTMLButtonElement || el.getAttribute('role') === 'button' || typeof el.onclick === 'function') {
-        el.click();
-        return { ok: true, tag: el.tagName, href: el instanceof HTMLAnchorElement ? el.href : null, role: el.getAttribute('role') };
-      }
+    for (let i = 0; i < 10 && el; i += 1, el = el.parentElement) {
+      const controls = Array.from(el.querySelectorAll('button,a,[role="button"]'));
+      if (!controls.length) continue;
+      const preferred = controls.find((control) =>
+        /download|open|view|document|file/i.test([
+          control.getAttribute('aria-label') ?? '',
+          control.getAttribute('title') ?? '',
+          control.textContent ?? '',
+        ].join(' ')),
+      ) ?? controls[0];
+      preferred.click();
+      return {
+        ok: true,
+        depth: i,
+        tag: preferred.tagName,
+        text: (preferred.textContent ?? '').trim(),
+        title: preferred.getAttribute('title'),
+        ariaLabel: preferred.getAttribute('aria-label'),
+        href: preferred instanceof HTMLAnchorElement ? preferred.href : null,
+      };
     }
     exact.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    return { ok: true, tag: exact.tagName, fallback: true };
+    return { ok: true, fallback: true, tag: exact.tagName };
   }, wanted);
   console.log('CLICKED', JSON.stringify(clicked));
 
