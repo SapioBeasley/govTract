@@ -1,4 +1,4 @@
-CREATE TABLE public.ingestion_runs (
+CREATE TABLE IF NOT EXISTS public.ingestion_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source text NOT NULL,
   scope text NOT NULL,
@@ -22,10 +22,10 @@ CREATE TABLE public.ingestion_runs (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX ingestion_runs_source_scope_started_idx
+CREATE INDEX IF NOT EXISTS ingestion_runs_source_scope_started_idx
   ON public.ingestion_runs (source, scope, started_at DESC);
 
-CREATE TABLE public.ingestion_run_pages (
+CREATE TABLE IF NOT EXISTS public.ingestion_run_pages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   ingestion_run_id uuid NOT NULL REFERENCES public.ingestion_runs(id) ON DELETE CASCADE,
   page_number integer NOT NULL CHECK (page_number > 0),
@@ -38,10 +38,10 @@ CREATE TABLE public.ingestion_run_pages (
   UNIQUE (ingestion_run_id, page_number)
 );
 
-CREATE INDEX ingestion_run_pages_run_idx
+CREATE INDEX IF NOT EXISTS ingestion_run_pages_run_idx
   ON public.ingestion_run_pages (ingestion_run_id, page_number);
 
-CREATE TABLE public.ingestion_record_errors (
+CREATE TABLE IF NOT EXISTS public.ingestion_record_errors (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   ingestion_run_id uuid NOT NULL REFERENCES public.ingestion_runs(id) ON DELETE CASCADE,
   page_number integer NOT NULL CHECK (page_number > 0),
@@ -52,10 +52,10 @@ CREATE TABLE public.ingestion_record_errors (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX ingestion_record_errors_run_idx
+CREATE INDEX IF NOT EXISTS ingestion_record_errors_run_idx
   ON public.ingestion_record_errors (ingestion_run_id, page_number);
 
-CREATE TABLE public.source_records (
+CREATE TABLE IF NOT EXISTS public.source_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source text NOT NULL,
   source_record_id text NOT NULL,
@@ -74,12 +74,12 @@ CREATE TABLE public.source_records (
   UNIQUE (source, source_record_id)
 );
 
-CREATE INDEX source_records_source_agency_active_idx
+CREATE INDEX IF NOT EXISTS source_records_source_agency_active_idx
   ON public.source_records (source, source_agency, is_active);
-CREATE INDEX source_records_source_modified_idx
+CREATE INDEX IF NOT EXISTS source_records_source_modified_idx
   ON public.source_records (source, source_modified_at DESC);
 
-CREATE TABLE public.opportunities (
+CREATE TABLE IF NOT EXISTS public.opportunities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_record_id uuid NOT NULL UNIQUE REFERENCES public.source_records(id) ON DELETE CASCADE,
   source text NOT NULL,
@@ -108,11 +108,11 @@ CREATE TABLE public.opportunities (
   UNIQUE (source, source_opportunity_id)
 );
 
-CREATE INDEX opportunities_due_at_idx ON public.opportunities (due_at);
-CREATE INDEX opportunities_agency_status_idx ON public.opportunities (agency_slug, status);
-CREATE INDEX opportunities_source_active_idx ON public.opportunities (source, is_active);
+CREATE INDEX IF NOT EXISTS opportunities_due_at_idx ON public.opportunities (due_at);
+CREATE INDEX IF NOT EXISTS opportunities_agency_status_idx ON public.opportunities (agency_slug, status);
+CREATE INDEX IF NOT EXISTS opportunities_source_active_idx ON public.opportunities (source, is_active);
 
-CREATE TABLE public.opportunity_documents (
+CREATE TABLE IF NOT EXISTS public.opportunity_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   opportunity_id uuid NOT NULL REFERENCES public.opportunities(id) ON DELETE CASCADE,
   source_document_key text NOT NULL,
@@ -127,10 +127,10 @@ CREATE TABLE public.opportunity_documents (
   UNIQUE (opportunity_id, source_document_key)
 );
 
-CREATE INDEX opportunity_documents_opportunity_idx
+CREATE INDEX IF NOT EXISTS opportunity_documents_opportunity_idx
   ON public.opportunity_documents (opportunity_id);
 
-CREATE TABLE public.opportunity_classifications (
+CREATE TABLE IF NOT EXISTS public.opportunity_classifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   opportunity_id uuid NOT NULL REFERENCES public.opportunities(id) ON DELETE CASCADE,
   source_classification_key text NOT NULL,
@@ -143,5 +143,5 @@ CREATE TABLE public.opportunity_classifications (
   UNIQUE (opportunity_id, source_classification_key)
 );
 
-CREATE INDEX opportunity_classifications_scheme_code_idx
+CREATE INDEX IF NOT EXISTS opportunity_classifications_scheme_code_idx
   ON public.opportunity_classifications (scheme, code);
