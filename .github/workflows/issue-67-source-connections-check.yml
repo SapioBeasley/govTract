@@ -12,6 +12,23 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: govtract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d govtract"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/govtract
+      SOURCE_SESSION_ENCRYPTION_KEY: "7777777777777777777777777777777777777777777777777777777777777777"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +36,7 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm run db:migrate
       - run: npm run test:source-connections
       - run: npm run test:documents
       - run: npm run test:beacon-documents
