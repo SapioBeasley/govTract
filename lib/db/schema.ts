@@ -184,6 +184,9 @@ export const opportunityDocuments = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default(jsonObject),
+    isActive: boolean("is_active").notNull().default(true),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -193,6 +196,51 @@ export const opportunityDocuments = pgTable(
       table.sourceDocumentKey,
     ),
     index("opportunity_documents_opportunity_idx").on(table.opportunityId),
+    index("opportunity_documents_opportunity_active_idx").on(
+      table.opportunityId,
+      table.isActive,
+    ),
+  ],
+);
+
+export const opportunityDocumentVersions = pgTable(
+  "opportunity_document_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    opportunityDocumentId: uuid("opportunity_document_id")
+      .notNull()
+      .references(() => opportunityDocuments.id, { onDelete: "cascade" }),
+    versionNumber: integer("version_number").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    sourceVersionId: text("source_version_id"),
+    sourceModifiedAt: timestamp("source_modified_at", { withTimezone: true }),
+    isAmendment: boolean("is_amendment").notNull().default(false),
+    amendmentLabel: text("amendment_label"),
+    checksumSha256: text("checksum_sha256"),
+    retrievedAt: timestamp("retrieved_at", { withTimezone: true }),
+    storageMode: text("storage_mode").notNull().default("source"),
+    storageUri: text("storage_uri"),
+    contentPersisted: boolean("content_persisted").notNull().default(false),
+    name: text("name").notNull(),
+    url: text("url"),
+    mimeType: text("mime_type"),
+    fileSizeBytes: bigint("file_size_bytes", { mode: "number" }),
+    sourceMetadata: jsonb("source_metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(jsonObject),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("opportunity_document_versions_document_version_uidx").on(
+      table.opportunityDocumentId,
+      table.versionNumber,
+    ),
+    index("opportunity_document_versions_document_idx").on(
+      table.opportunityDocumentId,
+      table.versionNumber,
+    ),
+    index("opportunity_document_versions_checksum_idx").on(table.checksumSha256),
   ],
 );
 
