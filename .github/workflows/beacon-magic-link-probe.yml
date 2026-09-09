@@ -25,7 +25,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Verify one-time secret is configured
         shell: bash
@@ -38,7 +37,7 @@ jobs:
           echo "Beacon magic-link secret is configured and masked."
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Probe Beacon authentication and individual document access
         run: node scripts/beacon-magic-link-probe.mjs
