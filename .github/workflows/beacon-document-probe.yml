@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/beacon-document-probe.yml"
+      - "scripts/beacon-document-route-probe.mjs"
 
 permissions:
   contents: read
@@ -11,34 +12,12 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Inspect Beacon GraphQL document operations
-        shell: bash
-        run: |
-          set -euo pipefail
-          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36'
-          curl -sS -A "$ua" -c /tmp/cookies.txt -D /tmp/session-headers.txt \
-            'https://www.beaconbid.com/api/rest/session' -o /tmp/session.json
-          echo '=== session'
-          head -c 1000 /tmp/session.json; echo
-          payload='{"operationName":"IntrospectionQuery","variables":{},"query":"query IntrospectionQuery { __schema { queryType { fields { name args { name } } } mutationType { fields { name args { name } } } } }"}'
-          status=$(curl -sS -A "$ua" -b /tmp/cookies.txt -w '%{http_code}' \
-            -H 'content-type: application/json' \
-            --data-binary "$payload" \
-            'https://www.beaconbid.com/api/gql?operation=IntrospectionQuery' \
-            -o /tmp/schema.json)
-          echo "graphql_status=$status"
-          python - <<'PY'
-          import json,re
-          data=json.load(open('/tmp/schema.json'))
-          if 'errors' in data:
-              print(json.dumps(data, indent=2)[:5000])
-          schema=data.get('data',{}).get('__schema') or {}
-          for root in ('queryType','mutationType'):
-              fields=(schema.get(root) or {}).get('fields') or []
-              for f in fields:
-                  hay=f.get('name','')+' '+' '.join(a.get('name','') for a in f.get('args') or [])
-                  if re.search(r'(file|document|download|sign|s3|object|attachment|storage)', hay, re.I):
-                      print(root, f.get('name'), [a.get('name') for a in f.get('args') or []])
-          PY
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Capture Beacon document download route
+        run: node scripts/beacon-document-route-probe.mjs
