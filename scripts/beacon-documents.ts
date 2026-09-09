@@ -14,7 +14,10 @@ import {
   persistOpportunityDocumentSet,
   type PersistableDocument,
 } from "../lib/procurement/documents/persistence";
-import { enrichBeaconDocumentMetadata } from "../lib/procurement/sources/beacon/documents";
+import {
+  enrichBeaconDocumentMetadata,
+  resolveBeaconDocumentDownloadUrl,
+} from "../lib/procurement/sources/beacon/documents";
 
 const SOURCE = "beacon";
 const AGENCY_SLUG = process.env.BEACON_AGENCY ?? "city-of-houston";
@@ -24,6 +27,21 @@ const MAX_BYTES = Number(process.env.BEACON_DOCUMENT_MAX_BYTES ?? String(300 * 1
 const CONCURRENCY = Math.max(1, Number(process.env.BEACON_DOCUMENT_CONCURRENCY ?? "4"));
 const REQUEST_TIMEOUT_MS = Number(process.env.BEACON_DOCUMENT_TIMEOUT_MS ?? "120000");
 const FORCE_REHASH = process.env.BEACON_DOCUMENT_FORCE_REHASH === "true";
+const SESSION_COOKIE = process.env.BEACON_SESSION_COOKIE?.trim() || null;
+const MAX_ERROR_RATE = Number(process.env.BEACON_DOCUMENT_MAX_ERROR_RATE ?? "0.25");
+
+type RetrievalErrorKind = "auth_required" | "network" | "http" | "size";
+type SkipReason = "already_hashed" | "unsupported" | "too_large";
+
+class DocumentRetrievalError extends Error {
+  constructor(
+    message: string,
+    readonly kind: RetrievalErrorKind,
+  ) {
+    super(message);
+    this.name = "DocumentRetrievalError";
+  }
+}
 
 interface DocumentRow {
   documentId: string;
@@ -41,8 +59,10 @@ interface DocumentRow {
 interface RetrievedDocument {
   document: PersistableDocument;
   bytesRead: number;
-  skippedDownload: boolean;
+  attemptedDownload: boolean;
+  skipReason?: SkipReason;
   error?: string;
+  errorKind?: RetrievalErrorKind;
 }
 
 interface ReprocessSignal {
@@ -57,7 +77,9 @@ interface ReprocessSignal {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.stack ?? error.message : String(error);
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? `\nCaused by: ${error.cause.stack ?? error.cause.message}` : "";
+  return `${error.stack ?? error.message}${cause}`;
 }
 
 function numberHeader(value: string | null) {
@@ -66,11 +88,30 @@ function numberHeader(value: string | null) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null;
 }
 
+function classifyError(error: unknown): RetrievalErrorKind {
+  if (error instanceof DocumentRetrievalError) return error.kind;
+  if (error instanceof TypeError) return "network";
+  return "http";
+}
+
+function isPermissionResponse(status: number, body: string) {
+  if (![400, 401, 403].includes(status)) return false;
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; message?: unknown };
+    if (parsed.code === 103) return true;
+    return typeof parsed.message === "string" && /permission|authori[sz]|planholder|interest list/i.test(parsed.message);
+  } catch {
+    return /permission|authori[sz]|planholder|interest list/i.test(body);
+  }
+}
+
 async function fetchWithTimeout(url: string, init?: RequestInit) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(init?.headers);
   headers.set("user-agent", "govTract/0.1 public-procurement-indexer");
+  headers.set("accept", "*/*");
+  if (SESSION_COOKIE) headers.set("cookie", SESSION_COOKIE);
 
   try {
     return await fetch(url, {
@@ -100,8 +141,9 @@ async function hashResponseBody(response: Response) {
       bytesRead += value.byteLength;
       if (bytesRead > MAX_BYTES) {
         await reader.cancel("govTract document size bound exceeded");
-        throw new Error(
+        throw new DocumentRetrievalError(
           `Document exceeded BEACON_DOCUMENT_MAX_BYTES (${MAX_BYTES} bytes) while streaming`,
+          "size",
         );
       }
       hash.update(value);
@@ -136,43 +178,54 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
     sourceMetadata: row.sourceMetadata,
   });
 
-  if (!base.url) {
-    return {
-      document: base,
-      bytesRead: 0,
-      skippedDownload: true,
-      error: "No resolvable Beacon document URL",
-    };
-  }
-
   if (!isSupportedDocumentType(base)) {
-    return { document: base, bytesRead: 0, skippedDownload: true };
+    return { document: base, bytesRead: 0, attemptedDownload: false, skipReason: "unsupported" };
   }
 
   if (base.fileSizeBytes && base.fileSizeBytes > MAX_BYTES) {
-    return {
-      document: base,
-      bytesRead: 0,
-      skippedDownload: true,
-      error: `Source metadata reports ${base.fileSizeBytes} bytes, above BEACON_DOCUMENT_MAX_BYTES=${MAX_BYTES}`,
-    };
+    return { document: base, bytesRead: 0, attemptedDownload: false, skipReason: "too_large" };
   }
 
   const checksum = await latestChecksum(row.documentId);
   if (checksum && !FORCE_REHASH) {
-    return { document: base, bytesRead: 0, skippedDownload: true };
+    return { document: base, bytesRead: 0, attemptedDownload: false, skipReason: "already_hashed" };
   }
 
-  const response = await fetchWithTimeout(base.url, { method: "GET" });
+  const downloadUrl = resolveBeaconDocumentDownloadUrl({
+    sourceOpportunityId: row.sourceOpportunityId,
+    sourceDocumentKey: row.sourceDocumentKey,
+  });
+  if (!downloadUrl) {
+    throw new DocumentRetrievalError("Could not build Beacon planholder document route", "http");
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(downloadUrl, { method: "GET" });
+  } catch (error) {
+    throw new DocumentRetrievalError(`Beacon document request failed: ${errorText(error)}`, "network");
+  }
+
   if (!response.ok) {
-    throw new Error(`Beacon document returned HTTP ${response.status}: ${base.url}`);
+    const body = (await response.text()).slice(0, 1000);
+    if (isPermissionResponse(response.status, body)) {
+      throw new DocumentRetrievalError(
+        `Beacon requires authorized planholder access for this document (HTTP ${response.status}). Configure BEACON_SESSION_COOKIE with an authorized Beacon session.`,
+        "auth_required",
+      );
+    }
+    throw new DocumentRetrievalError(
+      `Beacon document returned HTTP ${response.status}: ${body || response.statusText}`,
+      "http",
+    );
   }
 
   const responseSize = numberHeader(response.headers.get("content-length"));
   if (responseSize && responseSize > MAX_BYTES) {
     await response.body?.cancel();
-    throw new Error(
+    throw new DocumentRetrievalError(
       `Beacon document reports ${responseSize} bytes, above BEACON_DOCUMENT_MAX_BYTES=${MAX_BYTES}`,
+      "size",
     );
   }
 
@@ -190,7 +243,7 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
       contentPersisted: false,
     },
     bytesRead: hashed.bytesRead,
-    skippedDownload: false,
+    attemptedDownload: true,
   };
 }
 
@@ -250,11 +303,20 @@ async function main() {
   }
 
   const reprocess: ReprocessSignal[] = [];
-  const errors: Array<{ opportunityId: string; sourceDocumentKey: string; error: string }> = [];
+  const errors: Array<{
+    opportunityId: string;
+    sourceDocumentKey: string;
+    kind: RetrievalErrorKind;
+    error: string;
+  }> = [];
   let downloaded = 0;
-  let skippedDownloads = 0;
+  let attemptedDownloads = 0;
   let bytesRead = 0;
   let processedDocuments = 0;
+  let skippedAlreadyHashed = 0;
+  let skippedUnsupported = 0;
+  let skippedTooLarge = 0;
+  let authRequiredCount = 0;
 
   for (const [opportunityId, documents] of byOpportunity) {
     const retrieved = await mapConcurrent(documents, CONCURRENCY, async (row) => {
@@ -262,7 +324,8 @@ async function main() {
         return await retrieveDocument(row);
       } catch (error) {
         const message = errorText(error);
-        errors.push({ opportunityId, sourceDocumentKey: row.sourceDocumentKey, error: message });
+        const kind = classifyError(error);
+        errors.push({ opportunityId, sourceDocumentKey: row.sourceDocumentKey, kind, error: message });
         return {
           document: enrichBeaconDocumentMetadata({
             sourceDocumentKey: row.sourceDocumentKey,
@@ -274,8 +337,9 @@ async function main() {
             sourceMetadata: row.sourceMetadata,
           }),
           bytesRead: 0,
-          skippedDownload: true,
+          attemptedDownload: true,
           error: message,
+          errorKind: kind,
         } satisfies RetrievedDocument;
       }
     });
@@ -283,11 +347,15 @@ async function main() {
     for (const result of retrieved) {
       processedDocuments += 1;
       bytesRead += result.bytesRead;
-      if (result.skippedDownload) skippedDownloads += 1;
-      else downloaded += 1;
+      if (result.attemptedDownload) attemptedDownloads += 1;
+      if (result.attemptedDownload && !result.error) downloaded += 1;
+      if (result.skipReason === "already_hashed") skippedAlreadyHashed += 1;
+      if (result.skipReason === "unsupported") skippedUnsupported += 1;
+      if (result.skipReason === "too_large") skippedTooLarge += 1;
+      if (result.errorKind === "auth_required") authRequiredCount += 1;
       if (result.error) {
         console.error(
-          `BEACON_DOCUMENT_ERROR opportunity=${opportunityId} key=${result.document.sourceDocumentKey} ${result.error}`,
+          `BEACON_DOCUMENT_ERROR kind=${result.errorKind ?? "unknown"} opportunity=${opportunityId} key=${result.document.sourceDocumentKey} ${result.error}`,
         );
       }
     }
@@ -321,6 +389,8 @@ async function main() {
     }
   }
 
+  const retrievalErrorCount = errors.length;
+  const errorRate = attemptedDownloads > 0 ? retrievalErrorCount / attemptedDownloads : 0;
   const summary = {
     source: SOURCE,
     agency: AGENCY_SLUG,
@@ -328,14 +398,21 @@ async function main() {
     opportunityCount: byOpportunity.size,
     documentCount: rows.length,
     processedDocuments,
+    attemptedDownloads,
     downloaded,
-    skippedDownloads,
     bytesRead,
-    errorCount: errors.length,
+    skippedAlreadyHashed,
+    skippedUnsupported,
+    skippedTooLarge,
+    retrievalErrorCount,
+    authRequiredCount,
+    errorRate,
+    maxErrorRate: MAX_ERROR_RATE,
     reprocessCount: reprocess.length,
     maxBytes: MAX_BYTES,
     concurrency: CONCURRENCY,
     forceRehash: FORCE_REHASH,
+    authorizedSessionConfigured: Boolean(SESSION_COOKIE),
   };
 
   await writeFile(
@@ -355,6 +432,24 @@ async function main() {
   );
 
   console.log(`BEACON_DOCUMENT_SUMMARY ${JSON.stringify(summary)}`);
+
+  if (authRequiredCount > 0 && !SESSION_COOKIE) {
+    throw new Error(
+      `Beacon requires authorized planholder access for ${authRequiredCount} document(s). Add an authorized Beacon Cookie header as the GitHub Actions secret BEACON_SESSION_COOKIE before running document retrieval.`,
+    );
+  }
+
+  if (attemptedDownloads > 0 && downloaded === 0 && retrievalErrorCount > 0) {
+    throw new Error(
+      `Beacon document retrieval failed systemically: 0/${attemptedDownloads} attempted downloads succeeded. See documents/errors.json.`,
+    );
+  }
+
+  if (attemptedDownloads > 0 && errorRate > MAX_ERROR_RATE) {
+    throw new Error(
+      `Beacon document retrieval error rate ${(errorRate * 100).toFixed(1)}% exceeded BEACON_DOCUMENT_MAX_ERROR_RATE=${MAX_ERROR_RATE}. See documents/errors.json.`,
+    );
+  }
 }
 
 main()

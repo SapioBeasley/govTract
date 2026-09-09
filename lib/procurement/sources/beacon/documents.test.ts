@@ -5,30 +5,28 @@ import {
   classifyBeaconAmendment,
   enrichBeaconDocumentMetadata,
   normalizeBeaconEtag,
+  resolveBeaconDocumentDownloadUrl,
   resolveBeaconDocumentUrl,
 } from "./documents";
 
-test("resolves Beacon bucket and key into a deterministic source URL", () => {
-  assert.equal(
-    resolveBeaconDocumentUrl({
-      sourceDocumentKey: "agency/a/solicitation/b/My File.pdf",
-      sourceMetadata: {
-        bucket: "documents.beaconbid.com",
-        key: "agency/a/solicitation/b/My File.pdf",
-      },
-    }),
-    "https://documents.beaconbid.com/agency/a/solicitation/b/My%20File.pdf",
-  );
+test("does not treat Beacon storage buckets as public URLs", () => {
+  assert.equal(resolveBeaconDocumentUrl({}), null);
 });
 
 test("preserves an explicit document URL", () => {
   assert.equal(
-    resolveBeaconDocumentUrl({
-      sourceDocumentKey: "ignored",
-      sourceMetadata: { bucket: "documents.beaconbid.com", key: "ignored" },
-      existingUrl: "https://example.test/document.pdf",
-    }),
+    resolveBeaconDocumentUrl({ existingUrl: "https://example.test/document.pdf" }),
     "https://example.test/document.pdf",
+  );
+});
+
+test("builds the Beacon planholder document route with the full key encoded", () => {
+  assert.equal(
+    resolveBeaconDocumentDownloadUrl({
+      sourceOpportunityId: "abc-123",
+      sourceDocumentKey: "agency/a/solicitation/b/My File.pdf",
+    }),
+    "https://www.beaconbid.com/api/planholder/document/abc-123/agency%2Fa%2Fsolicitation%2Fb%2FMy%20File.pdf",
   );
 });
 
@@ -47,7 +45,7 @@ test("classifies Beacon amendments from names or detail labels", () => {
   );
 });
 
-test("enriches Beacon document metadata without storing file content", () => {
+test("enriches Beacon document metadata without inventing a public bucket URL", () => {
   const enriched = enrichBeaconDocumentMetadata({
     sourceDocumentKey: "agency/a/solicitation/b/Amendment1.pdf",
     name: "Amendment 1.pdf",
@@ -61,10 +59,7 @@ test("enriches Beacon document metadata without storing file content", () => {
     },
   });
 
-  assert.equal(
-    enriched.url,
-    "https://documents.beaconbid.com/agency/a/solicitation/b/Amendment1.pdf",
-  );
+  assert.equal(enriched.url, null);
   assert.equal(enriched.sourceModifiedAt?.toISOString(), "2026-09-01T12:30:00.000Z");
   assert.equal(enriched.isAmendment, true);
   assert.equal(enriched.amendmentLabel, "Addendum");
