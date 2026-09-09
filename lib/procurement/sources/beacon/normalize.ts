@@ -5,6 +5,7 @@ import {
   type PersistableOpportunityRecord,
   type PersistableSourceRecord,
 } from "@/lib/procurement/ingestion/persistence";
+import { enrichBeaconDocumentMetadata } from "@/lib/procurement/sources/beacon/documents";
 
 export interface BeaconDate {
   utcDate?: string;
@@ -112,7 +113,7 @@ function normalizeDocuments(value: unknown): PersistableDocument[] {
       beaconKey ?? sourceDocumentId ?? url ?? `${name}:${hashPayload(document).slice(0, 16)}`;
 
     return [
-      {
+      enrichBeaconDocumentMetadata({
         sourceDocumentKey,
         sourceDocumentId,
         name,
@@ -120,7 +121,7 @@ function normalizeDocuments(value: unknown): PersistableDocument[] {
         mimeType,
         fileSizeBytes,
         sourceMetadata: document,
-      },
+      }),
     ];
   });
 }
