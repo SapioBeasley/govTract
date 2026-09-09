@@ -61,17 +61,19 @@ export function buildDocumentExtractionIdentity(input: {
 }
 
 function truncateUtf8(content: string, maxBytes: number) {
-  if (Buffer.byteLength(content, "utf8") <= maxBytes) return { content, truncated: false };
+  const totalBytes = Buffer.byteLength(content, "utf8");
+  if (totalBytes <= maxBytes) return { content, truncated: false };
 
-  let low = 0;
-  let high = content.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(content.slice(0, mid), "utf8") <= maxBytes) low = mid;
-    else high = mid - 1;
+  let byteCount = 0;
+  let end = 0;
+  for (const character of content) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (byteCount + characterBytes > maxBytes) break;
+    byteCount += characterBytes;
+    end += character.length;
   }
 
-  return { content: content.slice(0, low), truncated: true };
+  return { content: content.slice(0, end), truncated: true };
 }
 
 export function prepareExtractionSegments(
@@ -108,7 +110,6 @@ export function prepareExtractionSegments(
     const bounded = truncateUtf8(source.content, allowedBytes);
     const content = bounded.content;
     const byteCount = Buffer.byteLength(content, "utf8");
-    const segmentWasByteLimited = sourceBytes > maxSegmentBytes;
     const documentWasByteLimited = sourceBytes > remainingDocumentBytes;
 
     segments.push({
@@ -128,7 +129,6 @@ export function prepareExtractionSegments(
     if (bounded.truncated) {
       truncationReason = documentWasByteLimited ? "document_byte_limit" : "segment_byte_limit";
       if (documentWasByteLimited) break;
-      if (segmentWasByteLimited) continue;
     }
   }
 
