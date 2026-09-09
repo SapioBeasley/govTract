@@ -53,64 +53,63 @@ try {
       if (!(button instanceof HTMLElement)) throw new Error(`Dropdown button not found: ${text}`);
       button.setAttribute('data-govtract-dropdown', marker);
     }, { text: buttonText, marker });
-
     await page.click(`[data-govtract-dropdown="${marker}"]`);
     await page.waitForSelector('[role="option"]', { visible: true, timeout: 3000 });
-    const options = await page.$$eval('[role="option"]', (els) => els.map((el) => ({
-      text: (el.textContent ?? '').trim(),
-      ariaSelected: el.getAttribute('aria-selected'),
-      ariaDisabled: el.getAttribute('aria-disabled'),
-      role: el.getAttribute('role'),
-    })).filter((x) => x.text));
-    console.log('OPTIONS', buttonText, JSON.stringify(options.slice(0, 12)));
-
     const handles = await page.$$('[role="option"]');
     if (!handles.length) throw new Error(`No selectable option found for ${buttonText}`);
     await handles[0].click();
-    await new Promise((r) => setTimeout(r, 350));
-
-    const selected = await page.$eval(`[data-govtract-dropdown="${marker}"]`, (el) => (el.textContent ?? '').trim().replace(/\s+/g, ' '));
-    console.log('SELECTED', buttonText, JSON.stringify(selected));
-    if (selected.includes(buttonText)) throw new Error(`Selection did not commit for ${buttonText}`);
+    await new Promise((r) => setTimeout(r, 300));
   }
 
   await chooseFirst('Select your location', 'location');
   await chooseFirst('Select your interest', 'interest');
-
   const checkboxes = await page.$$('[role="dialog"] button[role="checkbox"]');
   if (!checkboxes.length) throw new Error('Consent checkbox not found');
   await checkboxes.at(-1).click();
   await new Promise((r) => setTimeout(r, 300));
 
-  const state = await page.evaluate(() => {
-    const dialog = document.querySelector('[role="dialog"]');
-    const submit = dialog && Array.from(dialog.querySelectorAll('button')).find((el) => (el.textContent ?? '').trim() === 'Submit');
-    const checks = dialog ? Array.from(dialog.querySelectorAll('button[role="checkbox"]')).map((el) => ({
-      checked: el.getAttribute('aria-checked'),
-      state: el.getAttribute('data-state'),
-    })) : [];
-    return {
-      submitDisabled: submit instanceof HTMLButtonElement ? submit.disabled : null,
-      submitClass: submit?.className ?? null,
-      checks,
-      selectedText: dialog ? (dialog.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 1500) : null,
-    };
-  });
-  console.log('FORM_STATE', JSON.stringify(state));
-
-  let captured = null;
+  const followUpRequests = [];
+  let mutationCaptured = null;
   await page.setRequestInterception(true);
   page.on('request', (request) => {
     const url = request.url();
     const method = request.method();
-    const isBeaconMutation = /www\.beaconbid\.com\/api\//i.test(url) && !['GET', 'HEAD', 'OPTIONS'].includes(method);
-    if (isBeaconMutation) {
-      const postData = request.postData() ?? '';
-      captured = { method, url: safeUrl(url), postData };
-      console.log('BLOCKED_SUBMIT_REQUEST', method, safeUrl(url), postData.slice(0, 12000));
+    const postData = request.postData() ?? '';
+
+    if (url.includes('/api/gql?operation=createPlanholder')) {
+      mutationCaptured = { method, url: safeUrl(url), postData };
+      console.log('MOCKED_CREATE_PLANHOLDER', method, safeUrl(url), postData.slice(0, 12000));
+      void request.respond({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            createPlanholder: {
+              supplier: {
+                id: '00000000-0000-4000-8000-000000000001',
+                __typename: 'Supplier',
+              },
+              __typename: 'SolicitationRegistration',
+            },
+          },
+        }),
+      });
+      return;
+    }
+
+    const interestingFollowUp = /\/api\/planholder\/|amazonaws\.com|operation=.*planholder|operation=.*document/i.test(url);
+    if (interestingFollowUp) {
+      followUpRequests.push({ method, url: safeUrl(url), postData: postData.slice(0, 4000) });
+      console.log('FOLLOW_UP_REQUEST', method, safeUrl(url), postData.slice(0, 4000));
+    }
+
+    const isOtherBeaconWrite = /www\.beaconbid\.com\/api\//i.test(url) && !['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (isOtherBeaconWrite) {
+      console.log('BLOCKED_OTHER_WRITE', method, safeUrl(url), postData.slice(0, 4000));
       void request.abort('blockedbyclient');
       return;
     }
+
     void request.continue();
   });
 
@@ -118,14 +117,24 @@ try {
     const dialog = document.querySelector('[role="dialog"]');
     const submit = dialog && Array.from(dialog.querySelectorAll('button')).find((el) => (el.textContent ?? '').trim() === 'Submit');
     if (!(submit instanceof HTMLButtonElement)) throw new Error('Submit button not found');
-    if (submit.disabled) throw new Error('Submit remained disabled after synthetic form completion');
+    if (submit.disabled) throw new Error('Submit remained disabled');
     submit.setAttribute('data-govtract-submit', 'true');
   });
   await page.click('[data-govtract-submit="true"]');
-  await new Promise((r) => setTimeout(r, 1500));
+  await new Promise((r) => setTimeout(r, 3000));
 
-  console.log('CAPTURED', JSON.stringify(captured));
-  if (!captured) process.exitCode = 2;
+  const browserState = await page.evaluate(() => ({
+    url: location.href,
+    dialogPresent: Boolean(document.querySelector('[role="dialog"]')),
+    localStorageKeys: Object.keys(localStorage),
+    sessionStorageKeys: Object.keys(sessionStorage),
+    bodyText: (document.body.textContent ?? '').replace(/\s+/g, ' ').slice(0, 1500),
+  }));
+  const cookies = await page.cookies();
+  console.log('BROWSER_STATE', JSON.stringify(browserState));
+  console.log('COOKIE_METADATA', JSON.stringify(cookies.map(({ name, domain, path, expires, httpOnly, secure, sameSite }) => ({ name, domain, path, expires, httpOnly, secure, sameSite }))));
+  console.log('FOLLOW_UP_SUMMARY', JSON.stringify(followUpRequests));
+  console.log('MUTATION_CAPTURED', Boolean(mutationCaptured));
 } finally {
   await browser.close();
 }
