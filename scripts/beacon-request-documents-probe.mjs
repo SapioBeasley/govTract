@@ -1,7 +1,7 @@
 import puppeteer from 'puppeteer';
 
 const LIST_URL = 'https://www.beaconbid.com/solicitations/city-of-houston/open';
-const MAX_DETAILS = 20;
+const UUID_PATH = /\/solicitations\/city-of-houston\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i;
 
 function safeUrl(raw) {
   try {
@@ -30,7 +30,7 @@ try {
     const type = request.resourceType();
     if (!['xhr', 'fetch', 'document'].includes(type)) return;
     const post = request.postData();
-    console.log('REQ', request.method(), type, safeUrl(request.url()), post ? post.slice(0, 2500) : '');
+    console.log('REQ', request.method(), type, safeUrl(request.url()), post ? post.slice(0, 4000) : '');
   });
   page.on('response', (response) => {
     if (!/beaconbid\.com|amazonaws\.com/i.test(response.url())) return;
@@ -39,61 +39,30 @@ try {
     console.log('RES', response.status(), type, safeUrl(response.url()), response.headers()['content-type'] ?? '');
   });
 
-  const listing = await page.goto(LIST_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-  console.log('LISTING', listing?.status(), page.url());
-  await new Promise((r) => setTimeout(r, 1200));
+  await page.goto(LIST_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await new Promise((r) => setTimeout(r, 1000));
 
   const links = await page.evaluate(() => {
     const seen = new Set();
-    const out = [];
-    for (const a of document.querySelectorAll('a[href*="/solicitations/city-of-houston/"]')) {
-      const href = a.href;
-      if (!seen.has(href)) {
+    return Array.from(document.querySelectorAll('a[href*="/solicitations/city-of-houston/"]'))
+      .map((a) => a.href)
+      .filter((href) => {
+        if (!/\/solicitations\/city-of-houston\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i.test(new URL(href).pathname)) return false;
+        if (seen.has(href)) return false;
         seen.add(href);
-        out.push(href);
-      }
-    }
-    return out;
+        return true;
+      });
   });
   console.log('DETAIL_LINK_COUNT', links.length);
 
-  let found = false;
-  for (const href of links.slice(0, MAX_DETAILS)) {
-    console.log('DETAIL_VISIT', href);
-    await page.goto(href, { waitUntil: 'networkidle2', timeout: 60000 });
-    await new Promise((r) => setTimeout(r, 800));
-
-    const requestButton = await page.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('button,[role="button"],a'));
-      const el = candidates.find((node) => /request documents/i.test((node.textContent ?? '').trim()));
-      if (!el) return null;
-      return {
-        tag: el.tagName,
-        text: (el.textContent ?? '').trim(),
-        href: el instanceof HTMLAnchorElement ? el.href : null,
-        type: el.getAttribute('type'),
-        ariaLabel: el.getAttribute('aria-label'),
-      };
-    });
-
-    if (!requestButton) continue;
-    found = true;
-    console.log('REQUEST_BUTTON', JSON.stringify(requestButton));
-
-    await page.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('button,[role="button"],a'));
-      const el = candidates.find((node) => /request documents/i.test((node.textContent ?? '').trim()));
-      if (el instanceof HTMLElement) el.click();
-    });
-    await new Promise((r) => setTimeout(r, 1200));
-
-    const modal = await page.evaluate(() => {
-      const dialog = document.querySelector('[role="dialog"]') ??
-        Array.from(document.querySelectorAll('div')).find((el) => /request documents/i.test((el.textContent ?? '').trim()) && el.querySelector('input,button'));
-      if (!dialog) return null;
-
-      const labels = Array.from(dialog.querySelectorAll('label')).map((el) => (el.textContent ?? '').trim()).filter(Boolean);
-      const inputs = Array.from(dialog.querySelectorAll('input,textarea,select')).map((el) => ({
+  const readModal = async () => page.evaluate(() => {
+    const dialog = document.querySelector('[role="dialog"]') ??
+      Array.from(document.querySelectorAll('div')).find((el) => /request documents/i.test((el.textContent ?? '')) && el.querySelector('input,textarea,select,button'));
+    if (!dialog) return null;
+    return {
+      text: (dialog.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 5000),
+      labels: Array.from(dialog.querySelectorAll('label')).map((el) => (el.textContent ?? '').trim()).filter(Boolean),
+      inputs: Array.from(dialog.querySelectorAll('input,textarea,select')).map((el) => ({
         tag: el.tagName,
         type: el.getAttribute('type'),
         name: el.getAttribute('name'),
@@ -101,40 +70,66 @@ try {
         autocomplete: el.getAttribute('autocomplete'),
         required: el.hasAttribute('required'),
         ariaLabel: el.getAttribute('aria-label'),
-      }));
-      const buttons = Array.from(dialog.querySelectorAll('button,[role="button"],a')).map((el) => ({
+      })),
+      buttons: Array.from(dialog.querySelectorAll('button,[role="button"],a')).map((el) => ({
         tag: el.tagName,
         text: (el.textContent ?? '').trim(),
         type: el.getAttribute('type'),
         href: el instanceof HTMLAnchorElement ? el.href : null,
-      })).filter((x) => x.text || x.href);
-      const forms = Array.from(dialog.querySelectorAll('form')).map((form) => ({
-        action: form.getAttribute('action'),
-        method: form.getAttribute('method'),
-      }));
-      return {
-        text: (dialog.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 4000),
-        labels,
-        inputs,
-        buttons,
-        forms,
-        html: dialog.outerHTML.slice(0, 10000),
+      })).filter((x) => x.text || x.href),
+      forms: Array.from(dialog.querySelectorAll('form')).map((form) => ({ action: form.getAttribute('action'), method: form.getAttribute('method') })),
+      html: dialog.outerHTML.slice(0, 12000),
+    };
+  });
+
+  let found = false;
+  for (const href of links) {
+    console.log('DETAIL_VISIT', href);
+    await page.goto(href, { waitUntil: 'networkidle2', timeout: 60000 });
+    await new Promise((r) => setTimeout(r, 700));
+
+    const controls = await page.evaluate(() => Array.from(document.querySelectorAll('button,[role="button"],a')).map((el, index) => ({
+      index,
+      tag: el.tagName,
+      text: (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 250),
+      href: el instanceof HTMLAnchorElement ? el.href : null,
+      ariaLabel: el.getAttribute('aria-label'),
+    })).filter((x) => /request documents|download package/i.test(x.text) || (x.href && x.href.includes('/api/planholder/document/'))));
+    console.log('DOC_CONTROLS', JSON.stringify(controls.slice(0, 12)));
+
+    const clicked = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll('button,[role="button"],a'));
+      const ranked = [
+        all.find((el) => /request documents/i.test((el.textContent ?? '').trim())),
+        all.find((el) => /download package/i.test((el.textContent ?? '').trim())),
+        all.find((el) => el instanceof HTMLAnchorElement && el.href.includes('/api/planholder/document/')),
+      ].filter(Boolean);
+      const el = ranked[0];
+      if (!(el instanceof HTMLElement)) return null;
+      const info = {
+        tag: el.tagName,
+        text: (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 250),
+        href: el instanceof HTMLAnchorElement ? el.href : null,
       };
+      el.click();
+      return info;
     });
+
+    if (!clicked) continue;
+    console.log('CLICKED', JSON.stringify(clicked));
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const modal = await readModal();
     console.log('MODAL', JSON.stringify(modal));
+    if (!modal) continue;
 
     const cookies = await page.cookies();
     console.log('COOKIE_METADATA', JSON.stringify(cookies.map(({ name, domain, path, expires, httpOnly, secure, sameSite }) => ({ name, domain, path, expires, httpOnly, secure, sameSite }))));
-
-    const documentLinks = await page.evaluate(() => Array.from(document.querySelectorAll('a[href*="/api/planholder/document/"]')).map((a) => a.href));
-    console.log('DOCUMENT_LINKS', JSON.stringify(documentLinks));
+    found = true;
     break;
   }
 
-  if (!found) {
-    console.log('NO_REQUEST_DOCUMENTS_MODAL_FOUND');
-    process.exitCode = 2;
-  }
+  if (!found) console.log('NO_REQUEST_DOCUMENTS_MODAL_FOUND');
 } finally {
   await browser.close();
 }
