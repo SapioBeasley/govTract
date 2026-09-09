@@ -4,16 +4,37 @@ import test from "node:test";
 import {
   classifyBeaconAmendment,
   enrichBeaconDocumentMetadata,
+  isBeaconPresignedDocumentUrl,
   normalizeBeaconEtag,
   resolveBeaconDocumentDownloadUrl,
   resolveBeaconDocumentUrl,
 } from "./documents";
 
+const sourceDocumentKey = "agency/example/solicitation/example/document.pdf";
+const signedUrl =
+  `https://s3.us-west-2.amazonaws.com/documents.beaconbid.com/${sourceDocumentKey}` +
+  "?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+  "&X-Amz-Credential=EXAMPLE" +
+  "&X-Amz-Date=20260909T170459Z" +
+  "&X-Amz-Expires=300" +
+  "&X-Amz-Signature=EXAMPLE" +
+  "&X-Amz-SignedHeaders=host";
+
 test("does not treat Beacon storage buckets as public URLs", () => {
   assert.equal(resolveBeaconDocumentUrl({}), null);
+  assert.equal(
+    resolveBeaconDocumentUrl({
+      existingUrl: `https://documents.beaconbid.com/${sourceDocumentKey}`,
+    }),
+    null,
+  );
 });
 
-test("preserves an explicit document URL", () => {
+test("never preserves short-lived Beacon presigned S3 URLs", () => {
+  assert.equal(resolveBeaconDocumentUrl({ existingUrl: signedUrl }), null);
+});
+
+test("preserves a normal explicit document URL", () => {
   assert.equal(
     resolveBeaconDocumentUrl({ existingUrl: "https://example.test/document.pdf" }),
     "https://example.test/document.pdf",
@@ -27,6 +48,34 @@ test("builds the Beacon planholder document route with the full key encoded", ()
       sourceDocumentKey: "agency/a/solicitation/b/My File.pdf",
     }),
     "https://www.beaconbid.com/api/planholder/document/abc-123/agency%2Fa%2Fsolicitation%2Fb%2FMy%20File.pdf",
+  );
+});
+
+test("accepts only a matching Beacon us-west-2 presigned GetObject URL", () => {
+  assert.equal(
+    isBeaconPresignedDocumentUrl({ url: signedUrl, sourceDocumentKey }),
+    true,
+  );
+  assert.equal(
+    isBeaconPresignedDocumentUrl({
+      url: signedUrl,
+      sourceDocumentKey: `${sourceDocumentKey}.different`,
+    }),
+    false,
+  );
+  assert.equal(
+    isBeaconPresignedDocumentUrl({
+      url: signedUrl.replace("s3.us-west-2.amazonaws.com", "evil.example"),
+      sourceDocumentKey,
+    }),
+    false,
+  );
+  assert.equal(
+    isBeaconPresignedDocumentUrl({
+      url: signedUrl.replace("&X-Amz-Signature=EXAMPLE", ""),
+      sourceDocumentKey,
+    }),
+    false,
   );
 });
 
