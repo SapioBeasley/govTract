@@ -21,11 +21,17 @@ import {
   resolveBeaconDocumentDownloadUrl,
 } from "../lib/procurement/sources/beacon/documents";
 import {
+  buildBeaconPlanholderRegistrationRequest,
+  parseBeaconPlanholderRegistrationResponse,
+} from "../lib/procurement/sources/beacon/registration";
+import {
   buildBeaconCookieHeader,
   getBeaconSessionCookies,
   isBeaconPermissionResponse,
   isBeaconRegistrationRequiredResponse,
+  parseBeaconRegistrationProfile,
   parseBeaconSessionProbe,
+  type BeaconRegistrationProfile,
 } from "../lib/procurement/sources/beacon/session-transport";
 import {
   loadSourceConnectionSession,
@@ -46,12 +52,14 @@ const CONCURRENCY = Math.max(1, Number(process.env.BEACON_DOCUMENT_CONCURRENCY ?
 const REQUEST_TIMEOUT_MS = Number(process.env.BEACON_DOCUMENT_TIMEOUT_MS ?? "120000");
 const FORCE_REHASH = process.env.BEACON_DOCUMENT_FORCE_REHASH === "true";
 const MAX_ERROR_RATE = Number(process.env.BEACON_DOCUMENT_MAX_ERROR_RATE ?? "0.25");
+const AUTO_REGISTER = process.env.BEACON_AUTO_REGISTER !== "false";
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36 govTract/0.1 beacon-documents";
 
 type RetrievalErrorKind =
   | "auth_required"
   | "registration_required"
+  | "registration_failed"
   | "network"
   | "http"
   | "size";
@@ -99,6 +107,11 @@ interface ReprocessSignal {
   change: string;
   isAmendment: boolean;
   amendmentLabel: string | null;
+}
+
+interface BeaconConnection {
+  cookieHeader: string;
+  registrationProfile: BeaconRegistrationProfile | null;
 }
 
 function errorText(error: unknown) {
@@ -196,6 +209,8 @@ async function validateBeaconSessionInBrowser(session: BrowserSessionEnvelope) {
         "auth_required",
       );
     }
+
+    return parseBeaconRegistrationProfile(probe.body);
   } catch (error) {
     if (error instanceof DocumentRetrievalError) throw error;
     await markNeedsReauth("authentication_failed");
@@ -208,7 +223,7 @@ async function validateBeaconSessionInBrowser(session: BrowserSessionEnvelope) {
   }
 }
 
-async function loadValidatedBeaconCookieHeader() {
+async function loadValidatedBeaconConnection(): Promise<BeaconConnection> {
   let session: BrowserSessionEnvelope;
 
   try {
@@ -235,9 +250,53 @@ async function loadValidatedBeaconCookieHeader() {
     );
   }
 
-  await validateBeaconSessionInBrowser(session);
+  const registrationProfile = await validateBeaconSessionInBrowser(session);
   await markSourceConnectionValidated(PROVIDER);
-  return cookieHeader;
+  return { cookieHeader, registrationProfile };
+}
+
+async function registerBeaconSolicitation(input: {
+  sourceOpportunityId: string;
+  connection: BeaconConnection;
+}) {
+  if (!AUTO_REGISTER) {
+    throw new DocumentRetrievalError(
+      "Beacon requires solicitation registration before document retrieval.",
+      "registration_required",
+    );
+  }
+
+  if (!input.connection.registrationProfile) {
+    throw new DocumentRetrievalError(
+      "Beacon supplier profile is incomplete for automatic solicitation registration.",
+      "registration_failed",
+    );
+  }
+
+  const request = buildBeaconPlanholderRegistrationRequest({
+    solicitationId: input.sourceOpportunityId,
+    profile: input.connection.registrationProfile,
+    interest: "Bidder",
+  });
+  const response = await fetchWithTimeout(
+    `${BEACON_ORIGIN}/api/gql?operation=createPlanholder`,
+    {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { beaconCookieHeader: input.connection.cookieHeader },
+  );
+  const body = (await response.text()).slice(0, 5000);
+  const result = parseBeaconPlanholderRegistrationResponse(response.status, body);
+
+  if (!result.ok) {
+    throw new DocumentRetrievalError(
+      `Beacon automatic solicitation registration failed (HTTP ${response.status}).`,
+      "registration_failed",
+    );
+  }
 }
 
 async function fetchWithTimeout(
@@ -372,7 +431,8 @@ async function latestChecksum(documentId: string) {
 
 async function retrieveDocument(
   row: DocumentRow,
-  getBeaconCookieHeader: () => Promise<string>,
+  getBeaconConnection: () => Promise<BeaconConnection>,
+  ensureRegistration: (sourceOpportunityId: string) => Promise<void>,
 ): Promise<RetrievedDocument> {
   const base = baseDocument(row);
 
@@ -397,30 +457,44 @@ async function retrieveDocument(
     throw new DocumentRetrievalError("Could not build Beacon planholder document route", "http");
   }
 
-  const beaconCookieHeader = await getBeaconCookieHeader();
+  const connection = await getBeaconConnection();
   let response: Response;
   let usedPresignedRedirect = false;
+  let registrationRetried = false;
 
-  try {
-    const resolved = await resolveBeaconDownloadResponse({
-      downloadUrl,
-      sourceDocumentKey: row.sourceDocumentKey,
-      beaconCookieHeader,
-    });
-    response = resolved.response;
-    usedPresignedRedirect = resolved.usedPresignedRedirect;
-  } catch (error) {
-    if (error instanceof DocumentRetrievalError) throw error;
-    throw new DocumentRetrievalError("Beacon document request failed", "network");
-  }
+  while (true) {
+    try {
+      const resolved = await resolveBeaconDownloadResponse({
+        downloadUrl,
+        sourceDocumentKey: row.sourceDocumentKey,
+        beaconCookieHeader: connection.cookieHeader,
+      });
+      response = resolved.response;
+      usedPresignedRedirect = usedPresignedRedirect || resolved.usedPresignedRedirect;
+    } catch (error) {
+      if (error instanceof DocumentRetrievalError) throw error;
+      throw new DocumentRetrievalError("Beacon document request failed", "network");
+    }
 
-  if (!response.ok) {
+    if (response.ok) break;
+
     const body = (await response.text()).slice(0, 1000);
     if (isBeaconRegistrationRequiredResponse(response.status, body)) {
-      throw new DocumentRetrievalError(
-        "Beacon requires solicitation registration before document retrieval.",
-        "registration_required",
-      );
+      if (!AUTO_REGISTER) {
+        throw new DocumentRetrievalError(
+          "Beacon requires solicitation registration before document retrieval.",
+          "registration_required",
+        );
+      }
+      if (registrationRetried) {
+        throw new DocumentRetrievalError(
+          "Beacon still requires registration after automatic solicitation registration.",
+          "registration_failed",
+        );
+      }
+      await ensureRegistration(row.sourceOpportunityId);
+      registrationRetried = true;
+      continue;
     }
     if (isBeaconPermissionResponse(response.status, body)) {
       throw new DocumentRetrievalError(
@@ -522,12 +596,29 @@ async function main() {
     byOpportunity.set(row.opportunityId, existing);
   }
 
-  let beaconCookieHeaderPromise: Promise<string> | null = null;
+  let beaconConnectionPromise: Promise<BeaconConnection> | null = null;
   let sourceConnectionValidationAttempted = false;
-  const getBeaconCookieHeader = () => {
+  const getBeaconConnection = () => {
     sourceConnectionValidationAttempted = true;
-    beaconCookieHeaderPromise ??= loadValidatedBeaconCookieHeader();
-    return beaconCookieHeaderPromise;
+    beaconConnectionPromise ??= loadValidatedBeaconConnection();
+    return beaconConnectionPromise;
+  };
+  const registrationPromises = new Map<string, Promise<void>>();
+  const autoRegisteredSourceOpportunities = new Set<string>();
+  const ensureRegistration = (sourceOpportunityId: string) => {
+    const existing = registrationPromises.get(sourceOpportunityId);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const connection = await getBeaconConnection();
+      await registerBeaconSolicitation({ sourceOpportunityId, connection });
+      autoRegisteredSourceOpportunities.add(sourceOpportunityId);
+      console.log(
+        `BEACON_PLANHOLDER_REGISTERED sourceOpportunity=${sourceOpportunityId} interest=Bidder emailDocument=false`,
+      );
+    })();
+    registrationPromises.set(sourceOpportunityId, promise);
+    return promise;
   };
 
   const reprocess: ReprocessSignal[] = [];
@@ -565,7 +656,7 @@ async function main() {
       }
 
       try {
-        return await retrieveDocument(row, getBeaconCookieHeader);
+        return await retrieveDocument(row, getBeaconConnection, ensureRegistration);
       } catch (error) {
         const message = errorText(error);
         const kind = classifyError(error);
@@ -680,6 +771,8 @@ async function main() {
     registrationRequiredDocumentCount,
     registrationRequiredAttemptCount,
     partialDocumentAccess: registrationRequiredOpportunities.size > 0,
+    autoRegister: AUTO_REGISTER,
+    autoRegisteredOpportunityCount: autoRegisteredSourceOpportunities.size,
     retrievalErrorCount,
     authRequiredCount,
     errorRate,
