@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { cache } from "react";
 
 import { getDb } from "@/lib/db/client";
@@ -138,7 +138,12 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
         updatedAt: opportunityDocuments.updatedAt,
       })
       .from(opportunityDocuments)
-      .where(eq(opportunityDocuments.opportunityId, opportunity.id))
+      .where(
+        and(
+          eq(opportunityDocuments.opportunityId, opportunity.id),
+          eq(opportunityDocuments.isActive, true),
+        ),
+      )
       .orderBy(asc(opportunityDocuments.name)),
     db
       .select({
