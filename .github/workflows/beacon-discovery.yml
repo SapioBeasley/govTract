@@ -8,7 +8,7 @@ on:
         required: false
         default: "100"
       page_size:
-        description: GraphQL page size (50 matches Beacon; smaller values verify pagination)
+        description: GraphQL page size (50 matches Beacon; smaller values can verify pagination manually)
         required: false
         default: "50"
       persist:
@@ -42,9 +42,10 @@ jobs:
       BEACON_START_URL: https://www.beaconbid.com/solicitations/city-of-houston/open
       BEACON_AGENCY: city-of-houston
       BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
-      # PR checks intentionally use 10 so the current Houston set proves multi-page aggregation.
-      # Manual runs default to Beacon's normal 50-row request size.
-      BEACON_PAGE_SIZE: ${{ inputs.page_size || '10' }}
+      # Use Beacon's native page size for PR reachability checks so a source update during
+      # a deliberately tiny multi-page pull does not make CI flaky. Manual runs can still
+      # set a smaller page size to exercise pagination explicitly.
+      BEACON_PAGE_SIZE: ${{ inputs.page_size || '50' }}
       BEACON_PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
       BEACON_DOCUMENT_CONCURRENCY: "4"
