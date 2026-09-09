@@ -20,6 +20,7 @@ on:
     paths:
       - ".github/workflows/beacon-discovery.yml"
       - "scripts/beacon-discover.ts"
+      - "scripts/beacon-documents.ts"
       - "lib/db/**"
       - "lib/procurement/**"
       - "drizzle/**"
@@ -36,7 +37,7 @@ jobs:
   pull:
     name: Pull City of Houston Beacon opportunities
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       BEACON_START_URL: https://www.beaconbid.com/solicitations/city-of-houston/open
       BEACON_AGENCY: city-of-houston
@@ -46,6 +47,8 @@ jobs:
       BEACON_PAGE_SIZE: ${{ inputs.page_size || '10' }}
       BEACON_PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
+      BEACON_DOCUMENT_CONCURRENCY: "4"
+      BEACON_DOCUMENT_MAX_BYTES: "314572800"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
@@ -63,11 +66,21 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test document persistence
+        run: npm run test:documents
+
       - name: Test Beacon normalization
         run: npm run test:beacon-normalize
 
+      - name: Test Beacon document helpers
+        run: npm run test:beacon-documents
+
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon
+
+      - name: Retrieve and version Beacon documents
+        if: github.event_name == 'workflow_dispatch' && inputs.persist
+        run: npm run ingest:beacon:documents
 
       - name: Upload sanitized Beacon diagnostics
         if: always()
