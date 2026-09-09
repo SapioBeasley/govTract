@@ -18,4 +18,4 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - run: node scripts/beacon-client-bundle-probe.mjs
+      - run: node scripts/beacon-request-documents-probe.mjs
