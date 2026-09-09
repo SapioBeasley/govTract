@@ -193,7 +193,13 @@ export async function POST(request: Request) {
       const message =
         error.code === "browser_unavailable"
           ? "The Beacon login browser is temporarily unavailable. Try again shortly."
-          : "Beacon could not establish a reusable supplier session. Request a new login link and try again.";
+          : error.code === "session_cookie_missing"
+            ? "Beacon authenticated, but no reusable supplier session cookie was captured. Request a new login link and try again."
+            : error.code === "session_restore_failed"
+              ? "Beacon session was captured, but it could not be restored in a fresh browser. Request a new login link and try again."
+              : error.code === "authentication_timeout"
+                ? "Beacon did not finish establishing supplier access before the login attempt timed out. Request a new login link and try again."
+                : "Beacon could not establish a reusable supplier session. Request a new login link and try again.";
 
       return NextResponse.json(
         { error: { code: error.code, message } },
