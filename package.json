@@ -10,9 +10,11 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:check": "tsx scripts/db-health.ts",
     "test:beacon-normalize": "tsx --test lib/procurement/sources/beacon/normalize.test.ts",
+    "test:beacon-documents": "tsx --test lib/procurement/sources/beacon/documents.test.ts",
     "test:documents": "tsx --test lib/procurement/documents/persistence.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
-    "ingest:beacon:discover": "tsx scripts/beacon-discover.ts"
+    "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
+    "ingest:beacon:documents": "tsx scripts/beacon-documents.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

@@ -54,7 +54,11 @@ test("normalizes live Beacon rich fields without losing source semantics", () =>
     normalized.documents?.[0]?.mimeType,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   );
-  assert.equal(normalized.documents?.[0]?.url, null);
+  assert.equal(
+    normalized.documents?.[0]?.url,
+    "https://documents.beaconbid.com/agency/example/InformalGeneralTerms.docx",
+  );
+  assert.equal(normalized.documents?.[0]?.isAmendment, false);
   assert.equal(
     normalized.documents?.[0]?.sourceMetadata.bucket,
     "documents.beaconbid.com",
