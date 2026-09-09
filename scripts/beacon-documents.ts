@@ -14,10 +14,7 @@ import {
   persistOpportunityDocumentSet,
   type PersistableDocument,
 } from "../lib/procurement/documents/persistence";
-import {
-  enrichBeaconDocumentMetadata,
-  normalizeBeaconEtag,
-} from "../lib/procurement/sources/beacon/documents";
+import { enrichBeaconDocumentMetadata } from "../lib/procurement/sources/beacon/documents";
 
 const SOURCE = "beacon";
 const AGENCY_SLUG = process.env.BEACON_AGENCY ?? "city-of-houston";
@@ -26,8 +23,10 @@ const DOCUMENT_ARTIFACT_DIR = join(ARTIFACT_DIR, "documents");
 const MAX_BYTES = Number(process.env.BEACON_DOCUMENT_MAX_BYTES ?? String(300 * 1024 * 1024));
 const CONCURRENCY = Math.max(1, Number(process.env.BEACON_DOCUMENT_CONCURRENCY ?? "4"));
 const REQUEST_TIMEOUT_MS = Number(process.env.BEACON_DOCUMENT_TIMEOUT_MS ?? "120000");
+const FORCE_REHASH = process.env.BEACON_DOCUMENT_FORCE_REHASH === "true";
 
 interface DocumentRow {
+  documentId: string;
   opportunityId: string;
   sourceOpportunityId: string;
   sourceDocumentKey: string;
@@ -61,12 +60,6 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.stack ?? error.message : String(error);
 }
 
-function headerDate(value: string | null) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 function numberHeader(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
@@ -76,14 +69,14 @@ function numberHeader(value: string | null) {
 async function fetchWithTimeout(url: string, init?: RequestInit) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const headers = new Headers(init?.headers);
+  headers.set("user-agent", "govTract/0.1 public-procurement-indexer");
+
   try {
     return await fetch(url, {
       ...init,
       signal: controller.signal,
-      headers: {
-        "user-agent": "govTract/0.1 public-procurement-indexer",
-        ...(init?.headers ?? {}),
-      },
+      headers,
       redirect: "follow",
     });
   } finally {
@@ -120,19 +113,16 @@ async function hashResponseBody(response: Response) {
   return { checksumSha256: hash.digest("hex"), bytesRead };
 }
 
-async function latestVersion(documentId: string) {
+async function latestChecksum(documentId: string) {
   const db = getDb();
   const [latest] = await db
-    .select({
-      sourceVersionId: opportunityDocumentVersions.sourceVersionId,
-      checksumSha256: opportunityDocumentVersions.checksumSha256,
-    })
+    .select({ checksumSha256: opportunityDocumentVersions.checksumSha256 })
     .from(opportunityDocumentVersions)
     .where(eq(opportunityDocumentVersions.opportunityDocumentId, documentId))
     .orderBy(desc(opportunityDocumentVersions.versionNumber))
     .limit(1);
 
-  return latest ?? null;
+  return latest?.checksumSha256 ?? null;
 }
 
 async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
@@ -147,7 +137,12 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
   });
 
   if (!base.url) {
-    return { document: base, bytesRead: 0, skippedDownload: true, error: "No resolvable Beacon document URL" };
+    return {
+      document: base,
+      bytesRead: 0,
+      skippedDownload: true,
+      error: "No resolvable Beacon document URL",
+    };
   }
 
   if (!isSupportedDocumentType(base)) {
@@ -163,51 +158,9 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
     };
   }
 
-  const db = getDb();
-  const [logical] = await db
-    .select({ id: opportunityDocuments.id })
-    .from(opportunityDocuments)
-    .where(
-      and(
-        eq(opportunityDocuments.opportunityId, row.opportunityId),
-        eq(opportunityDocuments.sourceDocumentKey, row.sourceDocumentKey),
-      ),
-    )
-    .limit(1);
-  const latest = logical ? await latestVersion(logical.id) : null;
-
-  let head: Response | null = null;
-  try {
-    head = await fetchWithTimeout(base.url, { method: "HEAD" });
-    if (!head.ok) head = null;
-  } catch {
-    head = null;
-  }
-
-  const headEtag = normalizeBeaconEtag(head?.headers.get("etag") ?? null);
-  const sourceVersionId = headEtag ? `etag:${headEtag}` : base.sourceVersionId ?? null;
-  const sourceModifiedAt =
-    headerDate(head?.headers.get("last-modified") ?? null) ?? base.sourceModifiedAt ?? null;
-  const headSize = numberHeader(head?.headers.get("content-length") ?? null);
-  const headMimeType = head?.headers.get("content-type")?.split(";", 1)[0]?.trim() || null;
-
-  if (
-    latest?.checksumSha256 &&
-    sourceVersionId &&
-    latest.sourceVersionId === sourceVersionId
-  ) {
-    return {
-      document: {
-        ...base,
-        sourceVersionId,
-        sourceModifiedAt,
-        fileSizeBytes: headSize ?? base.fileSizeBytes,
-        mimeType: headMimeType ?? base.mimeType,
-        checksumSha256: latest.checksumSha256,
-      },
-      bytesRead: 0,
-      skippedDownload: true,
-    };
+  const checksum = await latestChecksum(row.documentId);
+  if (checksum && !FORCE_REHASH) {
+    return { document: base, bytesRead: 0, skippedDownload: true };
   }
 
   const response = await fetchWithTimeout(base.url, { method: "GET" });
@@ -224,18 +177,13 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
   }
 
   const hashed = await hashResponseBody(response);
-  const responseEtag = normalizeBeaconEtag(response.headers.get("etag"));
-  const responseVersionId = responseEtag ? `etag:${responseEtag}` : sourceVersionId;
-  const responseModifiedAt = headerDate(response.headers.get("last-modified")) ?? sourceModifiedAt;
   const responseMimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() || null;
 
   return {
     document: {
       ...base,
-      sourceVersionId: responseVersionId,
-      sourceModifiedAt: responseModifiedAt,
-      mimeType: responseMimeType ?? base.mimeType,
-      fileSizeBytes: responseSize ?? hashed.bytesRead ?? base.fileSizeBytes,
+      mimeType: base.mimeType ?? responseMimeType,
+      fileSizeBytes: base.fileSizeBytes ?? responseSize ?? hashed.bytesRead,
       checksumSha256: hashed.checksumSha256,
       retrievedAt: new Date(),
       storageMode: "source",
@@ -264,12 +212,15 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for Beacon document ingestion");
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required for Beacon document ingestion");
+  }
 
   await mkdir(DOCUMENT_ARTIFACT_DIR, { recursive: true });
   const db = getDb();
   const rows = await db
     .select({
+      documentId: opportunityDocuments.id,
       opportunityId: opportunities.id,
       sourceOpportunityId: opportunities.sourceOpportunityId,
       sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
@@ -346,7 +297,9 @@ async function main() {
       documents: retrieved.map((result) => result.document),
     });
     const sourceOpportunityId = documents[0]?.sourceOpportunityId ?? opportunityId;
-    const retrievedByKey = new Map(retrieved.map((result) => [result.document.sourceDocumentKey, result]));
+    const retrievedByKey = new Map(
+      retrieved.map((result) => [result.document.sourceDocumentKey, result]),
+    );
 
     for (const result of persistenceResults) {
       const source = retrievedByKey.get(result.sourceDocumentKey)?.document;
@@ -382,11 +335,24 @@ async function main() {
     reprocessCount: reprocess.length,
     maxBytes: MAX_BYTES,
     concurrency: CONCURRENCY,
+    forceRehash: FORCE_REHASH,
   };
 
-  await writeFile(join(DOCUMENT_ARTIFACT_DIR, "summary.json"), JSON.stringify(summary, null, 2), "utf8");
-  await writeFile(join(DOCUMENT_ARTIFACT_DIR, "reprocess.json"), JSON.stringify(reprocess, null, 2), "utf8");
-  await writeFile(join(DOCUMENT_ARTIFACT_DIR, "errors.json"), JSON.stringify(errors, null, 2), "utf8");
+  await writeFile(
+    join(DOCUMENT_ARTIFACT_DIR, "summary.json"),
+    JSON.stringify(summary, null, 2),
+    "utf8",
+  );
+  await writeFile(
+    join(DOCUMENT_ARTIFACT_DIR, "reprocess.json"),
+    JSON.stringify(reprocess, null, 2),
+    "utf8",
+  );
+  await writeFile(
+    join(DOCUMENT_ARTIFACT_DIR, "errors.json"),
+    JSON.stringify(errors, null, 2),
+    "utf8",
+  );
 
   console.log(`BEACON_DOCUMENT_SUMMARY ${JSON.stringify(summary)}`);
 }
