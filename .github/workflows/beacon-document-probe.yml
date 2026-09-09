@@ -17,10 +17,11 @@ jobs:
         shell: bash
         run: |
           set -u
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36'
           page='https://www.beaconbid.com/solicitations/city-of-houston/open'
-          curl -fsSL "$page" -o /tmp/beacon.html
+          curl -fsSL -A "$ua" "$page" -o /tmp/beacon.html
           echo '=== script sources'
-          grep -oE 'src="[^"]+\.js[^"]*"' /tmp/beacon.html | sed -E 's/^src="//;s/"$//' | head -80 | tee /tmp/scripts.txt
+          grep -oE 'src="[^"]+\.js[^"]*"' /tmp/beacon.html | sed -E 's/^src="//;s/"$//' | head -80 | tee /tmp/scripts.txt || true
           echo '=== relevant bundle fragments'
           while IFS= read -r src; do
             case "$src" in
@@ -29,7 +30,7 @@ jobs:
               /*) url="https://www.beaconbid.com$src" ;;
               *) url="https://www.beaconbid.com/$src" ;;
             esac
-            body=$(curl -fsSL --max-time 20 "$url" 2>/dev/null || true)
+            body=$(curl -fsSL -A "$ua" --max-time 20 "$url" 2>/dev/null || true)
             if [ -n "$body" ]; then
               matches=$(printf '%s' "$body" | grep -Eio '.{0,180}(presign|pre.?signed|signed.?url|documentSource|download[^a-z]|getobject|s3).{0,240}' | head -30 || true)
               if [ -n "$matches" ]; then
