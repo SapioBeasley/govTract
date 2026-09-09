@@ -1,4 +1,6 @@
+import Link from "next/link";
 import {
+  ArrowRight,
   Building2,
   CalendarDays,
   ExternalLink,
@@ -73,7 +75,9 @@ export function OpportunityCard({ item }: { item: OpportunityFeedItem }) {
 
         <div>
           <h2 className="text-lg font-semibold leading-snug tracking-tight text-[var(--foreground)]">
-            {item.title}
+            <Link href={`/opportunities/${item.id}`} className="hover:text-[var(--primary)] hover:underline">
+              {item.title}
+            </Link>
           </h2>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted-foreground)]">
             {item.agencyName ? (
@@ -135,21 +139,30 @@ export function OpportunityCard({ item }: { item: OpportunityFeedItem }) {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between border-t pt-4 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm">
           <span className="text-[var(--muted-foreground)]">
             {item.categories[0] ?? "Category not provided"}
           </span>
-          {item.canonicalUrl ? (
-            <a
-              href={item.canonicalUrl}
-              target="_blank"
-              rel="noreferrer"
+          <div className="flex items-center gap-4">
+            {item.canonicalUrl ? (
+              <a
+                href={item.canonicalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
+              >
+                Source
+                <ExternalLink className="size-4" />
+              </a>
+            ) : null}
+            <Link
+              href={`/opportunities/${item.id}`}
               className="inline-flex items-center gap-1.5 font-semibold text-[var(--primary)] hover:underline"
             >
-              View source
-              <ExternalLink className="size-4" />
-            </a>
-          ) : null}
+              View details
+              <ArrowRight className="size-4" />
+            </Link>
+          </div>
         </div>
       </div>
     </article>
