@@ -2,6 +2,17 @@ import type { BrowserSessionEnvelope } from "@/lib/source-connections/session";
 
 const BEACON_HOSTS = new Set(["beaconbid.com", "www.beaconbid.com"]);
 
+export interface BeaconRegistrationProfile {
+  name: string;
+  email: string;
+  phone: string;
+  position: string;
+  regionId: string;
+  companyName: string;
+  companyRegionId: string;
+  specialDesignations: string[];
+}
+
 function normalizeDomain(domain: string) {
   return domain.replace(/^\./, "").toLowerCase();
 }
@@ -19,6 +30,16 @@ function responseMessage(body: string) {
   } catch {
     return body;
   }
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export function isBeaconCookieDomain(domain: string) {
@@ -76,6 +97,49 @@ export function isBeaconPermissionResponse(status: number, body: string) {
   } catch {
     return /permission|authori[sz]|planholder|interest list/i.test(body);
   }
+}
+
+export function parseBeaconRegistrationProfile(body: string): BeaconRegistrationProfile | null {
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  const root = objectValue(parsed);
+  const contact = objectValue(root?.contact);
+  const contactLocation = objectValue(contact?.location);
+  const company = objectValue(root?.company);
+  const companyLocation = objectValue(company?.location);
+
+  const name = stringValue(contact?.name);
+  const email = stringValue(contact?.email);
+  const phone = stringValue(contact?.phone);
+  const regionId = stringValue(contactLocation?.regionId);
+  const companyName = stringValue(company?.name);
+  const companyRegionId = stringValue(companyLocation?.regionId);
+
+  if (!name || !email || !phone || !regionId || !companyName || !companyRegionId) {
+    return null;
+  }
+
+  const specialDesignations = Array.isArray(company?.specialDesignations)
+    ? company.specialDesignations.filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      )
+    : [];
+
+  return {
+    name,
+    email,
+    phone,
+    position: stringValue(contact?.position) ?? "",
+    regionId,
+    companyName,
+    companyRegionId,
+    specialDesignations,
+  };
 }
 
 export function parseBeaconSessionProbe(status: number, body: string) {
