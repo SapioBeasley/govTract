@@ -1,0 +1,33 @@
+name: Beacon document endpoint probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/beacon-document-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe Beacon document endpoints
+        shell: bash
+        run: |
+          set +e
+          key='agency/281287c2-49c0-439e-81d7-315d13b0b4fb/solicitation/1738183668100_32c67f08-7866-4e1a-8255-1e0aa76c6039/InformalGeneralTerms.docx'
+          urls=(
+            "https://documents.beaconbid.com/$key"
+            "https://s3.amazonaws.com/documents.beaconbid.com/$key"
+            "https://s3.us-east-1.amazonaws.com/documents.beaconbid.com/$key"
+            "https://s3.us-east-2.amazonaws.com/documents.beaconbid.com/$key"
+            "https://s3.us-west-1.amazonaws.com/documents.beaconbid.com/$key"
+            "https://s3.us-west-2.amazonaws.com/documents.beaconbid.com/$key"
+          )
+          for url in "${urls[@]}"; do
+            echo "=== $url"
+            curl -sS -D - -o /dev/null --max-time 20 --range 0-0 "$url" | grep -Ei '^(HTTP/|location:|x-amz-bucket-region:|content-type:|content-length:)' || true
+            echo "curl_exit=${PIPESTATUS[0]}"
+          done
