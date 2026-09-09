@@ -47,6 +47,7 @@ jobs:
       BEACON_AGENCY: city-of-houston
       BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
       # Push runs on this temporary ops branch seed production; PR checks remain read-only.
+      # Retry after validating the repository DATABASE_URL secret value.
       BEACON_PAGE_SIZE: ${{ inputs.page_size || '10' }}
       BEACON_PERSIST: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.persist) }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
