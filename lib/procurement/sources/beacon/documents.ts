@@ -21,26 +21,19 @@ function parseDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function resolveBeaconDocumentUrl(input: {
+export function resolveBeaconDocumentUrl(input: { existingUrl?: string | null }) {
+  return input.existingUrl?.trim() || null;
+}
+
+export function resolveBeaconDocumentDownloadUrl(input: {
+  sourceOpportunityId: string;
   sourceDocumentKey: string;
-  sourceMetadata: Record<string, unknown>;
-  existingUrl?: string | null;
 }) {
-  if (input.existingUrl?.trim()) return input.existingUrl.trim();
+  const opportunityId = input.sourceOpportunityId.trim();
+  const documentKey = input.sourceDocumentKey.trim();
+  if (!opportunityId || !documentKey) return null;
 
-  const bucket = firstString(input.sourceMetadata, ["bucket"]);
-  const key = firstString(input.sourceMetadata, ["key"]) ?? input.sourceDocumentKey;
-  if (!bucket || !key) return null;
-
-  const base = /^https?:\/\//i.test(bucket) ? bucket : `https://${bucket}`;
-  const normalizedBase = base.replace(/\/+$/, "");
-  const encodedKey = key
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-
-  return encodedKey ? `${normalizedBase}/${encodedKey}` : null;
+  return `https://www.beaconbid.com/api/planholder/document/${encodeURIComponent(opportunityId)}/${encodeURIComponent(documentKey)}`;
 }
 
 const AMENDMENT_PATTERN =
@@ -68,11 +61,10 @@ export function enrichBeaconDocumentMetadata(document: PersistableDocument): Per
 
   return {
     ...document,
-    url: resolveBeaconDocumentUrl({
-      sourceDocumentKey: document.sourceDocumentKey,
-      sourceMetadata: document.sourceMetadata,
-      existingUrl: document.url,
-    }),
+    // Beacon's `bucket` metadata identifies a private S3 bucket; it is not a public hostname.
+    // Only preserve source URLs explicitly supplied by Beacon. Runtime downloads use the
+    // access-controlled /api/planholder/document route instead.
+    url: resolveBeaconDocumentUrl({ existingUrl: document.url }),
     sourceModifiedAt:
       document.sourceModifiedAt ?? parseDate(asObject(document.sourceMetadata)?.createdAt),
     isAmendment: document.isAmendment ?? amendment.isAmendment,
