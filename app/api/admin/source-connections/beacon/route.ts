@@ -93,11 +93,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Validate the credential shape before touching infrastructure, then verify that
-    // persistence is ready before consuming this one-time login credential.
     parseBeaconMagicLink(body.magicLink);
-    getSourceSessionEncryptionKey();
-    await getSourceConnectionSummary(PROVIDER);
   } catch (error) {
     if (error instanceof BeaconAuthError) {
       return NextResponse.json(
@@ -114,8 +110,37 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: {
-          code: "connection_not_configured",
-          message: "Beacon connection storage is not configured on this deployment.",
+          code: "invalid_request",
+          message: "That Beacon login link could not be validated.",
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  // Verify persistence prerequisites independently before consuming the one-time credential.
+  try {
+    getSourceSessionEncryptionKey();
+  } catch {
+    return NextResponse.json(
+      {
+        error: {
+          code: "encryption_not_configured",
+          message: "Beacon session encryption is not configured on this deployment.",
+        },
+      },
+      { status: 503 },
+    );
+  }
+
+  try {
+    await getSourceConnectionSummary(PROVIDER);
+  } catch {
+    return NextResponse.json(
+      {
+        error: {
+          code: "database_unavailable",
+          message: "Beacon connection storage cannot reach the database on this deployment.",
         },
       },
       { status: 503 },
