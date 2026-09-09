@@ -13,22 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Inspect Beacon document transport
+      - name: Inspect Beacon GraphQL document operations
         shell: bash
         run: |
-          set -u
-          urls=(
-            'https://assets.beaconbid.com/assets/js/vendor-C4W9vwQE.js'
-            'https://assets.beaconbid.com/assets/js/grid-a_pcw8bM.js'
-            'https://assets.beaconbid.com/assets/js/pdf-BNy7uOuR.js'
-            'https://assets.beaconbid.com/assets/app-D7XUl6tg.js'
-          )
-          for url in "${urls[@]}"; do
-            echo "=== $url"
-            body=$(curl -fsSL --max-time 30 "$url" 2>/dev/null || true)
-            echo "bytes=${#body}"
-            matches=$(printf '%s' "$body" | grep -Eio '.{0,220}(presign|pre.?signed|signed.?url|documentSource|download[^a-z]|getobject|s3|bucket).{0,300}' | head -80 || true)
-            if [ -n "$matches" ]; then
-              printf '%s\n' "$matches"
-            fi
-          done
+          set -euo pipefail
+          payload='{"operationName":"IntrospectionQuery","variables":{},"query":"query IntrospectionQuery { __schema { queryType { fields { name args { name } } } mutationType { fields { name args { name } } } } }"}'
+          curl -sS --fail-with-body \
+            -H 'content-type: application/json' \
+            -H 'user-agent: govTract/0.1 public-procurement-indexer' \
+            --data-binary "$payload" \
+            'https://www.beaconbid.com/api/gql?operation=IntrospectionQuery' \
+            -o /tmp/schema.json
+          python - <<'PY'
+          import json,re
+          data=json.load(open('/tmp/schema.json'))
+          print(json.dumps(data, indent=2)[:4000] if 'errors' in data else 'introspection_ok')
+          schema=data.get('data',{}).get('__schema') or {}
+          for root in ('queryType','mutationType'):
+              fields=(schema.get(root) or {}).get('fields') or []
+              for f in fields:
+                  hay=f.get('name','')+' '+' '.join(a.get('name','') for a in f.get('args') or [])
+                  if re.search(r'(file|document|download|sign|s3|object|attachment|storage)', hay, re.I):
+                      print(root, f.get('name'), [a.get('name') for a in f.get('args') or []])
+          PY
