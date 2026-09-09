@@ -22,6 +22,7 @@ on:
       - "scripts/beacon-discover.ts"
       - "scripts/beacon-documents.ts"
       - "lib/db/**"
+      - "lib/source-connections/**"
       - "lib/procurement/**"
       - "drizzle/**"
       - "package.json"
@@ -51,8 +52,8 @@ jobs:
       BEACON_DOCUMENT_CONCURRENCY: "4"
       BEACON_DOCUMENT_MAX_BYTES: "314572800"
       BEACON_DOCUMENT_MAX_ERROR_RATE: "0.25"
-      BEACON_SESSION_COOKIE: ${{ secrets.BEACON_SESSION_COOKIE }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
 
     steps:
       - name: Checkout
