@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
+import puppeteer from "puppeteer";
 
 import { closeDb, getDb } from "../lib/db/client";
 import {
@@ -19,8 +20,30 @@ import {
   isBeaconPresignedDocumentUrl,
   resolveBeaconDocumentDownloadUrl,
 } from "../lib/procurement/sources/beacon/documents";
+import {
+  buildBeaconPlanholderRegistrationRequest,
+  parseBeaconPlanholderRegistrationResponse,
+} from "../lib/procurement/sources/beacon/registration";
+import {
+  buildBeaconCookieHeader,
+  getBeaconSessionCookies,
+  isBeaconPermissionResponse,
+  isBeaconRegistrationRequiredResponse,
+  parseBeaconRegistrationProfile,
+  parseBeaconSessionProbe,
+  type BeaconRegistrationProfile,
+} from "../lib/procurement/sources/beacon/session-transport";
+import {
+  loadSourceConnectionSession,
+  markSourceConnectionNeedsReauth,
+  markSourceConnectionValidated,
+  SourceConnectionUnavailableError,
+} from "../lib/source-connections/repository";
+import type { BrowserSessionEnvelope } from "../lib/source-connections/session";
 
 const SOURCE = "beacon";
+const PROVIDER = "beacon";
+const BEACON_ORIGIN = "https://www.beaconbid.com";
 const AGENCY_SLUG = process.env.BEACON_AGENCY ?? "city-of-houston";
 const ARTIFACT_DIR = process.env.BEACON_ARTIFACT_DIR ?? ".artifacts/beacon";
 const DOCUMENT_ARTIFACT_DIR = join(ARTIFACT_DIR, "documents");
@@ -28,11 +51,19 @@ const MAX_BYTES = Number(process.env.BEACON_DOCUMENT_MAX_BYTES ?? String(300 * 1
 const CONCURRENCY = Math.max(1, Number(process.env.BEACON_DOCUMENT_CONCURRENCY ?? "4"));
 const REQUEST_TIMEOUT_MS = Number(process.env.BEACON_DOCUMENT_TIMEOUT_MS ?? "120000");
 const FORCE_REHASH = process.env.BEACON_DOCUMENT_FORCE_REHASH === "true";
-const SESSION_COOKIE = process.env.BEACON_SESSION_COOKIE?.trim() || null;
 const MAX_ERROR_RATE = Number(process.env.BEACON_DOCUMENT_MAX_ERROR_RATE ?? "0.25");
+const AUTO_REGISTER = process.env.BEACON_AUTO_REGISTER !== "false";
+const USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36 govTract/0.1 beacon-documents";
 
-type RetrievalErrorKind = "auth_required" | "network" | "http" | "size";
-type SkipReason = "already_hashed" | "unsupported" | "too_large";
+type RetrievalErrorKind =
+  | "auth_required"
+  | "registration_required"
+  | "registration_failed"
+  | "network"
+  | "http"
+  | "size";
+type SkipReason = "already_hashed" | "unsupported" | "too_large" | "registration_required";
 
 class DocumentRetrievalError extends Error {
   constructor(
@@ -78,10 +109,14 @@ interface ReprocessSignal {
   amendmentLabel: string | null;
 }
 
+interface BeaconConnection {
+  cookieHeader: string;
+  registrationProfile: BeaconRegistrationProfile | null;
+}
+
 function errorText(error: unknown) {
-  if (!(error instanceof Error)) return String(error);
-  const cause = error.cause instanceof Error ? `\nCaused by: ${error.cause.stack ?? error.cause.message}` : "";
-  return `${error.stack ?? error.message}${cause}`;
+  if (error instanceof Error && error.message) return error.message;
+  return "Unknown Beacon document retrieval error";
 }
 
 function numberHeader(value: string | null) {
@@ -96,29 +131,194 @@ function classifyError(error: unknown): RetrievalErrorKind {
   return "http";
 }
 
-function isPermissionResponse(status: number, body: string) {
-  if (![400, 401, 403].includes(status)) return false;
+function baseDocument(row: DocumentRow) {
+  return enrichBeaconDocumentMetadata({
+    sourceDocumentKey: row.sourceDocumentKey,
+    sourceDocumentId: row.sourceDocumentId,
+    name: row.name,
+    url: row.url,
+    mimeType: row.mimeType,
+    fileSizeBytes: row.fileSizeBytes,
+    sourceMetadata: row.sourceMetadata,
+  });
+}
+
+function toPuppeteerCookies(session: BrowserSessionEnvelope) {
+  return getBeaconSessionCookies(session).map((cookie) => ({
+    name: cookie.name,
+    value: cookie.value,
+    domain: cookie.domain,
+    path: cookie.path,
+    ...(cookie.expires ? { expires: cookie.expires } : {}),
+    ...(cookie.httpOnly !== undefined ? { httpOnly: cookie.httpOnly } : {}),
+    ...(cookie.secure !== undefined ? { secure: cookie.secure } : {}),
+    ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+  }));
+}
+
+async function markNeedsReauth(reason: "session_invalid" | "authentication_failed" | "retrieval_unauthorized") {
   try {
-    const parsed = JSON.parse(body) as { code?: unknown; message?: unknown };
-    if (parsed.code === 103) return true;
-    return typeof parsed.message === "string" && /permission|authori[sz]|planholder|interest list/i.test(parsed.message);
+    await markSourceConnectionNeedsReauth(PROVIDER, reason);
   } catch {
-    return /permission|authori[sz]|planholder|interest list/i.test(body);
+    // Retrieval will still fail. Do not replace the safe retrieval error with a DB detail.
+  }
+}
+
+async function validateBeaconSessionInBrowser(session: BrowserSessionEnvelope) {
+  const cookies = toPuppeteerCookies(session);
+  if (!cookies.some((cookie) => cookie.name === "_bs" && cookie.value)) {
+    await markNeedsReauth("session_invalid");
+    throw new DocumentRetrievalError(
+      "Beacon source connection is missing its reusable authentication session; reconnect Beacon in govTract.",
+      "auth_required",
+    );
+  }
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  });
+
+  try {
+    const context = browser.defaultBrowserContext();
+    await context.setCookie(...cookies);
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.setUserAgent(USER_AGENT);
+    await page.goto(BEACON_ORIGIN, { waitUntil: "networkidle2", timeout: 60_000 });
+
+    if (session.localStorage && Object.keys(session.localStorage).length > 0) {
+      await page.evaluate((values) => {
+        window.localStorage.clear();
+        for (const [key, value] of Object.entries(values)) window.localStorage.setItem(key, value);
+      }, session.localStorage);
+      await page.reload({ waitUntil: "networkidle2", timeout: 60_000 });
+    }
+
+    const probe = await page.evaluate(async () => {
+      const response = await fetch("/api/rest/session", { credentials: "include" });
+      return { status: response.status, body: await response.text() };
+    });
+    const parsed = parseBeaconSessionProbe(probe.status, probe.body);
+
+    if (!parsed.authenticatedSupplier) {
+      await markNeedsReauth("authentication_failed");
+      throw new DocumentRetrievalError(
+        "Beacon source connection no longer has supplier access; reconnect Beacon in govTract.",
+        "auth_required",
+      );
+    }
+
+    return parseBeaconRegistrationProfile(probe.body);
+  } catch (error) {
+    if (error instanceof DocumentRetrievalError) throw error;
+    await markNeedsReauth("authentication_failed");
+    throw new DocumentRetrievalError(
+      "Beacon source connection could not be validated; reconnect Beacon in govTract.",
+      "auth_required",
+    );
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+async function loadValidatedBeaconConnection(): Promise<BeaconConnection> {
+  let session: BrowserSessionEnvelope;
+
+  try {
+    session = await loadSourceConnectionSession(PROVIDER);
+  } catch (error) {
+    const suffix =
+      error instanceof SourceConnectionUnavailableError
+        ? ` (${error.reason})`
+        : "";
+    throw new DocumentRetrievalError(
+      `Beacon persisted source connection is unavailable${suffix}; reconnect Beacon in govTract.`,
+      "auth_required",
+    );
+  }
+
+  let cookieHeader: string;
+  try {
+    cookieHeader = buildBeaconCookieHeader(session);
+  } catch {
+    await markNeedsReauth("session_invalid");
+    throw new DocumentRetrievalError(
+      "Beacon persisted source connection is invalid; reconnect Beacon in govTract.",
+      "auth_required",
+    );
+  }
+
+  const registrationProfile = await validateBeaconSessionInBrowser(session);
+  await markSourceConnectionValidated(PROVIDER);
+  return { cookieHeader, registrationProfile };
+}
+
+async function registerBeaconSolicitation(input: {
+  sourceOpportunityId: string;
+  connection: BeaconConnection;
+}) {
+  if (!AUTO_REGISTER) {
+    throw new DocumentRetrievalError(
+      "Beacon requires solicitation registration before document retrieval.",
+      "registration_required",
+    );
+  }
+
+  if (!input.connection.registrationProfile) {
+    throw new DocumentRetrievalError(
+      "Beacon supplier profile is incomplete for automatic solicitation registration.",
+      "registration_failed",
+    );
+  }
+
+  const request = buildBeaconPlanholderRegistrationRequest({
+    solicitationId: input.sourceOpportunityId,
+    profile: input.connection.registrationProfile,
+    interest: "Bidder",
+  });
+  const response = await fetchWithTimeout(
+    `${BEACON_ORIGIN}/api/gql?operation=createPlanholder`,
+    {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { beaconCookieHeader: input.connection.cookieHeader },
+  );
+  const body = (await response.text()).slice(0, 5000);
+  const result = parseBeaconPlanholderRegistrationResponse(response.status, body);
+
+  if (!result.ok) {
+    throw new DocumentRetrievalError(
+      `Beacon automatic solicitation registration failed (HTTP ${response.status}).`,
+      "registration_failed",
+    );
   }
 }
 
 async function fetchWithTimeout(
   url: string,
   init?: RequestInit,
-  options: { includeSessionCookie?: boolean } = {},
+  options: { beaconCookieHeader?: string } = {},
 ) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(init?.headers);
-  headers.set("user-agent", "govTract/0.1 public-procurement-indexer");
+  headers.set("user-agent", USER_AGENT);
   headers.set("accept", "*/*");
-  if ((options.includeSessionCookie ?? true) && SESSION_COOKIE) {
-    headers.set("cookie", SESSION_COOKIE);
+
+  if (options.beaconCookieHeader) {
+    const target = new URL(url);
+    if (target.protocol !== "https:" || target.origin !== BEACON_ORIGIN) {
+      throw new DocumentRetrievalError(
+        "Refusing to send Beacon session credentials to an unexpected host",
+        "http",
+      );
+    }
+    headers.set("cookie", options.beaconCookieHeader);
   }
 
   try {
@@ -135,11 +335,13 @@ async function fetchWithTimeout(
 async function resolveBeaconDownloadResponse(input: {
   downloadUrl: string;
   sourceDocumentKey: string;
+  beaconCookieHeader: string;
 }) {
-  const gatewayResponse = await fetchWithTimeout(input.downloadUrl, {
-    method: "GET",
-    redirect: "manual",
-  });
+  const gatewayResponse = await fetchWithTimeout(
+    input.downloadUrl,
+    { method: "GET", redirect: "manual" },
+    { beaconCookieHeader: input.beaconCookieHeader },
+  );
 
   if (gatewayResponse.status >= 300 && gatewayResponse.status < 400) {
     const location = gatewayResponse.headers.get("location");
@@ -164,11 +366,12 @@ async function resolveBeaconDownloadResponse(input: {
       );
     }
 
-    const s3Response = await fetchWithTimeout(
-      location,
-      { method: "GET", redirect: "manual" },
-      { includeSessionCookie: false },
-    );
+    // The signed S3 URL is consumed immediately and never logged or persisted. Critically,
+    // the Beacon Cookie header is omitted from this request.
+    const s3Response = await fetchWithTimeout(location, {
+      method: "GET",
+      redirect: "manual",
+    });
 
     if (s3Response.status >= 300 && s3Response.status < 400) {
       await s3Response.body?.cancel();
@@ -226,16 +429,12 @@ async function latestChecksum(documentId: string) {
   return latest?.checksumSha256 ?? null;
 }
 
-async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
-  const base = enrichBeaconDocumentMetadata({
-    sourceDocumentKey: row.sourceDocumentKey,
-    sourceDocumentId: row.sourceDocumentId,
-    name: row.name,
-    url: row.url,
-    mimeType: row.mimeType,
-    fileSizeBytes: row.fileSizeBytes,
-    sourceMetadata: row.sourceMetadata,
-  });
+async function retrieveDocument(
+  row: DocumentRow,
+  getBeaconConnection: () => Promise<BeaconConnection>,
+  ensureRegistration: (sourceOpportunityId: string) => Promise<void>,
+): Promise<RetrievedDocument> {
+  const base = baseDocument(row);
 
   if (!isSupportedDocumentType(base)) {
     return { document: base, bytesRead: 0, attemptedDownload: false, skipReason: "unsupported" };
@@ -258,30 +457,53 @@ async function retrieveDocument(row: DocumentRow): Promise<RetrievedDocument> {
     throw new DocumentRetrievalError("Could not build Beacon planholder document route", "http");
   }
 
+  const connection = await getBeaconConnection();
   let response: Response;
   let usedPresignedRedirect = false;
-  try {
-    const resolved = await resolveBeaconDownloadResponse({
-      downloadUrl,
-      sourceDocumentKey: row.sourceDocumentKey,
-    });
-    response = resolved.response;
-    usedPresignedRedirect = resolved.usedPresignedRedirect;
-  } catch (error) {
-    if (error instanceof DocumentRetrievalError) throw error;
-    throw new DocumentRetrievalError(`Beacon document request failed: ${errorText(error)}`, "network");
-  }
+  let registrationRetried = false;
 
-  if (!response.ok) {
+  while (true) {
+    try {
+      const resolved = await resolveBeaconDownloadResponse({
+        downloadUrl,
+        sourceDocumentKey: row.sourceDocumentKey,
+        beaconCookieHeader: connection.cookieHeader,
+      });
+      response = resolved.response;
+      usedPresignedRedirect = usedPresignedRedirect || resolved.usedPresignedRedirect;
+    } catch (error) {
+      if (error instanceof DocumentRetrievalError) throw error;
+      throw new DocumentRetrievalError("Beacon document request failed", "network");
+    }
+
+    if (response.ok) break;
+
     const body = (await response.text()).slice(0, 1000);
-    if (isPermissionResponse(response.status, body)) {
+    if (isBeaconRegistrationRequiredResponse(response.status, body)) {
+      if (!AUTO_REGISTER) {
+        throw new DocumentRetrievalError(
+          "Beacon requires solicitation registration before document retrieval.",
+          "registration_required",
+        );
+      }
+      if (registrationRetried) {
+        throw new DocumentRetrievalError(
+          "Beacon still requires registration after automatic solicitation registration.",
+          "registration_failed",
+        );
+      }
+      await ensureRegistration(row.sourceOpportunityId);
+      registrationRetried = true;
+      continue;
+    }
+    if (isBeaconPermissionResponse(response.status, body)) {
       throw new DocumentRetrievalError(
-        `Beacon requires authorized planholder access for this document (HTTP ${response.status}). Configure BEACON_SESSION_COOKIE with an authorized Beacon session.`,
+        `Beacon denied supplier document access (HTTP ${response.status}); reconnect Beacon in govTract.`,
         "auth_required",
       );
     }
     throw new DocumentRetrievalError(
-      `Beacon document returned HTTP ${response.status}: ${body || response.statusText}`,
+      `Beacon document returned HTTP ${response.status}`,
       "http",
     );
   }
@@ -335,6 +557,11 @@ async function main() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for Beacon document ingestion");
   }
+  if (!process.env.SOURCE_SESSION_ENCRYPTION_KEY) {
+    throw new Error(
+      "SOURCE_SESSION_ENCRYPTION_KEY is required to load the persisted Beacon source connection",
+    );
+  }
 
   await mkdir(DOCUMENT_ARTIFACT_DIR, { recursive: true });
   const db = getDb();
@@ -369,6 +596,31 @@ async function main() {
     byOpportunity.set(row.opportunityId, existing);
   }
 
+  let beaconConnectionPromise: Promise<BeaconConnection> | null = null;
+  let sourceConnectionValidationAttempted = false;
+  const getBeaconConnection = () => {
+    sourceConnectionValidationAttempted = true;
+    beaconConnectionPromise ??= loadValidatedBeaconConnection();
+    return beaconConnectionPromise;
+  };
+  const registrationPromises = new Map<string, Promise<void>>();
+  const autoRegisteredSourceOpportunities = new Set<string>();
+  const ensureRegistration = (sourceOpportunityId: string) => {
+    const existing = registrationPromises.get(sourceOpportunityId);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const connection = await getBeaconConnection();
+      await registerBeaconSolicitation({ sourceOpportunityId, connection });
+      autoRegisteredSourceOpportunities.add(sourceOpportunityId);
+      console.log(
+        `BEACON_PLANHOLDER_REGISTERED sourceOpportunity=${sourceOpportunityId} interest=Bidder emailDocument=false`,
+      );
+    })();
+    registrationPromises.set(sourceOpportunityId, promise);
+    return promise;
+  };
+
   const reprocess: ReprocessSignal[] = [];
   const errors: Array<{
     opportunityId: string;
@@ -376,6 +628,7 @@ async function main() {
     kind: RetrievalErrorKind;
     error: string;
   }> = [];
+  const registrationRequiredOpportunities = new Set<string>();
   let downloaded = 0;
   let attemptedDownloads = 0;
   let presignedRedirectCount = 0;
@@ -384,26 +637,46 @@ async function main() {
   let skippedAlreadyHashed = 0;
   let skippedUnsupported = 0;
   let skippedTooLarge = 0;
+  let registrationRequiredDocumentCount = 0;
+  let registrationRequiredAttemptCount = 0;
   let authRequiredCount = 0;
 
   for (const [opportunityId, documents] of byOpportunity) {
+    let registrationRequired = false;
+
     const retrieved = await mapConcurrent(documents, CONCURRENCY, async (row) => {
+      if (registrationRequired) {
+        return {
+          document: baseDocument(row),
+          bytesRead: 0,
+          attemptedDownload: false,
+          skipReason: "registration_required",
+          errorKind: "registration_required",
+        } satisfies RetrievedDocument;
+      }
+
       try {
-        return await retrieveDocument(row);
+        return await retrieveDocument(row, getBeaconConnection, ensureRegistration);
       } catch (error) {
         const message = errorText(error);
         const kind = classifyError(error);
+
+        if (kind === "registration_required") {
+          registrationRequired = true;
+          registrationRequiredOpportunities.add(opportunityId);
+          return {
+            document: baseDocument(row),
+            bytesRead: 0,
+            attemptedDownload: true,
+            skipReason: "registration_required",
+            error: message,
+            errorKind: kind,
+          } satisfies RetrievedDocument;
+        }
+
         errors.push({ opportunityId, sourceDocumentKey: row.sourceDocumentKey, kind, error: message });
         return {
-          document: enrichBeaconDocumentMetadata({
-            sourceDocumentKey: row.sourceDocumentKey,
-            sourceDocumentId: row.sourceDocumentId,
-            name: row.name,
-            url: row.url,
-            mimeType: row.mimeType,
-            fileSizeBytes: row.fileSizeBytes,
-            sourceMetadata: row.sourceMetadata,
-          }),
+          document: baseDocument(row),
           bytesRead: 0,
           attemptedDownload: true,
           error: message,
@@ -411,6 +684,12 @@ async function main() {
         } satisfies RetrievedDocument;
       }
     });
+
+    if (registrationRequired) {
+      console.warn(
+        `BEACON_DOCUMENT_REGISTRATION_REQUIRED opportunity=${opportunityId} sourceOpportunity=${documents[0]?.sourceOpportunityId ?? "unknown"}`,
+      );
+    }
 
     for (const result of retrieved) {
       processedDocuments += 1;
@@ -421,8 +700,12 @@ async function main() {
       if (result.skipReason === "already_hashed") skippedAlreadyHashed += 1;
       if (result.skipReason === "unsupported") skippedUnsupported += 1;
       if (result.skipReason === "too_large") skippedTooLarge += 1;
+      if (result.skipReason === "registration_required") registrationRequiredDocumentCount += 1;
+      if (result.errorKind === "registration_required" && result.attemptedDownload) {
+        registrationRequiredAttemptCount += 1;
+      }
       if (result.errorKind === "auth_required") authRequiredCount += 1;
-      if (result.error) {
+      if (result.error && result.errorKind !== "registration_required") {
         console.error(
           `BEACON_DOCUMENT_ERROR kind=${result.errorKind ?? "unknown"} opportunity=${opportunityId} key=${result.document.sourceDocumentKey} ${result.error}`,
         );
@@ -458,8 +741,17 @@ async function main() {
     }
   }
 
+  if (authRequiredCount > 0) {
+    await markNeedsReauth("retrieval_unauthorized");
+  }
+
   const retrievalErrorCount = errors.length;
-  const errorRate = attemptedDownloads > 0 ? retrievalErrorCount / attemptedDownloads : 0;
+  const effectiveAttemptedDownloads = Math.max(
+    0,
+    attemptedDownloads - registrationRequiredAttemptCount,
+  );
+  const errorRate =
+    effectiveAttemptedDownloads > 0 ? retrievalErrorCount / effectiveAttemptedDownloads : 0;
   const summary = {
     source: SOURCE,
     agency: AGENCY_SLUG,
@@ -468,12 +760,19 @@ async function main() {
     documentCount: rows.length,
     processedDocuments,
     attemptedDownloads,
+    effectiveAttemptedDownloads,
     downloaded,
     presignedRedirectCount,
     bytesRead,
     skippedAlreadyHashed,
     skippedUnsupported,
     skippedTooLarge,
+    registrationRequiredOpportunityCount: registrationRequiredOpportunities.size,
+    registrationRequiredDocumentCount,
+    registrationRequiredAttemptCount,
+    partialDocumentAccess: registrationRequiredOpportunities.size > 0,
+    autoRegister: AUTO_REGISTER,
+    autoRegisteredOpportunityCount: autoRegisteredSourceOpportunities.size,
     retrievalErrorCount,
     authRequiredCount,
     errorRate,
@@ -482,7 +781,8 @@ async function main() {
     maxBytes: MAX_BYTES,
     concurrency: CONCURRENCY,
     forceRehash: FORCE_REHASH,
-    authorizedSessionConfigured: Boolean(SESSION_COOKIE),
+    sourceConnectionMode: "persisted",
+    sourceConnectionValidationAttempted,
   };
 
   await writeFile(
@@ -503,19 +803,23 @@ async function main() {
 
   console.log(`BEACON_DOCUMENT_SUMMARY ${JSON.stringify(summary)}`);
 
-  if (authRequiredCount > 0 && !SESSION_COOKIE) {
+  if (authRequiredCount > 0) {
     throw new Error(
-      `Beacon requires authorized planholder access for ${authRequiredCount} document(s). Add an authorized Beacon Cookie header as the GitHub Actions secret BEACON_SESSION_COOKIE before running document retrieval.`,
+      `Beacon source connection requires reauthentication for ${authRequiredCount} attempted document(s). Reconnect Beacon in govTract and rerun document retrieval.`,
     );
   }
 
-  if (attemptedDownloads > 0 && downloaded === 0 && retrievalErrorCount > 0) {
+  if (
+    effectiveAttemptedDownloads > 0 &&
+    downloaded === 0 &&
+    retrievalErrorCount > 0
+  ) {
     throw new Error(
-      `Beacon document retrieval failed systemically: 0/${attemptedDownloads} attempted downloads succeeded. See documents/errors.json.`,
+      `Beacon document retrieval failed systemically: 0/${effectiveAttemptedDownloads} non-registration download attempts succeeded. See documents/errors.json.`,
     );
   }
 
-  if (attemptedDownloads > 0 && errorRate > MAX_ERROR_RATE) {
+  if (effectiveAttemptedDownloads > 0 && errorRate > MAX_ERROR_RATE) {
     throw new Error(
       `Beacon document retrieval error rate ${(errorRate * 100).toFixed(1)}% exceeded BEACON_DOCUMENT_MAX_ERROR_RATE=${MAX_ERROR_RATE}. See documents/errors.json.`,
     );

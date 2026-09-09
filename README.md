@@ -74,10 +74,16 @@ For persisted ingestion runs, configure the GitHub Actions repository secret `DA
 
 ### Beacon document access
 
-Beacon solicitation metadata can be discovered through the public supplier experience, but individual document downloads can require authenticated planholder access. govTract uses the same `/api/planholder/document/...` route rendered by Beacon's supplier UI and does not bypass the underlying private storage bucket.
+Beacon solicitation metadata can be discovered through the public supplier experience, but individual document downloads require an authenticated supplier session for protected documents. govTract uses the same `/api/planholder/document/...` route rendered by Beacon's supplier UI and does not bypass the underlying private storage bucket.
 
-When the operator is authorized to download the documents, configure the GitHub Actions repository secret `BEACON_SESSION_COOKIE` with the complete `Cookie` request-header value from that authenticated Beacon session. Treat the value as a credential and renew it when the Beacon session expires. Do not commit it or include it in workflow artifacts.
+Connect or reconnect Beacon from `/admin`. govTract validates the one-time login link, captures the reusable Beacon browser session, encrypts it, and stores it in `source_connections`. Document ingestion loads that persisted session at runtime; it does not require a manually copied Beacon cookie secret.
 
-Beacon can respond to the planholder route with a short-lived AWS S3 presigned URL for `documents.beaconbid.com` in `us-west-2`. govTract validates that redirect against the expected bucket, region, and document key, then downloads it without forwarding the Beacon session cookie. Presigned URLs are treated as ephemeral credentials: they are never stored as document URLs and are never written to logs or workflow artifacts.
+The GitHub Actions repository secret `SOURCE_SESSION_ENCRYPTION_KEY` must use the exact same 32-byte key configured in Vercel so Actions can decrypt the persisted Beacon source session. Do not rotate that key while encrypted sessions depend on it unless there is a reconnect or migration plan.
 
-If protected documents are encountered without an authorized session, document metadata and amendment classification are still retained, but the document-retrieval job fails explicitly instead of falsely reporting a successful hash pass.
+Before protected document retrieval, the job restores the persisted Beacon session into Puppeteer and verifies `/api/rest/session` reports role `supplier`. An invalid or unauthorized session is marked `needs_reauth`; opportunity metadata discovery remains independently usable.
+
+Some Beacon solicitations require the connected supplier to register before their document routes become available. govTract handles this hands-off by default: when that specific registration-required response is observed, it uses the connected Beacon contact/company profile to create the solicitation planholder registration as `Bidder`, preserves the account's existing special-designation values, sets `emailDocument=false`, and retries the blocked document. Registration is deduplicated per solicitation within a run. Set `BEACON_AUTO_REGISTER=false` only when an operator intentionally wants to disable this behavior. A registration failure does not incorrectly mark the reusable Beacon session as expired.
+
+Beacon can respond to the individual planholder route with a short-lived AWS S3 presigned URL for `documents.beaconbid.com` in `us-west-2`. govTract validates that redirect against the expected bucket, region, and exact document key, then streams it without forwarding the Beacon session cookie. Presigned URLs are treated as ephemeral credentials: they are never stored as document URLs and are never written to logs or workflow artifacts.
+
+Document bytes are streamed only long enough to enforce size limits and compute SHA-256. The file body is not persisted by default. Existing hashes are skipped unless rehashing is explicitly requested, while amendment/version and reprocessing semantics remain unchanged.

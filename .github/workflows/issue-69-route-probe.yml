@@ -1,0 +1,28 @@
+name: Issue 69 Beacon route code probe
+
+on:
+  push:
+    branches:
+      - issue-69-beacon-auth-documents
+    paths:
+      - ".github/workflows/issue-69-route-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  route-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx tsx scripts/issue-69-route-probe.ts
+      # Temporary read-only response classification; removed after this run.
