@@ -174,7 +174,9 @@ async function waitForSupplierSession(
   );
 }
 
-function toSessionCookie(cookie: Awaited<ReturnType<Page["cookies"]>>[number]): BrowserSessionCookie {
+function toSessionCookie(
+  cookie: Awaited<ReturnType<BrowserContext["cookies"]>>[number],
+): BrowserSessionCookie {
   const sameSite =
     cookie.sameSite === "Strict" || cookie.sameSite === "Lax" || cookie.sameSite === "None"
       ? cookie.sameSite
@@ -198,7 +200,7 @@ function cookieDomainAllowed(domain: string): boolean {
 }
 
 async function captureSession(page: Page): Promise<BrowserSessionEnvelope> {
-  const cookies = (await page.cookies(BEACON_ORIGIN))
+  const cookies = (await page.browserContext().cookies())
     .filter((cookie) => cookieDomainAllowed(cookie.domain))
     .map(toSessionCookie);
 
@@ -209,7 +211,14 @@ async function captureSession(page: Page): Promise<BrowserSessionEnvelope> {
     );
   }
 
-  const localStorage = await page.evaluate(() => Object.fromEntries(Object.entries(window.localStorage)));
+  let localStorage: Record<string, string> = {};
+  try {
+    localStorage = await page.evaluate(() => Object.fromEntries(Object.entries(window.localStorage)));
+  } catch {
+    // The validated Beacon session is cookie-backed. Local storage is optional and was
+    // empty in the successful auth probe, so inability to read it must not discard _bs.
+  }
+
   return createBrowserSessionEnvelope(cookies, localStorage);
 }
 
