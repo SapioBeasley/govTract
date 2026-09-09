@@ -1,6 +1,12 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema";
+import * as coreSchema from "./schema";
+import * as sourceConnectionSchema from "./source-connections-schema";
+
+const schema = {
+  ...coreSchema,
+  ...sourceConnectionSchema,
+};
 
 let sqlClient: ReturnType<typeof postgres> | null = null;
 
