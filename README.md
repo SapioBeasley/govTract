@@ -78,4 +78,6 @@ Beacon solicitation metadata can be discovered through the public supplier exper
 
 When the operator is authorized to download the documents, configure the GitHub Actions repository secret `BEACON_SESSION_COOKIE` with the complete `Cookie` request-header value from that authenticated Beacon session. Treat the value as a credential and renew it when the Beacon session expires. Do not commit it or include it in workflow artifacts.
 
+Beacon can respond to the planholder route with a short-lived AWS S3 presigned URL for `documents.beaconbid.com` in `us-west-2`. govTract validates that redirect against the expected bucket, region, and document key, then downloads it without forwarding the Beacon session cookie. Presigned URLs are treated as ephemeral credentials: they are never stored as document URLs and are never written to logs or workflow artifacts.
+
 If protected documents are encountered without an authorized session, document metadata and amendment classification are still retained, but the document-retrieval job fails explicitly instead of falsely reporting a successful hash pass.
