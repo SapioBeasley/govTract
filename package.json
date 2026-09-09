@@ -12,6 +12,7 @@
     "test:beacon-normalize": "tsx --test lib/procurement/sources/beacon/normalize.test.ts",
     "test:beacon-documents": "tsx --test lib/procurement/sources/beacon/documents.test.ts",
     "test:documents": "tsx --test lib/procurement/documents/persistence.test.ts",
+    "test:source-connections": "tsx --test lib/source-connections/*.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:documents": "tsx scripts/beacon-documents.ts"
