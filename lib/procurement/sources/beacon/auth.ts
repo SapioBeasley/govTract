@@ -213,13 +213,13 @@ async function captureSession(page: Page): Promise<BrowserSessionEnvelope> {
   return createBrowserSessionEnvelope(cookies, localStorage);
 }
 
-async function restoreSession(
-  browser: Browser,
+async function restoreSessionInFreshBrowser(
   session: BrowserSessionEnvelope,
 ): Promise<SessionProbe> {
-  const context = await browser.createBrowserContext();
+  const browser = await launchBrowser();
 
   try {
+    const context = browser.defaultBrowserContext();
     await context.setCookie(
       ...session.cookies.map((cookie) => ({
         name: cookie.name,
@@ -249,10 +249,10 @@ async function restoreSession(
     if (error instanceof BeaconAuthError) throw error;
     throw new BeaconAuthError(
       "session_restore_failed",
-      "Beacon session could not be restored into a fresh browser context",
+      "Beacon session could not be restored into a fresh browser process",
     );
   } finally {
-    await context.close();
+    await browser.close().catch(() => {});
   }
 }
 
@@ -260,8 +260,10 @@ export async function authenticateBeaconMagicLink(
   rawMagicLink: string,
 ): Promise<BeaconAuthenticatedSession> {
   const magicLink = parseBeaconMagicLink(rawMagicLink);
-  const browser = await launchBrowser();
+  let initialSession: SessionProbe;
+  let session: BrowserSessionEnvelope;
 
+  const browser = await launchBrowser();
   try {
     const context = browser.defaultBrowserContext();
     const page = await preparePage(context);
@@ -278,24 +280,24 @@ export async function authenticateBeaconMagicLink(
       );
     }
 
-    const initialSession = await waitForSupplierSession(page);
-    const session = await captureSession(page);
-    const restoredSession = await restoreSession(browser, session);
-
-    if (restoredSession.role !== "supplier") {
-      throw new BeaconAuthError(
-        "session_restore_failed",
-        "Beacon session did not retain supplier access after restoration",
-      );
-    }
-
-    return {
-      role: "supplier",
-      accountIdentifier:
-        restoredSession.accountIdentifier ?? initialSession.accountIdentifier ?? null,
-      session,
-    };
+    initialSession = await waitForSupplierSession(page);
+    session = await captureSession(page);
   } finally {
     await browser.close().catch(() => {});
   }
+
+  const restoredSession = await restoreSessionInFreshBrowser(session);
+  if (restoredSession.role !== "supplier") {
+    throw new BeaconAuthError(
+      "session_restore_failed",
+      "Beacon session did not retain supplier access after restoration",
+    );
+  }
+
+  return {
+    role: "supplier",
+    accountIdentifier:
+      restoredSession.accountIdentifier ?? initialSession.accountIdentifier ?? null,
+    session,
+  };
 }
