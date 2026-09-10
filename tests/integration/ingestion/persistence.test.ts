@@ -409,7 +409,7 @@ test(
           WHERE source = ${source}
           ORDER BY source_opportunity_id
         `;
-        assert.deepEqual(rows, [
+        assert.deepEqual(Array.from(rows), [
           { source_opportunity_id: "missing", is_active: true },
           { source_opportunity_id: "present", is_active: true },
         ]);
