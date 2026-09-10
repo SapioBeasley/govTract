@@ -481,6 +481,7 @@ async function main() {
               source: SOURCE,
               sourceRecordPk,
               record: normalized,
+              sourceAuthority: "authoritative",
             });
           }
         } catch (error) {

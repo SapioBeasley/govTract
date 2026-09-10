@@ -230,6 +230,7 @@ function requireBeaconCanonicalUrl(context: ProcurementSourceContext) {
 
 export const beaconOpportunityAdapter: ProcurementSourceAdapter<BeaconSolicitation> = {
   source: "beacon",
+  authority: "authoritative",
   identify: identifyBeaconSolicitation,
   toSourceRecord(row, context) {
     return buildBeaconSourceRecord({

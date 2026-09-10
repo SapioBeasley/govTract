@@ -94,7 +94,7 @@ test("still accepts plain string descriptions and numeric-string byte counts", (
   assert.equal(normalized.documents?.[0]?.fileSizeBytes, 42);
 });
 
-test("Beacon exposes the shared source-adapter identity and normalization contract", () => {
+test("Beacon exposes the shared source-adapter identity, authority, and normalization contract", () => {
   const row = {
     id: "SOURCE-ABC",
     revisionId: "revision-7",
@@ -105,6 +105,7 @@ test("Beacon exposes the shared source-adapter identity and normalization contra
   const canonicalUrl = "https://www.beaconbid.com/solicitations/city-of-houston/source-abc/adapter-fixture";
 
   assert.equal(beaconOpportunityAdapter.source, "beacon");
+  assert.equal(beaconOpportunityAdapter.authority, "authoritative");
   assert.deepEqual(beaconOpportunityAdapter.identify(row), {
     sourceRecordId: "source-abc",
     sourceRevisionId: "revision-7",

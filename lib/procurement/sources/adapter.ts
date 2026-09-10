@@ -2,6 +2,9 @@ import type {
   PersistableOpportunityRecord,
   PersistableSourceRecord,
 } from "@/lib/procurement/ingestion/persistence";
+import type { ProcurementSourceAuthority } from "./authority";
+
+export type { ProcurementSourceAuthority } from "./authority";
 
 export interface ProcurementSourceIdentity {
   sourceRecordId: string;
@@ -21,6 +24,7 @@ export interface ProcurementSourceLookup {
 
 export interface ProcurementSourceAdapter<TRawRecord extends Record<string, unknown>> {
   readonly source: string;
+  readonly authority?: ProcurementSourceAuthority;
   identify(record: TRawRecord): ProcurementSourceIdentity;
   toSourceRecord(
     record: TRawRecord,
