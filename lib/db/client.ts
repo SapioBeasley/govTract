@@ -1,10 +1,12 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as coreSchema from "./schema";
+import * as documentExtractionSchema from "./document-extractions-schema";
 import * as sourceConnectionSchema from "./source-connections-schema";
 
 const schema = {
   ...coreSchema,
+  ...documentExtractionSchema,
   ...sourceConnectionSchema,
 };
 

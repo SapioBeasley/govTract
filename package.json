@@ -12,7 +12,7 @@
     "test:beacon-normalize": "tsx --test lib/procurement/sources/beacon/normalize.test.ts",
     "test:beacon-documents": "tsx --test lib/procurement/sources/beacon/documents.test.ts lib/procurement/sources/beacon/session-transport.test.ts lib/procurement/sources/beacon/registration.test.ts",
     "test:beacon-auth": "tsx --test lib/procurement/sources/beacon/auth.test.ts",
-    "test:documents": "tsx --test lib/procurement/documents/persistence.test.ts",
+    "test:documents": "tsx --test lib/procurement/documents/persistence.test.ts lib/procurement/documents/extractions.test.ts",
     "test:source-connections": "tsx --test lib/source-connections/*.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
