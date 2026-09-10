@@ -9,6 +9,7 @@ on:
       - "lib/**"
       - "drizzle/**"
       - "scripts/**"
+      - "tests/**"
       - "package.json"
       - "tsconfig.json"
       - "next.config.*"
@@ -23,9 +24,29 @@ concurrency:
 
 jobs:
   validate:
-    name: Typecheck, build, and local tests
+    name: Typecheck, build, migrations, and deterministic tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: govtract_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/govtract_test
+      # Deterministic 32-byte test key. This is intentionally non-secret and CI-only.
+      SOURCE_SESSION_ENCRYPTION_KEY: "0707070707070707070707070707070707070707070707070707070707070707"
 
     steps:
       - name: Checkout
@@ -39,23 +60,14 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Apply migrations to isolated test database
+        run: npm run db:migrate
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Build
         run: npm run build
 
-      - name: Test document persistence and extraction lifecycle
-        run: npm run test:documents
-
-      - name: Test source connections
-        run: npm run test:source-connections
-
-      - name: Test Beacon authentication helpers
-        run: npm run test:beacon-auth
-
-      - name: Test Beacon normalization
-        run: npm run test:beacon-normalize
-
-      - name: Test Beacon document helpers
-        run: npm run test:beacon-documents
+      - name: Run deterministic test suite
+        run: npm test
