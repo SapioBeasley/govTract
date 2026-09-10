@@ -77,6 +77,8 @@ test("authoritative values outrank aggregator copies field-by-field while blank 
   assert.equal(result.fields.description, "Useful aggregator description");
   assert.equal(result.fields.dueAt, "2026-10-21T19:00:00.000Z");
   assert.deepEqual(result.fields.categories, ["Construction"]);
+  assert.ok(result.provenance.title);
+  assert.ok(result.provenance.description);
   assert.equal(result.provenance.title.source, "beacon");
   assert.equal(result.provenance.description.source, "bidnet");
 });
@@ -105,6 +107,7 @@ test("a later lower-ranked source value cannot replace an authoritative canonica
   assert.equal(before.fields.title, "Official title");
   assert.equal(after.fields.title, "Official title");
   assert.equal(after.fields.dueAt, "2026-10-21T19:00:00.000Z");
+  assert.ok(after.provenance.title);
   assert.equal(after.provenance.title.rule, "authority_then_primary_then_source_identity");
 });
 
@@ -120,6 +123,7 @@ test("equal-authority conflicts use the designated primary source before stable 
   ]);
 
   assert.equal(result.fields.title, "Primary official title");
+  assert.ok(result.provenance.title);
   assert.equal(result.provenance.title.source, "source-a");
   assert.equal(result.provenance.title.conflicts?.length, 1);
 });
