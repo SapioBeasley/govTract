@@ -142,7 +142,7 @@ export function selectCanonicalOpportunityFields(
     if (!winner) continue;
 
     const value = winner.fields[field];
-    fields[field] = value;
+    (fields as Record<string, unknown>)[field] = value;
 
     const winnerValue = stableValue(value);
     const conflicts = ranked
