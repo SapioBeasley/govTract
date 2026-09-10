@@ -1,7 +1,5 @@
-import {
-  persistNormalizedOpportunity,
-  persistSourceRecord,
-} from "@/lib/procurement/ingestion/persistence";
+import { persistIdentityResolvedOpportunity } from "@/lib/procurement/identity/persistence";
+import { persistSourceRecord } from "@/lib/procurement/ingestion/persistence";
 import type {
   ProcurementSourceAdapter,
   ProcurementSourceContext,
@@ -56,7 +54,7 @@ export async function persistProcurementSourceRecord<
     actualSourceRecordId: normalized.sourceRecordId,
   });
 
-  await persistNormalizedOpportunity({
+  const canonical = await persistIdentityResolvedOpportunity({
     source: input.adapter.source,
     sourceRecordPk: persisted.sourceRecordPk,
     record: normalized,
@@ -65,5 +63,7 @@ export async function persistProcurementSourceRecord<
   return {
     ...persisted,
     identity,
+    canonicalOpportunityId: canonical.opportunityId,
+    identityResolution: canonical.identityResolution,
   };
 }
