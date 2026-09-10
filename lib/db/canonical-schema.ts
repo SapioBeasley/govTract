@@ -13,10 +13,31 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { agencies, opportunities, sourceRecords } from "./schema";
+import { opportunities, sourceRecords } from "./schema";
 
 const jsonObject = sql`'{}'::jsonb`;
 const emptyTextArray = sql`ARRAY[]::text[]`;
+
+export const agencies = pgTable(
+  "agencies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    canonicalName: text("canonical_name").notNull(),
+    slug: text("slug").notNull().unique(),
+    agencyType: text("agency_type"),
+    jurisdiction: text("jurisdiction"),
+    websiteUrl: text("website_url"),
+    uei: text("uei"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(jsonObject),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("agencies_name_idx").on(table.canonicalName),
+    index("agencies_type_jurisdiction_idx").on(table.agencyType, table.jurisdiction),
+    index("agencies_uei_idx").on(table.uei),
+  ],
+);
 
 export const opportunitySourceRecords = pgTable(
   "opportunity_source_records",
@@ -28,6 +49,7 @@ export const opportunitySourceRecords = pgTable(
     sourceRecordId: uuid("source_record_id")
       .notNull()
       .references(() => sourceRecords.id, { onDelete: "cascade" }),
+    agencyId: uuid("agency_id").references(() => agencies.id, { onDelete: "set null" }),
     isPrimary: boolean("is_primary").notNull().default(false),
     linkMethod: text("link_method").notNull().default("direct"),
     confidence: integer("confidence"),
@@ -47,6 +69,7 @@ export const opportunitySourceRecords = pgTable(
       table.opportunityId,
       table.isPrimary,
     ),
+    index("opportunity_source_records_agency_idx").on(table.agencyId),
   ],
 );
 
