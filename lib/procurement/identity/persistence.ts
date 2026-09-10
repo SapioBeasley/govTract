@@ -22,6 +22,9 @@ import {
   persistNormalizedOpportunity,
   type PersistableOpportunityRecord,
 } from "@/lib/procurement/ingestion/persistence";
+import { recomputeCanonicalOpportunityFields } from "@/lib/procurement/precedence/persistence";
+import { serializeOpportunityPrecedenceFields } from "@/lib/procurement/precedence/opportunity";
+import type { ProcurementSourceAuthority } from "@/lib/procurement/sources/authority";
 import {
   normalizeSolicitationIdentity,
   resolveOpportunityIdentity,
@@ -261,11 +264,34 @@ async function findAgencyId(record: PersistableOpportunityRecord) {
   return agency?.id ?? null;
 }
 
+async function updateExistingSourceSnapshot(input: {
+  opportunityId: string;
+  sourceRecordPk: string;
+  record: PersistableOpportunityRecord;
+  sourceAuthority: ProcurementSourceAuthority;
+}) {
+  const db = getDb();
+  const agencyId = await findAgencyId(input.record);
+  const now = new Date();
+  await db
+    .update(opportunitySourceRecords)
+    .set({
+      agencyId,
+      sourceAuthority: input.sourceAuthority,
+      normalizedPayload: serializeOpportunityPrecedenceFields(input.record),
+      lastSeenAt: now,
+      updatedAt: now,
+    })
+    .where(eq(opportunitySourceRecords.sourceRecordId, input.sourceRecordPk));
+  await recomputeCanonicalOpportunityFields(input.opportunityId);
+}
+
 async function attachSecondarySource(input: {
   opportunityId: string;
   source: string;
   sourceRecordPk: string;
   record: PersistableOpportunityRecord;
+  sourceAuthority: ProcurementSourceAuthority;
   resolution: Extract<OpportunityIdentityDecision, { kind: "match" }>;
 }) {
   const db = getDb();
@@ -281,6 +307,8 @@ async function attachSecondarySource(input: {
       isPrimary: false,
       linkMethod: input.resolution.method,
       confidence: input.resolution.confidence,
+      sourceAuthority: input.sourceAuthority,
+      normalizedPayload: serializeOpportunityPrecedenceFields(input.record),
       evidence: {
         source: input.source,
         sourceOpportunityId: input.record.sourceRecordId,
@@ -298,6 +326,8 @@ async function attachSecondarySource(input: {
         isPrimary: false,
         linkMethod: input.resolution.method,
         confidence: input.resolution.confidence,
+        sourceAuthority: input.sourceAuthority,
+        normalizedPayload: serializeOpportunityPrecedenceFields(input.record),
         evidence: {
           source: input.source,
           sourceOpportunityId: input.record.sourceRecordId,
@@ -307,18 +337,22 @@ async function attachSecondarySource(input: {
         updatedAt: now,
       },
     });
+
+  await recomputeCanonicalOpportunityFields(input.opportunityId);
 }
 
 async function persistNewCanonical(input: {
   source: string;
   sourceRecordPk: string;
   record: PersistableOpportunityRecord;
+  sourceAuthority: ProcurementSourceAuthority;
   resolution: Exclude<OpportunityIdentityDecision, { kind: "match" }>;
 }) {
   await persistNormalizedOpportunity({
     source: input.source,
     sourceRecordPk: input.sourceRecordPk,
     record: input.record,
+    sourceAuthority: input.sourceAuthority,
   });
 
   const db = getDb();
@@ -350,18 +384,22 @@ export async function persistIdentityResolvedOpportunity(input: {
   source: string;
   sourceRecordPk: string;
   record: PersistableOpportunityRecord;
+  sourceAuthority?: ProcurementSourceAuthority;
 }) {
   const db = getDb();
+  const sourceAuthority = input.sourceAuthority ?? "unknown";
   const existingLink = await findExistingSourceLink(input.sourceRecordPk);
   if (existingLink) {
     const resolution = sameSourceDecision(existingLink.opportunityId);
     if (existingLink.isPrimary) {
-      await persistNormalizedOpportunity(input);
+      await persistNormalizedOpportunity({ ...input, sourceAuthority });
     } else {
-      await db
-        .update(opportunitySourceRecords)
-        .set({ lastSeenAt: new Date(), updatedAt: new Date() })
-        .where(eq(opportunitySourceRecords.sourceRecordId, input.sourceRecordPk));
+      await updateExistingSourceSnapshot({
+        opportunityId: existingLink.opportunityId,
+        sourceRecordPk: input.sourceRecordPk,
+        record: input.record,
+        sourceAuthority,
+      });
     }
 
     return {
@@ -381,6 +419,7 @@ export async function persistIdentityResolvedOpportunity(input: {
       source: input.source,
       sourceRecordPk: input.sourceRecordPk,
       record: input.record,
+      sourceAuthority,
       resolution,
     });
     return {
@@ -393,6 +432,7 @@ export async function persistIdentityResolvedOpportunity(input: {
     source: input.source,
     sourceRecordPk: input.sourceRecordPk,
     record: input.record,
+    sourceAuthority,
     resolution,
   });
   return {
