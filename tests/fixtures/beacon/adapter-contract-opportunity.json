@@ -1,0 +1,100 @@
+{
+  "context": {
+    "canonicalUrl": "https://www.beaconbid.com/solicitations/city-of-houston/00000000-0000-4000-8000-000000000048/adapter-contract-fixture",
+    "agency": "contract-city-of-houston-48",
+    "canonicalStatus": "open"
+  },
+  "initial": {
+    "id": "00000000-0000-4000-8000-000000000048",
+    "revisionId": "contract-revision-1",
+    "refnum": "CONTRACT-48",
+    "title": "Adapter Contract Fixture",
+    "status": "approved",
+    "type": "formal",
+    "modifiedAt": "2026-09-01T12:00:00.000Z",
+    "description": {
+      "html": "<p>Sanitized Beacon fixture for reusable adapter contract coverage.</p>"
+    },
+    "agency": {
+      "name": "City of Houston"
+    },
+    "departments": [
+      {
+        "name": "Houston Public Works"
+      }
+    ],
+    "categories": [
+      {
+        "type": "nigp",
+        "code": "91345",
+        "name": "Construction, Sewer and Storm Drain"
+      }
+    ],
+    "documents": [
+      {
+        "key": "fixtures/contract/specification.pdf",
+        "name": "Specification.pdf",
+        "type": "application/pdf",
+        "bytes": 1234,
+        "detail": "Documentation"
+      }
+    ]
+  },
+  "updated": {
+    "id": "00000000-0000-4000-8000-000000000048",
+    "revisionId": "contract-revision-2",
+    "refnum": "CONTRACT-48",
+    "title": "Adapter Contract Fixture - Amended",
+    "status": "approved",
+    "type": "formal",
+    "modifiedAt": "2026-09-02T12:00:00.000Z",
+    "description": {
+      "html": "<p>Updated sanitized Beacon fixture.</p>"
+    },
+    "agency": {
+      "name": "City of Houston"
+    },
+    "departments": [
+      {
+        "name": "Houston Public Works"
+      }
+    ],
+    "categories": [
+      {
+        "type": "nigp",
+        "code": "91345",
+        "name": "Construction, Sewer and Storm Drain"
+      }
+    ],
+    "documents": [
+      {
+        "key": "fixtures/contract/specification.pdf",
+        "name": "Specification.pdf",
+        "type": "application/pdf",
+        "bytes": 1234,
+        "detail": "Documentation"
+      },
+      {
+        "key": "fixtures/contract/addendum-1.pdf",
+        "name": "Addendum 1.pdf",
+        "type": "application/pdf",
+        "bytes": 456,
+        "detail": "Addendum"
+      }
+    ]
+  },
+  "invalid": {
+    "id": "   ",
+    "revisionId": "bad-revision",
+    "title": "Missing deterministic identity"
+  },
+  "expected": {
+    "sourceRecordId": "00000000-0000-4000-8000-000000000048",
+    "initialRevisionId": "contract-revision-1",
+    "updatedRevisionId": "contract-revision-2",
+    "initialTitle": "Adapter Contract Fixture",
+    "updatedTitle": "Adapter Contract Fixture - Amended",
+    "documentCount": 2,
+    "classificationCount": 1
+  }
+}
