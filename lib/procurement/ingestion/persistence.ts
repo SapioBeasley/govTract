@@ -518,6 +518,33 @@ export async function reconcileCompleteScope(input: {
     .where(and(...opportunityConditions));
 }
 
+export async function reconcileIngestionScope(input: {
+  source: string;
+  agency?: string;
+  seenSourceRecordIds: string[];
+  status: Exclude<IngestionStatus, "running">;
+  reportedTotal: number | null;
+  paginationComplete: boolean;
+  normalizationComplete: boolean;
+}) {
+  const safeToReconcile =
+    input.status === "complete" &&
+    input.paginationComplete &&
+    input.normalizationComplete &&
+    input.reportedTotal !== null &&
+    input.reportedTotal > 0 &&
+    input.seenSourceRecordIds.length > 0;
+
+  if (!safeToReconcile) return false;
+
+  await reconcileCompleteScope({
+    source: input.source,
+    agency: input.agency,
+    seenSourceRecordIds: input.seenSourceRecordIds,
+  });
+  return true;
+}
+
 export async function finishIngestionRun(input: {
   runId: string;
   status: Exclude<IngestionStatus, "running">;
