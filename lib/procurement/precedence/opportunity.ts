@@ -29,7 +29,7 @@ export const OPPORTUNITY_FIELD_PRECEDENCE_RULES = {
 
 export type CanonicalOpportunityField = keyof typeof OPPORTUNITY_FIELD_PRECEDENCE_RULES.fields;
 
-export interface CanonicalOpportunityFields {
+export interface CanonicalOpportunityFields extends Record<string, unknown> {
   solicitationNumber?: string | null;
   title?: string | null;
   description?: string | null;
@@ -142,7 +142,7 @@ export function selectCanonicalOpportunityFields(
     if (!winner) continue;
 
     const value = winner.fields[field];
-    (fields as Record<string, unknown>)[field] = value;
+    fields[field] = value;
 
     const winnerValue = stableValue(value);
     const conflicts = ranked
