@@ -96,6 +96,7 @@ type SkipReason =
   | "backfill_limit";
 
 type ExtractionCheckpoint = "reused" | "failed" | null;
+type CanonicalExtractionRow = { id: string; status: string };
 
 class DocumentRetrievalError extends Error {
   constructor(
@@ -487,9 +488,9 @@ async function resolveVersionId(documentId: string, versionNumber: number) {
 async function findCanonicalExtraction(
   checksumSha256: string,
   descriptor: DocumentExtractorDescriptor,
-) {
+): Promise<CanonicalExtractionRow | null> {
   const db = getDb();
-  const [row] = await db
+  const rows = await db
     .select({ id: documentExtractions.id, status: documentExtractions.status })
     .from(documentExtractions)
     .where(
@@ -500,7 +501,7 @@ async function findCanonicalExtraction(
       ),
     )
     .limit(1);
-  return row ?? null;
+  return rows[0] ?? null;
 }
 
 async function attachExistingExtraction(extractionId: string, documentVersionId: string) {
@@ -532,7 +533,7 @@ async function retrieveDocument(input: {
 
   const descriptor = getDocumentExtractorDescriptor(base);
   const latest = await latestVersion(row.documentId);
-  let existingExtraction: Awaited<ReturnType<typeof findCanonicalExtraction>> = null;
+  let existingExtraction: CanonicalExtractionRow | null = null;
   if (EXTRACTION_ENABLED && latest?.checksumSha256 && descriptor) {
     existingExtraction = await findCanonicalExtraction(latest.checksumSha256, descriptor);
   }
