@@ -3,7 +3,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import postgres from "postgres";
 
+import {
+  classifyLegacyMigrationState,
+  formatLegacyMigrationRequirement,
+  legacyMigrationRequirements,
+  type LegacyMigrationRequirement,
+} from "./db-migrate-helpers";
+
 const migrationsDir = resolve(process.cwd(), "drizzle");
+const allowLegacyBaseline = process.argv.includes("--baseline-existing");
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -16,6 +24,26 @@ async function main() {
     prepare: false,
     idle_timeout: 20,
   });
+
+  async function requirementExists(requirement: LegacyMigrationRequirement) {
+    if (requirement.kind === "table") {
+      const [row] = await sql<{ exists: boolean }[]>`
+        SELECT to_regclass(${`public.${requirement.name}`}) IS NOT NULL AS exists
+      `;
+      return row?.exists ?? false;
+    }
+
+    const [row] = await sql<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ${requirement.table}
+          AND column_name = ${requirement.column}
+      ) AS exists
+    `;
+    return row?.exists ?? false;
+  }
 
   try {
     await sql`
@@ -53,6 +81,34 @@ async function main() {
 
         console.log(`Already applied: ${version}`);
         continue;
+      }
+
+      const requirements = legacyMigrationRequirements[version];
+      if (allowLegacyBaseline && requirements) {
+        const requirementResults: boolean[] = [];
+        for (const requirement of requirements) {
+          requirementResults.push(await requirementExists(requirement));
+        }
+
+        const state = classifyLegacyMigrationState(requirementResults);
+        if (state === "partial") {
+          const missing = requirements
+            .filter((_, index) => !requirementResults[index])
+            .map(formatLegacyMigrationRequirement)
+            .join(", ");
+          throw new Error(
+            `Migration ${version} appears partially applied; refusing to baseline. Missing schema markers: ${missing}`,
+          );
+        }
+
+        if (state === "present") {
+          await sql`
+            INSERT INTO public.govtract_migrations (version, checksum)
+            VALUES (${version}, ${checksum})
+          `;
+          console.log(`Baselined existing: ${version}`);
+          continue;
+        }
       }
 
       await sql.begin(async (tx) => {
