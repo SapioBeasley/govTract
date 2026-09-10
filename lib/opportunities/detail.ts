@@ -1,13 +1,19 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { cache } from "react";
 
 import { getDb } from "@/lib/db/client";
 import {
+  documentExtractions,
+  opportunityDocumentVersionExtractions,
+} from "@/lib/db/document-extractions-schema";
+import {
   opportunities,
   opportunityClassifications,
   opportunityDocuments,
+  opportunityDocumentVersions,
   sourceRecords,
 } from "@/lib/db/schema";
+import { isSupportedDocumentType } from "@/lib/procurement/documents/persistence";
 
 export type OpportunityDetailClassification = {
   id: string;
@@ -15,6 +21,13 @@ export type OpportunityDetailClassification = {
   code: string | null;
   name: string;
 };
+
+export type OpportunityDocumentExtractionState =
+  | "pending"
+  | "extracted"
+  | "failed"
+  | "unsupported"
+  | "stale";
 
 export type OpportunityDetailDocument = {
   id: string;
@@ -27,6 +40,26 @@ export type OpportunityDetailDocument = {
   sourceMetadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
+  extractionState: OpportunityDocumentExtractionState;
+  latestVersion: {
+    id: string;
+    versionNumber: number;
+    checksumSha256: string | null;
+    retrievedAt: Date | null;
+  } | null;
+  extraction: {
+    id: string;
+    status: string;
+    checksumSha256: string;
+    extractorName: string;
+    extractorVersion: string;
+    extractedByteCount: number;
+    extractedCharCount: number;
+    segmentCount: number;
+    truncated: boolean;
+    failureCode: string | null;
+    completedAt: Date | null;
+  } | null;
 };
 
 export type OpportunityDetail = {
@@ -75,7 +108,6 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
   if (!UUID_PATTERN.test(id)) return null;
 
   const db = getDb();
-
   const [opportunity] = await db
     .select({
       id: opportunities.id,
@@ -109,7 +141,7 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
 
   if (!opportunity) return null;
 
-  const [classifications, documents, sourceRecordRows] = await Promise.all([
+  const [classifications, documentRows, sourceRecordRows] = await Promise.all([
     db
       .select({
         id: opportunityClassifications.id,
@@ -161,6 +193,137 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
       .where(eq(sourceRecords.id, opportunity.sourceRecordId))
       .limit(1),
   ]);
+
+  const documentIds = documentRows.map((document) => document.id);
+  const versionRows = documentIds.length
+    ? await db
+        .select({
+          id: opportunityDocumentVersions.id,
+          opportunityDocumentId: opportunityDocumentVersions.opportunityDocumentId,
+          versionNumber: opportunityDocumentVersions.versionNumber,
+          checksumSha256: opportunityDocumentVersions.checksumSha256,
+          retrievedAt: opportunityDocumentVersions.retrievedAt,
+        })
+        .from(opportunityDocumentVersions)
+        .where(inArray(opportunityDocumentVersions.opportunityDocumentId, documentIds))
+        .orderBy(desc(opportunityDocumentVersions.versionNumber))
+    : [];
+
+  const versionIds = versionRows.map((version) => version.id);
+  const extractionRows = versionIds.length
+    ? await db
+        .select({
+          opportunityDocumentVersionId:
+            opportunityDocumentVersionExtractions.opportunityDocumentVersionId,
+          id: documentExtractions.id,
+          status: documentExtractions.status,
+          checksumSha256: documentExtractions.checksumSha256,
+          extractorName: documentExtractions.extractorName,
+          extractorVersion: documentExtractions.extractorVersion,
+          extractedByteCount: documentExtractions.extractedByteCount,
+          extractedCharCount: documentExtractions.extractedCharCount,
+          segmentCount: documentExtractions.segmentCount,
+          truncated: documentExtractions.truncated,
+          failureCode: documentExtractions.failureCode,
+          completedAt: documentExtractions.completedAt,
+          updatedAt: documentExtractions.updatedAt,
+        })
+        .from(opportunityDocumentVersionExtractions)
+        .innerJoin(
+          documentExtractions,
+          eq(
+            opportunityDocumentVersionExtractions.documentExtractionId,
+            documentExtractions.id,
+          ),
+        )
+        .where(
+          inArray(
+            opportunityDocumentVersionExtractions.opportunityDocumentVersionId,
+            versionIds,
+          ),
+        )
+        .orderBy(desc(documentExtractions.updatedAt))
+    : [];
+
+  const latestVersionByDocument = new Map<string, (typeof versionRows)[number]>();
+  const documentIdByVersion = new Map<string, string>();
+  for (const version of versionRows) {
+    documentIdByVersion.set(version.id, version.opportunityDocumentId);
+    if (!latestVersionByDocument.has(version.opportunityDocumentId)) {
+      latestVersionByDocument.set(version.opportunityDocumentId, version);
+    }
+  }
+
+  const extractionsByVersion = new Map<string, typeof extractionRows>();
+  const historicalExtractionByDocument = new Set<string>();
+  for (const extraction of extractionRows) {
+    const current = extractionsByVersion.get(extraction.opportunityDocumentVersionId) ?? [];
+    current.push(extraction);
+    extractionsByVersion.set(extraction.opportunityDocumentVersionId, current);
+    const documentId = documentIdByVersion.get(extraction.opportunityDocumentVersionId);
+    if (documentId && ["extracted", "truncated"].includes(extraction.status)) {
+      historicalExtractionByDocument.add(documentId);
+    }
+  }
+
+  const documents: OpportunityDetailDocument[] = documentRows.map((document) => {
+    const latestVersion = latestVersionByDocument.get(document.id) ?? null;
+    const currentExtractions = latestVersion
+      ? extractionsByVersion.get(latestVersion.id) ?? []
+      : [];
+    const matchingExtraction =
+      currentExtractions.find(
+        (extraction) =>
+          latestVersion?.checksumSha256 &&
+          extraction.checksumSha256 === latestVersion.checksumSha256,
+      ) ?? null;
+
+    let extractionState: OpportunityDocumentExtractionState;
+    if (!isSupportedDocumentType(document)) {
+      extractionState = "unsupported";
+    } else if (matchingExtraction?.status === "failed") {
+      extractionState = "failed";
+    } else if (
+      matchingExtraction &&
+      ["extracted", "truncated"].includes(matchingExtraction.status)
+    ) {
+      extractionState = "extracted";
+    } else if (matchingExtraction?.status === "pending") {
+      extractionState = "pending";
+    } else if (historicalExtractionByDocument.has(document.id)) {
+      extractionState = "stale";
+    } else {
+      extractionState = "pending";
+    }
+
+    return {
+      ...document,
+      extractionState,
+      latestVersion: latestVersion
+        ? {
+            id: latestVersion.id,
+            versionNumber: latestVersion.versionNumber,
+            checksumSha256: latestVersion.checksumSha256,
+            retrievedAt: latestVersion.retrievedAt,
+          }
+        : null,
+      extraction: matchingExtraction
+        ? {
+            id: matchingExtraction.id,
+            status: matchingExtraction.status,
+            checksumSha256: matchingExtraction.checksumSha256,
+            extractorName: matchingExtraction.extractorName,
+            extractorVersion: matchingExtraction.extractorVersion,
+            extractedByteCount: matchingExtraction.extractedByteCount,
+            extractedCharCount: matchingExtraction.extractedCharCount,
+            segmentCount: matchingExtraction.segmentCount,
+            truncated: matchingExtraction.truncated,
+            failureCode: matchingExtraction.failureCode,
+            completedAt: matchingExtraction.completedAt,
+          }
+        : null,
+    };
+  });
 
   return {
     ...opportunity,
