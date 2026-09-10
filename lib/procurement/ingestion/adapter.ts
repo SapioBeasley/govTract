@@ -58,6 +58,7 @@ export async function persistProcurementSourceRecord<
     source: input.adapter.source,
     sourceRecordPk: persisted.sourceRecordPk,
     record: normalized,
+    sourceAuthority: input.adapter.authority ?? "unknown",
   });
 
   return {
