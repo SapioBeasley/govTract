@@ -14,6 +14,9 @@ import {
   persistOpportunityDocumentSet,
   type PersistableDocument,
 } from "@/lib/procurement/documents/persistence";
+import { recomputeCanonicalOpportunityFields } from "@/lib/procurement/precedence/persistence";
+import { serializeOpportunityPrecedenceFields } from "@/lib/procurement/precedence/opportunity";
+import type { ProcurementSourceAuthority } from "@/lib/procurement/sources/authority";
 
 export type { PersistableDocument } from "@/lib/procurement/documents/persistence";
 
@@ -252,9 +255,12 @@ export async function persistNormalizedOpportunity(input: {
   source: string;
   sourceRecordPk: string;
   record: PersistableOpportunityRecord;
+  sourceAuthority?: ProcurementSourceAuthority;
 }) {
   const db = getDb();
   const now = new Date();
+  const sourceAuthority = input.sourceAuthority ?? "unknown";
+  const normalizedPayload = serializeOpportunityPrecedenceFields(input.record);
   const agencyId = await upsertCanonicalAgency({
     agencySlug: input.record.agencySlug,
     agencyName: input.record.agencyName,
@@ -293,21 +299,6 @@ export async function persistNormalizedOpportunity(input: {
       set: {
         sourceRecordId: input.sourceRecordPk,
         sourceRevisionId: input.record.sourceRevisionId,
-        solicitationNumber: input.record.solicitationNumber,
-        title: input.record.title,
-        description: input.record.description,
-        status: input.record.status,
-        sourceStatus: input.record.sourceStatus,
-        opportunityType: input.record.opportunityType,
-        agencyName: input.record.agencyName,
-        agencySlug: input.record.agencySlug,
-        departments: input.record.departments,
-        categories: input.record.categories,
-        publishedAt: input.record.publishedAt,
-        issueAt: input.record.issueAt,
-        dueAt: input.record.dueAt,
-        canonicalUrl: input.record.canonicalUrl,
-        location: input.record.location ?? {},
         isActive: true,
         lastSeenAt: now,
         updatedAt: now,
@@ -326,6 +317,8 @@ export async function persistNormalizedOpportunity(input: {
       isPrimary: true,
       linkMethod: "direct",
       confidence: 100,
+      sourceAuthority,
+      normalizedPayload,
       evidence: {
         source: input.source,
         sourceOpportunityId: input.record.sourceRecordId,
@@ -342,6 +335,8 @@ export async function persistNormalizedOpportunity(input: {
         isPrimary: true,
         linkMethod: "direct",
         confidence: 100,
+        sourceAuthority,
+        normalizedPayload,
         evidence: {
           source: input.source,
           sourceOpportunityId: input.record.sourceRecordId,
@@ -350,6 +345,8 @@ export async function persistNormalizedOpportunity(input: {
         updatedAt: now,
       },
     });
+
+  await recomputeCanonicalOpportunityFields(opportunity.id);
 
   await persistOpportunityDocumentSet({
     opportunityId: opportunity.id,
