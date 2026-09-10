@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:check": "tsx scripts/db-health.ts",
+    "test": "tsx scripts/run-tests.ts",
     "test:beacon-normalize": "tsx --test lib/procurement/sources/beacon/normalize.test.ts",
     "test:beacon-documents": "tsx --test lib/procurement/sources/beacon/documents.test.ts lib/procurement/sources/beacon/session-transport.test.ts lib/procurement/sources/beacon/registration.test.ts",
     "test:beacon-auth": "tsx --test lib/procurement/sources/beacon/auth.test.ts",
