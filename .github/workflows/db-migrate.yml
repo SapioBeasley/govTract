@@ -1,0 +1,50 @@
+name: Database migrations
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/db-migrate.yml"
+      - "drizzle/**"
+      - "scripts/db-migrate.ts"
+      - "scripts/db-migrate-helpers.ts"
+      - "scripts/db-migrate.test.ts"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: govtract-production-database-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply production database migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test database migration behavior
+        run: npm run test:db-migrations
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Apply and record migrations
+        run: npm run db:migrate -- --baseline-existing
