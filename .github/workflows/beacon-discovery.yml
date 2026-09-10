@@ -36,6 +36,9 @@ on:
       - "scripts/beacon-discover.ts"
       - "scripts/beacon-documents.ts"
       - "scripts/beacon-documents-v2.ts"
+      - "scripts/db-migrate.ts"
+      - "scripts/db-migrate-helpers.ts"
+      - "scripts/db-migrate.test.ts"
       - "lib/db/**"
       - "lib/source-connections/**"
       - "lib/procurement/**"
@@ -87,6 +90,9 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Test database migration behavior
+        run: npm run test:db-migrations
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -98,6 +104,10 @@ jobs:
 
       - name: Test Beacon document helpers
         run: npm run test:beacon-documents
+
+      - name: Apply database migrations
+        if: github.event_name == 'workflow_dispatch' && inputs.persist
+        run: npm run db:migrate -- --baseline-existing
 
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon
