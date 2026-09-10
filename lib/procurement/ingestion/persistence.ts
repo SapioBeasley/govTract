@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { closeDb, getDb } from "@/lib/db/client";
+import { agencies, opportunitySourceRecords } from "@/lib/db/canonical-schema";
 import {
   ingestionRecordErrors,
   ingestionRunPages,
@@ -220,6 +221,33 @@ export async function persistSourceRecord(input: {
   return { sourceRecordPk: existing.id, change: "unchanged" };
 }
 
+async function upsertCanonicalAgency(input: {
+  agencySlug?: string | null;
+  agencyName?: string | null;
+  updatedAt: Date;
+}) {
+  if (!input.agencySlug) return null;
+
+  const db = getDb();
+  const [agency] = await db
+    .insert(agencies)
+    .values({
+      slug: input.agencySlug,
+      canonicalName: input.agencyName ?? input.agencySlug,
+      updatedAt: input.updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: agencies.slug,
+      set: {
+        canonicalName: input.agencyName ?? input.agencySlug,
+        updatedAt: input.updatedAt,
+      },
+    })
+    .returning({ id: agencies.id });
+
+  return agency?.id ?? null;
+}
+
 export async function persistNormalizedOpportunity(input: {
   source: string;
   sourceRecordPk: string;
@@ -227,6 +255,11 @@ export async function persistNormalizedOpportunity(input: {
 }) {
   const db = getDb();
   const now = new Date();
+  const agencyId = await upsertCanonicalAgency({
+    agencySlug: input.record.agencySlug,
+    agencyName: input.record.agencyName,
+    updatedAt: now,
+  });
 
   const [opportunity] = await db
     .insert(opportunities)
@@ -283,6 +316,40 @@ export async function persistNormalizedOpportunity(input: {
     .returning({ id: opportunities.id });
 
   if (!opportunity) throw new Error(`Failed to upsert opportunity ${input.record.sourceRecordId}`);
+
+  await db
+    .insert(opportunitySourceRecords)
+    .values({
+      opportunityId: opportunity.id,
+      sourceRecordId: input.sourceRecordPk,
+      agencyId,
+      isPrimary: true,
+      linkMethod: "direct",
+      confidence: 100,
+      evidence: {
+        source: input.source,
+        sourceOpportunityId: input.record.sourceRecordId,
+      },
+      firstSeenAt: now,
+      lastSeenAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: opportunitySourceRecords.sourceRecordId,
+      set: {
+        opportunityId: opportunity.id,
+        agencyId,
+        isPrimary: true,
+        linkMethod: "direct",
+        confidence: 100,
+        evidence: {
+          source: input.source,
+          sourceOpportunityId: input.record.sourceRecordId,
+        },
+        lastSeenAt: now,
+        updatedAt: now,
+      },
+    });
 
   await persistOpportunityDocumentSet({
     opportunityId: opportunity.id,
