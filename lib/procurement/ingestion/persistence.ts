@@ -403,18 +403,58 @@ export async function persistNormalizedOpportunity(input: {
 
 export async function recordPagePersistenceCounts(input: {
   runId: string;
+  pageNumber?: number;
   counts: PagePersistenceCounts;
 }) {
   const db = getDb();
-  await db
-    .update(ingestionRuns)
-    .set({
-      insertedCount: sql`${ingestionRuns.insertedCount} + ${input.counts.inserted}`,
-      updatedCount: sql`${ingestionRuns.updatedCount} + ${input.counts.updated}`,
-      unchangedCount: sql`${ingestionRuns.unchangedCount} + ${input.counts.unchanged}`,
-      updatedAt: new Date(),
-    })
-    .where(eq(ingestionRuns.id, input.runId));
+  await db.transaction(async (tx) => {
+    let pageNumber = input.pageNumber;
+    if (pageNumber === undefined) {
+      const [run] = await tx
+        .select({ pageNumber: ingestionRuns.pagesFetched })
+        .from(ingestionRuns)
+        .where(eq(ingestionRuns.id, input.runId))
+        .limit(1);
+      pageNumber = run?.pageNumber;
+    }
+
+    if (!pageNumber || pageNumber < 1) {
+      throw new Error(`Cannot record persistence counts before a page is persisted for run ${input.runId}`);
+    }
+
+    await tx
+      .update(ingestionRunPages)
+      .set({
+        insertedCount: input.counts.inserted,
+        updatedCount: input.counts.updated,
+        unchangedCount: input.counts.unchanged,
+      })
+      .where(
+        and(
+          eq(ingestionRunPages.ingestionRunId, input.runId),
+          eq(ingestionRunPages.pageNumber, pageNumber),
+        ),
+      );
+
+    const [totals] = await tx
+      .select({
+        inserted: sql<number>`coalesce(sum(${ingestionRunPages.insertedCount}), 0)::int`,
+        updated: sql<number>`coalesce(sum(${ingestionRunPages.updatedCount}), 0)::int`,
+        unchanged: sql<number>`coalesce(sum(${ingestionRunPages.unchangedCount}), 0)::int`,
+      })
+      .from(ingestionRunPages)
+      .where(eq(ingestionRunPages.ingestionRunId, input.runId));
+
+    await tx
+      .update(ingestionRuns)
+      .set({
+        insertedCount: totals?.inserted ?? 0,
+        updatedCount: totals?.updated ?? 0,
+        unchangedCount: totals?.unchanged ?? 0,
+        updatedAt: new Date(),
+      })
+      .where(eq(ingestionRuns.id, input.runId));
+  });
 }
 
 export async function recordIngestionRecordError(input: {
