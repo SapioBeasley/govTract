@@ -16,11 +16,26 @@ on:
         required: true
         type: boolean
         default: true
+      extract_documents:
+        description: Extract supported document text after authenticated retrieval
+        required: true
+        type: boolean
+        default: true
+      extraction_backfill_limit:
+        description: Maximum already-hashed documents to redownload for first-time extraction in this run
+        required: false
+        default: "25"
+      retry_failed_extractions:
+        description: Retry canonical extraction failures from previous runs
+        required: true
+        type: boolean
+        default: false
   pull_request:
     paths:
       - ".github/workflows/beacon-discovery.yml"
       - "scripts/beacon-discover.ts"
       - "scripts/beacon-documents.ts"
+      - "scripts/beacon-documents-v2.ts"
       - "lib/db/**"
       - "lib/source-connections/**"
       - "lib/procurement/**"
@@ -50,9 +65,13 @@ jobs:
       BEACON_PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
       BEACON_AUTO_REGISTER: "true"
-      BEACON_DOCUMENT_CONCURRENCY: "4"
+      BEACON_DOCUMENT_CONCURRENCY: "2"
       BEACON_DOCUMENT_MAX_BYTES: "314572800"
       BEACON_DOCUMENT_MAX_ERROR_RATE: "0.25"
+      BEACON_DOCUMENT_EXTRACT: ${{ github.event_name == 'workflow_dispatch' && inputs.extract_documents && 'true' || 'false' }}
+      BEACON_EXTRACTION_BACKFILL_LIMIT: ${{ inputs.extraction_backfill_limit || '25' }}
+      BEACON_EXTRACTION_RETRY_FAILED: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_failed_extractions && 'true' || 'false' }}
+      BEACON_EXTRACTION_MAX_SOURCE_BYTES: "67108864"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
 
@@ -71,7 +90,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test document persistence
+      - name: Test document persistence and extraction lifecycle
         run: npm run test:documents
 
       - name: Test Beacon normalization
@@ -83,7 +102,7 @@ jobs:
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon
 
-      - name: Retrieve and version Beacon documents
+      - name: Retrieve, version, and extract Beacon documents
         if: github.event_name == 'workflow_dispatch' && inputs.persist
         run: npm run ingest:beacon:documents
 
