@@ -1,0 +1,35 @@
+{
+  "pageSize": 2,
+  "maxPages": 5,
+  "complete": [
+    {
+      "reportedTotal": 3,
+      "records": [
+        { "id": "contract-page-a", "title": "Page A" },
+        { "id": "contract-page-b", "title": "Page B" }
+      ]
+    },
+    {
+      "reportedTotal": 3,
+      "records": [
+        { "id": "contract-page-c", "title": "Page C" }
+      ]
+    }
+  ],
+  "repeated": [
+    {
+      "reportedTotal": 4,
+      "records": [
+        { "id": "contract-page-a", "title": "Page A" },
+        { "id": "contract-page-b", "title": "Page B" }
+      ]
+    },
+    {
+      "reportedTotal": 4,
+      "records": [
+        { "id": "contract-page-a", "title": "Page A" },
+        { "id": "contract-page-b", "title": "Page B" }
+      ]
+    }
+  ]
+}
