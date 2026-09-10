@@ -1,0 +1,61 @@
+name: PR validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr-validation.yml"
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "drizzle/**"
+      - "scripts/**"
+      - "package.json"
+      - "tsconfig.json"
+      - "next.config.*"
+      - "postcss.config.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Typecheck, build, and local tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test document persistence and extraction lifecycle
+        run: npm run test:documents
+
+      - name: Test source connections
+        run: npm run test:source-connections
+
+      - name: Test Beacon authentication helpers
+        run: npm run test:beacon-auth
+
+      - name: Test Beacon normalization
+        run: npm run test:beacon-normalize
+
+      - name: Test Beacon document helpers
+        run: npm run test:beacon-documents
