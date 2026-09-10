@@ -5,6 +5,10 @@ import {
   type PersistableOpportunityRecord,
   type PersistableSourceRecord,
 } from "@/lib/procurement/ingestion/persistence";
+import type {
+  ProcurementSourceAdapter,
+  ProcurementSourceContext,
+} from "@/lib/procurement/sources/adapter";
 import { enrichBeaconDocumentMetadata } from "@/lib/procurement/sources/beacon/documents";
 
 export interface BeaconDate {
@@ -157,30 +161,37 @@ function normalizeClassifications(value: unknown): PersistableClassification[] {
   });
 }
 
-export function toBeaconSourceRecord(input: {
-  row: BeaconSolicitation;
-  canonicalUrl: string;
-}): PersistableSourceRecord {
-  const sourceRecordId = typeof input.row.id === "string" ? input.row.id.trim().toLowerCase() : "";
+function identifyBeaconSolicitation(row: BeaconSolicitation) {
+  const sourceRecordId = typeof row.id === "string" ? row.id.trim().toLowerCase() : "";
   if (!sourceRecordId) throw new Error("Beacon solicitation is missing a stable id");
 
   return {
     sourceRecordId,
-    sourceRevisionId: input.row.revisionId ?? null,
+    sourceRevisionId: row.revisionId ?? null,
+  };
+}
+
+function buildBeaconSourceRecord(input: {
+  row: BeaconSolicitation;
+  canonicalUrl: string;
+}): PersistableSourceRecord {
+  const identity = identifyBeaconSolicitation(input.row);
+  return {
+    ...identity,
     sourceModifiedAt: toDate(input.row.modifiedAt),
     canonicalUrl: input.canonicalUrl,
     rawPayload: input.row,
   };
 }
 
-export function normalizeBeaconSolicitation(input: {
+function buildNormalizedBeaconSolicitation(input: {
   row: BeaconSolicitation;
   canonicalUrl: string;
   agencySlug: string;
   canonicalStatus: string;
 }): PersistableOpportunityRecord {
   const { row } = input;
-  const sourceRecord = toBeaconSourceRecord({ row, canonicalUrl: input.canonicalUrl });
+  const sourceRecord = buildBeaconSourceRecord({ row, canonicalUrl: input.canonicalUrl });
   const agency = asObject(row.agency);
   const agencyName =
     firstString(agency, ["name", "title", "displayName"]) ??
@@ -209,4 +220,56 @@ export function normalizeBeaconSolicitation(input: {
         : {},
     documents: normalizeDocuments(row.documents),
   };
+}
+
+function requireBeaconCanonicalUrl(context: ProcurementSourceContext) {
+  const canonicalUrl = context.canonicalUrl?.trim();
+  if (!canonicalUrl) throw new Error("Beacon source adapter requires a canonical URL");
+  return canonicalUrl;
+}
+
+export const beaconOpportunityAdapter: ProcurementSourceAdapter<BeaconSolicitation> = {
+  source: "beacon",
+  identify: identifyBeaconSolicitation,
+  toSourceRecord(row, context) {
+    return buildBeaconSourceRecord({
+      row,
+      canonicalUrl: requireBeaconCanonicalUrl(context),
+    });
+  },
+  normalizeOpportunity(row, context) {
+    const agencySlug = context.agency?.trim();
+    if (!agencySlug) throw new Error("Beacon source adapter requires an agency key");
+    const canonicalStatus = context.canonicalStatus?.trim();
+    if (!canonicalStatus) throw new Error("Beacon source adapter requires a canonical status");
+
+    return buildNormalizedBeaconSolicitation({
+      row,
+      canonicalUrl: requireBeaconCanonicalUrl(context),
+      agencySlug,
+      canonicalStatus,
+    });
+  },
+};
+
+export function toBeaconSourceRecord(input: {
+  row: BeaconSolicitation;
+  canonicalUrl: string;
+}): PersistableSourceRecord {
+  return beaconOpportunityAdapter.toSourceRecord(input.row, {
+    canonicalUrl: input.canonicalUrl,
+  });
+}
+
+export function normalizeBeaconSolicitation(input: {
+  row: BeaconSolicitation;
+  canonicalUrl: string;
+  agencySlug: string;
+  canonicalStatus: string;
+}): PersistableOpportunityRecord {
+  return beaconOpportunityAdapter.normalizeOpportunity(input.row, {
+    canonicalUrl: input.canonicalUrl,
+    agency: input.agencySlug,
+    canonicalStatus: input.canonicalStatus,
+  });
 }

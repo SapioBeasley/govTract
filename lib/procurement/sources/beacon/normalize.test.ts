@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeBeaconSolicitation } from "./normalize";
+import {
+  beaconOpportunityAdapter,
+  normalizeBeaconSolicitation,
+  toBeaconSourceRecord,
+} from "./normalize";
 
 test("normalizes live Beacon rich fields without losing source semantics", () => {
   const normalized = normalizeBeaconSolicitation({
@@ -88,4 +92,44 @@ test("still accepts plain string descriptions and numeric-string byte counts", (
 
   assert.equal(normalized.description, "Plain description");
   assert.equal(normalized.documents?.[0]?.fileSizeBytes, 42);
+});
+
+test("Beacon exposes the shared source-adapter identity and normalization contract", () => {
+  const row = {
+    id: "SOURCE-ABC",
+    revisionId: "revision-7",
+    title: "Adapter fixture",
+    status: "approved",
+    agency: { name: "City of Houston" },
+  };
+  const canonicalUrl = "https://www.beaconbid.com/solicitations/city-of-houston/source-abc/adapter-fixture";
+
+  assert.equal(beaconOpportunityAdapter.source, "beacon");
+  assert.deepEqual(beaconOpportunityAdapter.identify(row), {
+    sourceRecordId: "source-abc",
+    sourceRevisionId: "revision-7",
+  });
+
+  const throughAdapterSource = beaconOpportunityAdapter.toSourceRecord(row, {
+    canonicalUrl,
+  });
+  assert.deepEqual(
+    throughAdapterSource,
+    toBeaconSourceRecord({ row, canonicalUrl }),
+  );
+
+  const throughAdapterOpportunity = beaconOpportunityAdapter.normalizeOpportunity(row, {
+    canonicalUrl,
+    agency: "city-of-houston",
+    canonicalStatus: "open",
+  });
+  assert.deepEqual(
+    throughAdapterOpportunity,
+    normalizeBeaconSolicitation({
+      row,
+      canonicalUrl,
+      agencySlug: "city-of-houston",
+      canonicalStatus: "open",
+    }),
+  );
 });
