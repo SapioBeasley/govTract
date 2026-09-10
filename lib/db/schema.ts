@@ -153,6 +153,10 @@ export const opportunities = pgTable(
     dueAt: timestamp("due_at", { withTimezone: true }),
     canonicalUrl: text("canonical_url"),
     location: jsonb("location").$type<Record<string, unknown>>().notNull().default(jsonObject),
+    fieldProvenance: jsonb("field_provenance")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(jsonObject),
     isActive: boolean("is_active").notNull().default(true),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
