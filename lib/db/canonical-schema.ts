@@ -53,6 +53,11 @@ export const opportunitySourceRecords = pgTable(
     isPrimary: boolean("is_primary").notNull().default(false),
     linkMethod: text("link_method").notNull().default("direct"),
     confidence: integer("confidence"),
+    sourceAuthority: text("source_authority").notNull().default("unknown"),
+    normalizedPayload: jsonb("normalized_payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(jsonObject),
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default(jsonObject),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
