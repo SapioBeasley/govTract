@@ -4,6 +4,20 @@ This directory is the shared home for repository-level automated test assets and
 
 The repository follows the TDD workflow defined in the root `AGENTS.md`: Red -> Green -> Refactor.
 
+## Running the deterministic suite
+
+Run the complete normal PR regression suite with:
+
+```bash
+npm test
+```
+
+`npm test` automatically discovers `*.test.ts` and `*.test.tsx` files under `app/`, `components/`, `lib/`, `scripts/`, and `tests/`, so adding a new test in those locations does not require registering another package script or GitHub Actions step.
+
+Database-backed tests expect an isolated PostgreSQL database with all govTract migrations applied and `DATABASE_URL` set to that database. Tests that exercise encrypted source-session persistence also require a test-only `SOURCE_SESSION_ENCRYPTION_KEY`. GitHub PR validation provisions these automatically using an ephemeral PostgreSQL service and a deterministic non-production test key; it does not use Neon or production credentials.
+
+Focused `test:*` package scripts remain available for local iteration, but `npm test` is the aggregate deterministic CI source of truth.
+
 ## Intended structure
 
 - `tests/unit/` — cross-cutting unit tests that do not fit naturally beside a module.
