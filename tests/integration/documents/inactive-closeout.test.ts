@@ -3,6 +3,11 @@ import test from "node:test";
 import postgres from "postgres";
 
 import { closeDb } from "@/lib/db/client";
+import {
+  listDocumentCloseoutCandidates,
+  queueInactiveDocumentCloseoutBacklog,
+  updateDocumentCloseoutStatus,
+} from "@/lib/procurement/documents/closeout";
 import { persistDocumentExtraction } from "@/lib/procurement/documents/extraction-persistence";
 import { prepareExtractionSegments } from "@/lib/procurement/documents/extractions";
 import {
@@ -207,6 +212,48 @@ test(
           ],
         );
 
+        const candidates = await listDocumentCloseoutCandidates({
+          source,
+          agency,
+          limit: 10,
+          retryFailed: false,
+        });
+        assert.deepEqual(
+          candidates.map((candidate) => ({
+            name: candidate.name,
+            status: candidate.closeoutStatus,
+          })),
+          [{ name: "pending.pdf", status: "pending" }],
+        );
+
+        await updateDocumentCloseoutStatus({
+          closeoutId: candidates[0]!.closeoutId,
+          status: "failed",
+          failureCode: "fixture_failure",
+        });
+        assert.equal(
+          (
+            await listDocumentCloseoutCandidates({
+              source,
+              agency,
+              limit: 10,
+              retryFailed: false,
+            })
+          ).length,
+          0,
+        );
+        assert.deepEqual(
+          (
+            await listDocumentCloseoutCandidates({
+              source,
+              agency,
+              limit: 10,
+              retryFailed: true,
+            })
+          ).map((candidate) => ({ name: candidate.name, status: candidate.closeoutStatus })),
+          [{ name: "pending.pdf", status: "failed" }],
+        );
+
         assert.equal(await reconcileIngestionScope(reconcileInput), true);
         const [{ count }] = await verify<{ count: number }[]>`
           SELECT count(*)::int AS count
@@ -215,6 +262,30 @@ test(
           WHERE o.source = ${source} AND o.source_opportunity_id = 'closing'
         `;
         assert.equal(count, 3);
+
+        await verify`
+          DELETE FROM document_extraction_closeouts
+          WHERE opportunity_id IN (
+            SELECT id FROM opportunities
+            WHERE source = ${source} AND source_opportunity_id = 'closing'
+          )
+        `;
+        const backlog = await queueInactiveDocumentCloseoutBacklog({
+          source,
+          agency,
+          opportunityLimit: 10,
+        });
+        assert.equal(backlog.opportunitiesScanned, 1);
+        assert.deepEqual(
+          {
+            queued: backlog.queued,
+            pending: backlog.pending,
+            covered: backlog.covered,
+            unsupported: backlog.unsupported,
+            failed: backlog.failed,
+          },
+          { queued: 3, pending: 1, covered: 1, unsupported: 1, failed: 0 },
+        );
       } finally {
         await verify.end({ timeout: 5 });
       }
