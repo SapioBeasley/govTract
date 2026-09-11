@@ -56,42 +56,21 @@ test(
           to_regclass('public.solicitation_understanding_inputs')::text AS inputs,
           to_regclass('public.solicitation_understanding_evidence')::text AS evidence
       `;
-
       assert.equal(tables?.understandings, "solicitation_understandings");
       assert.equal(tables?.inputs, "solicitation_understanding_inputs");
       assert.equal(tables?.evidence, "solicitation_understanding_evidence");
 
       const [sourceRecord] = await sql<{ id: string }[]>`
-        INSERT INTO source_records (
-          source,
-          source_record_id,
-          raw_payload,
-          payload_hash
-        )
-        VALUES (
-          ${source},
-          ${sourceOpportunityId},
-          '{}'::jsonb,
-          ${sha256(sourceOpportunityId)}
-        )
+        INSERT INTO source_records (source, source_record_id, raw_payload, payload_hash)
+        VALUES (${source}, ${sourceOpportunityId}, '{}'::jsonb, ${sha256(sourceOpportunityId)})
         RETURNING id
       `;
       assert.ok(sourceRecord?.id);
       sourceRecordPk = sourceRecord.id;
 
       const [opportunity] = await sql<{ id: string }[]>`
-        INSERT INTO opportunities (
-          source_record_id,
-          source,
-          source_opportunity_id,
-          title
-        )
-        VALUES (
-          ${sourceRecord.id},
-          ${source},
-          ${sourceOpportunityId},
-          'Understanding schema fixture'
-        )
+        INSERT INTO opportunities (source_record_id, source, source_opportunity_id, title)
+        VALUES (${sourceRecord.id}, ${source}, ${sourceOpportunityId}, 'Understanding schema fixture')
         RETURNING id
       `;
       assert.ok(opportunity?.id);
@@ -103,12 +82,7 @@ test(
           name,
           mime_type
         )
-        VALUES (
-          ${opportunity.id},
-          ${sourceDocumentKey},
-          'scope.pdf',
-          'application/pdf'
-        )
+        VALUES (${opportunity.id}, ${sourceDocumentKey}, 'scope.pdf', 'application/pdf')
         RETURNING id
       `;
       assert.ok(document?.id);
@@ -179,7 +153,7 @@ test(
           ${extraction.id},
           0,
           'page',
-          '{"page":1}'::jsonb,
+          ${sql.json({ page: 1 })},
           ${segmentContent},
           ${sha256(segmentContent)},
           ${segmentContent.length},
@@ -236,7 +210,7 @@ test(
           '2026-09',
           'automatic_initial',
           'completed',
-          ${JSON.stringify(structuredOutput)}::jsonb,
+          ${sql.json(structuredOutput)},
           now(),
           now(),
           now(),
@@ -246,7 +220,7 @@ test(
           2000,
           5000,
           4500,
-          '{"cached_input_tokens":100}'::jsonb
+          ${sql.json({ cached_input_tokens: 100 })}
         )
         RETURNING id, generation_trigger, status, is_stale
       `;
@@ -278,24 +252,26 @@ test(
           'scope.0',
           ${version.id},
           ${segment.id},
-          '{"page":1}'::jsonb,
+          ${sql.json({ page: 1 })},
           ${segmentContent}
         )
       `;
 
       const [loaded] = await sql<{
-        structured_output: typeof structuredOutput;
+        summary: string;
+        scope_key: string;
         input_version_id: string;
         evidence_segment_id: string | null;
         finding_key: string;
-        locator: { page: number };
+        page: string;
       }[]>`
         SELECT
-          su.structured_output,
+          su.structured_output ->> 'summary' AS summary,
+          su.structured_output #>> '{scope,0,key}' AS scope_key,
           sui.opportunity_document_version_id AS input_version_id,
           sue.document_extraction_segment_id AS evidence_segment_id,
           sue.finding_key,
-          sue.locator
+          sue.locator ->> 'page' AS page
         FROM solicitation_understandings su
         JOIN solicitation_understanding_inputs sui
           ON sui.solicitation_understanding_id = su.id
@@ -303,13 +279,12 @@ test(
           ON sue.solicitation_understanding_id = su.id
         WHERE su.id = ${automatic.id}
       `;
-
-      assert.equal(loaded?.structured_output.summary, structuredOutput.summary);
-      assert.equal(loaded?.structured_output.scope[0]?.key, "scope.0");
+      assert.equal(loaded?.summary, structuredOutput.summary);
+      assert.equal(loaded?.scope_key, "scope.0");
       assert.equal(loaded?.input_version_id, version.id);
       assert.equal(loaded?.evidence_segment_id, segment.id);
       assert.equal(loaded?.finding_key, "scope.0");
-      assert.deepEqual(loaded?.locator, { page: 1 });
+      assert.equal(loaded?.page, "1");
 
       await assert.rejects(
         async () => {
@@ -373,7 +348,7 @@ test(
           'fixture-model',
           'manual',
           'completed',
-          ${JSON.stringify(structuredOutput)}::jsonb,
+          ${sql.json(structuredOutput)},
           now(),
           now(),
           now(),
