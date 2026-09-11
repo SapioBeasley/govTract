@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import {
@@ -19,6 +19,8 @@ export type DocumentCloseoutCandidate = {
   closeoutId: string;
   closeoutStatus: DocumentCloseoutStatus;
   documentId: string;
+  documentVersionId: string;
+  checksumSha256: string | null;
   opportunityId: string;
   sourceOpportunityId: string;
   sourceDocumentKey: string;
@@ -140,9 +142,9 @@ export async function listDocumentCloseoutCandidates(input: {
     ? or(
         eq(documentExtractionCloseouts.status, "pending"),
         eq(documentExtractionCloseouts.status, "failed"),
-      )
+      )!
     : eq(documentExtractionCloseouts.status, "pending");
-  const conditions = [eq(opportunities.source, input.source), statusCondition];
+  const conditions: SQL[] = [eq(opportunities.source, input.source), statusCondition];
   if (input.agency) conditions.push(eq(opportunities.agencySlug, input.agency));
 
   const rows = await db
@@ -150,6 +152,8 @@ export async function listDocumentCloseoutCandidates(input: {
       closeoutId: documentExtractionCloseouts.id,
       closeoutStatus: documentExtractionCloseouts.status,
       documentId: opportunityDocuments.id,
+      documentVersionId: opportunityDocumentVersions.id,
+      checksumSha256: opportunityDocumentVersions.checksumSha256,
       opportunityId: opportunities.id,
       sourceOpportunityId: opportunities.sourceOpportunityId,
       sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
@@ -165,6 +169,10 @@ export async function listDocumentCloseoutCandidates(input: {
     .innerJoin(
       opportunityDocuments,
       eq(opportunityDocuments.id, documentExtractionCloseouts.opportunityDocumentId),
+    )
+    .innerJoin(
+      opportunityDocumentVersions,
+      eq(opportunityDocumentVersions.id, documentExtractionCloseouts.opportunityDocumentVersionId),
     )
     .where(and(...conditions))
     .orderBy(asc(documentExtractionCloseouts.requestedAt), asc(documentExtractionCloseouts.id))
