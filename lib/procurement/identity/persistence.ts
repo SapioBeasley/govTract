@@ -22,6 +22,7 @@ import {
   persistNormalizedOpportunity,
   type PersistableOpportunityRecord,
 } from "@/lib/procurement/ingestion/persistence";
+import { recomputeCanonicalOpportunityLifecycle } from "@/lib/procurement/lifecycle/persistence";
 import { recomputeCanonicalOpportunityFields } from "@/lib/procurement/precedence/persistence";
 import { serializeOpportunityPrecedenceFields } from "@/lib/procurement/precedence/opportunity";
 import type { ProcurementSourceAuthority } from "@/lib/procurement/sources/authority";
@@ -284,6 +285,7 @@ async function updateExistingSourceSnapshot(input: {
     })
     .where(eq(opportunitySourceRecords.sourceRecordId, input.sourceRecordPk));
   await recomputeCanonicalOpportunityFields(input.opportunityId);
+  await recomputeCanonicalOpportunityLifecycle(input.opportunityId);
 }
 
 async function attachSecondarySource(input: {
@@ -339,6 +341,7 @@ async function attachSecondarySource(input: {
     });
 
   await recomputeCanonicalOpportunityFields(input.opportunityId);
+  await recomputeCanonicalOpportunityLifecycle(input.opportunityId);
 }
 
 async function persistNewCanonical(input: {
