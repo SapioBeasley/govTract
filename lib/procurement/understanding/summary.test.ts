@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { summarizeUnderstandingBatch, type UnderstandingInputPlan } from "./planning";
+import type { UnderstandingInputPlan } from "./planning";
+import { summarizeUnderstandingBatch } from "./summary";
 
 const plan: UnderstandingInputPlan = {
   inputFingerprint: "fixture",
