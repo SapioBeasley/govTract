@@ -96,3 +96,22 @@ test("prepareExtractionSegments caps segment count", () => {
   assert.equal(prepared.segments.length, 1);
   assert.equal(prepared.truncationReason, "segment_count_limit");
 });
+
+test("prepareExtractionSegments marks partial extractor output as truncated", () => {
+  const prepared = prepareExtractionSegments(
+    [
+      { segmentType: "page", locator: { page: 1 }, content: "one" },
+      { segmentType: "page", locator: { page: 3 }, content: "three" },
+    ],
+    {
+      maxExtractedBytes: 100,
+      maxSegmentBytes: 100,
+      maxSegments: 10,
+      partialExtraction: true,
+    },
+  );
+
+  assert.equal(prepared.truncated, true);
+  assert.equal(prepared.truncationReason, "extractor_partial");
+  assert.deepEqual(prepared.segments.map((segment) => segment.locator.page), [1, 3]);
+});
