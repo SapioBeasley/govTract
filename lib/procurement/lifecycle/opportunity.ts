@@ -130,41 +130,38 @@ export function selectCanonicalOpportunityLifecycle(
     derived: deriveSourceOpportunityLifecycle(source),
   }));
 
-  const activeSources = evaluated
-    .filter(
-      ({ source, derived }) => source.sourceRecordActive && derived.state === "active",
-    )
-    .map(({ source }) => source)
-    .sort(compareLifecycleSources);
+  const meaningfulCandidates = evaluated
+    .filter(({ derived }) => derived.state !== "inactive_unknown")
+    .sort((left, right) => compareLifecycleSources(left.source, right.source));
 
-  const activeSource = activeSources[0];
-  if (activeSource) {
+  const selected = meaningfulCandidates[0];
+  if (!selected) {
+    return {
+      state: "inactive_unknown",
+      evidence: { kind: "source_disappearance" },
+    };
+  }
+
+  if (selected.derived.state === "active") {
     return {
       state: "active",
       evidence: {
         kind: "active_source",
-        source: activeSource.source,
-        sourceRecordId: activeSource.sourceRecordId,
+        source: selected.source.source,
+        sourceRecordId: selected.source.sourceRecordId,
       },
     };
   }
 
-  const terminalCandidates = evaluated
-    .filter(
-      ({ derived }) => derived.state !== "active" && derived.state !== "inactive_unknown",
-    )
-    .sort((left, right) => compareLifecycleSources(left.source, right.source));
-
-  const terminal = terminalCandidates[0];
-  if (terminal && terminal.derived.terminalEvidence) {
-    const field = terminal.derived.terminalEvidence;
-    const value = field === "sourceStatus" ? terminal.source.sourceStatus : terminal.source.status;
+  if (selected.derived.terminalEvidence) {
+    const field = selected.derived.terminalEvidence;
+    const value = field === "sourceStatus" ? selected.source.sourceStatus : selected.source.status;
     return {
-      state: terminal.derived.state,
+      state: selected.derived.state,
       evidence: {
         kind: "terminal_status",
-        source: terminal.source.source,
-        sourceRecordId: terminal.source.sourceRecordId,
+        source: selected.source.source,
+        sourceRecordId: selected.source.sourceRecordId,
         field,
         value: value ?? "",
       },
