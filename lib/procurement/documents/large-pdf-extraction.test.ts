@@ -8,7 +8,7 @@ import test from "node:test";
 import {
   extractPdfContentFromPath,
   extractPdfPagesInBatches,
-} from "./extract-content";
+} from "./large-pdf-content";
 import { collectDocumentStreamForExtraction } from "./streamed-extraction-source";
 
 function escapePdfText(value: string) {
