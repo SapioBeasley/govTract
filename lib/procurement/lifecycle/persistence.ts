@@ -3,6 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { opportunitySourceRecords } from "@/lib/db/canonical-schema";
 import { opportunities, sourceRecords } from "@/lib/db/schema";
+import { queueDocumentCloseoutsForInactiveTransitions } from "@/lib/procurement/documents/closeout";
 import {
   isOpportunityLifecycleActive,
   selectCanonicalOpportunityLifecycle,
@@ -18,6 +19,16 @@ export async function recomputeCanonicalOpportunityLifecycle(
   opportunityId: string,
 ): Promise<CanonicalOpportunityLifecycleResult> {
   const db = getDb();
+  const [before] = await db
+    .select({
+      isActive: opportunities.isActive,
+      source: opportunities.source,
+      agencySlug: opportunities.agencySlug,
+    })
+    .from(opportunities)
+    .where(eq(opportunities.id, opportunityId))
+    .limit(1);
+
   const rows = await db
     .select({
       source: sourceRecords.source,
@@ -42,15 +53,24 @@ export async function recomputeCanonicalOpportunityLifecycle(
       sourceStatus: optionalString(row.normalizedPayload.sourceStatus),
     })),
   );
+  const nextActive = isOpportunityLifecycleActive(lifecycle.state);
 
   await db
     .update(opportunities)
     .set({
       lifecycleState: lifecycle.state,
-      isActive: isOpportunityLifecycleActive(lifecycle.state),
+      isActive: nextActive,
       updatedAt: new Date(),
     })
     .where(eq(opportunities.id, opportunityId));
+
+  if (before?.isActive && !nextActive) {
+    await queueDocumentCloseoutsForInactiveTransitions({
+      opportunityIds: [opportunityId],
+      triggerSource: before.source,
+      ...(before.agencySlug ? { triggerAgency: before.agencySlug } : {}),
+    });
+  }
 
   return lifecycle;
 }
