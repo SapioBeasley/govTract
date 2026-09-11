@@ -14,6 +14,7 @@ import {
 import { isSupportedDocumentType } from "@/lib/procurement/documents/persistence";
 
 export type DocumentCloseoutStatus = "pending" | "covered" | "unsupported" | "failed";
+export type ExistingExtractionCloseoutAction = "reuse" | "checkpoint_failed" | "download";
 
 export type DocumentCloseoutCandidate = {
   closeoutId: string;
@@ -38,6 +39,15 @@ function linkedCoverageStatus(statuses: string[]): DocumentCloseoutStatus | null
   }
   if (statuses.some((status) => status === "failed")) return "failed";
   return null;
+}
+
+export function decideCloseoutExistingExtraction(input: {
+  status: string | null;
+  retryFailed: boolean;
+}): ExistingExtractionCloseoutAction {
+  if (input.status === "extracted" || input.status === "truncated") return "reuse";
+  if (input.status === "failed" && !input.retryFailed) return "checkpoint_failed";
+  return "download";
 }
 
 export async function queueDocumentCloseoutsForInactiveTransitions(input: {
@@ -127,6 +137,37 @@ export async function queueDocumentCloseoutsForInactiveTransitions(input: {
   }
 
   return counts;
+}
+
+export async function queueInactiveDocumentCloseoutBacklog(input: {
+  source: string;
+  agency?: string;
+  opportunityLimit: number;
+}) {
+  if (input.opportunityLimit <= 0) {
+    return { opportunitiesScanned: 0, queued: 0, pending: 0, covered: 0, unsupported: 0, failed: 0 };
+  }
+
+  const conditions: SQL[] = [
+    eq(opportunities.source, input.source),
+    eq(opportunities.isActive, false),
+  ];
+  if (input.agency) conditions.push(eq(opportunities.agencySlug, input.agency));
+
+  const rows = await getDb()
+    .select({ id: opportunities.id })
+    .from(opportunities)
+    .where(and(...conditions))
+    .orderBy(asc(opportunities.updatedAt), asc(opportunities.id))
+    .limit(input.opportunityLimit);
+
+  const queued = await queueDocumentCloseoutsForInactiveTransitions({
+    opportunityIds: rows.map((row) => row.id),
+    triggerSource: input.source,
+    ...(input.agency ? { triggerAgency: input.agency } : {}),
+  });
+
+  return { opportunitiesScanned: rows.length, ...queued };
 }
 
 export async function listDocumentCloseoutCandidates(input: {
