@@ -8,7 +8,11 @@ import {
 } from "@/lib/db/solicitation-understandings-schema";
 import { opportunities } from "@/lib/db/schema";
 
-import type { UnderstandingInputPlan, UnderstandingGenerationTrigger } from "./planning";
+import type {
+  UnderstandingGenerationTrigger,
+  UnderstandingIncompleteReason,
+  UnderstandingInputPlan,
+} from "./planning";
 import type { OpportunityUnderstandingContext } from "./prompts";
 import type { SolicitationUnderstandingContent } from "./types";
 import { isSolicitationUnderstandingContent } from "./types";
@@ -20,7 +24,7 @@ export type PersistedUnderstandingSummary = {
   generationTrigger: UnderstandingGenerationTrigger;
   status: string;
   completenessStatus: "complete" | "partial";
-  incompleteReason: string | null;
+  incompleteReason: UnderstandingIncompleteReason | null;
   isStale: boolean;
   structuredOutput: SolicitationUnderstandingContent | null;
   createdAt: Date;
@@ -73,6 +77,7 @@ export async function loadLatestSolicitationUnderstanding(
     ...row,
     generationTrigger: row.generationTrigger as UnderstandingGenerationTrigger,
     completenessStatus: row.completenessStatus as "complete" | "partial",
+    incompleteReason: row.incompleteReason as UnderstandingIncompleteReason | null,
     structuredOutput:
       row.structuredOutput && isSolicitationUnderstandingContent(row.structuredOutput)
         ? row.structuredOutput
@@ -241,7 +246,7 @@ export async function completeSolicitationUnderstandingRun(input: {
   understandingId: string;
   content: SolicitationUnderstandingContent;
   completenessStatus: "complete" | "partial";
-  incompleteReason: string | null;
+  incompleteReason: UnderstandingIncompleteReason | null;
   coverageMetadata: Record<string, unknown>;
   modelVersion: string | null;
   inputTokenCount: number;
