@@ -68,7 +68,7 @@ test(
           completeness_status, structured_output, processing_completed_at, generated_at
         ) VALUES (
           ${opportunity.id}, 'good-input', '1', '1', 'fixture', 'fixture-model',
-          'automatic_initial', 'completed', 'complete', ${sql.json(content)}, now(), now()
+          'automatic_initial', 'completed', 'complete', ${JSON.stringify(content)}::jsonb, now(), now()
         ) RETURNING id
       `;
       assert.ok(completed?.id);
@@ -85,8 +85,9 @@ test(
       `;
 
       const usable = await loadLatestCompletedSolicitationUnderstanding(opportunity.id);
-      assert.equal(usable?.id, completed.id);
-      assert.equal(usable?.structuredOutput.summary, content.summary);
+      assert.ok(usable);
+      assert.equal(usable.id, completed.id);
+      assert.equal(usable.structuredOutput.summary, content.summary);
     } finally {
       if (sourceRecordId) await sql`DELETE FROM source_records WHERE id = ${sourceRecordId}`;
       await sql.end({ timeout: 5 });
