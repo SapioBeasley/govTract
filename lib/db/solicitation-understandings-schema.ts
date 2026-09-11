@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -13,6 +14,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { SolicitationUnderstandingContent } from "@/lib/procurement/understanding/types";
+import type {
+  UnderstandingCompletenessStatus,
+  UnderstandingIncompleteReason,
+} from "@/lib/procurement/understanding/planning";
 import { documentExtractions, documentExtractionSegments } from "./document-extractions-schema";
 import { opportunities, opportunityDocumentVersions } from "./schema";
 
@@ -33,6 +38,17 @@ export const solicitationUnderstandings = pgTable(
     modelVersion: text("model_version"),
     generationTrigger: text("generation_trigger").notNull(),
     status: text("status").notNull().default("pending"),
+    completenessStatus: text("completeness_status")
+      .$type<UnderstandingCompletenessStatus>()
+      .notNull()
+      .default("partial"),
+    incompleteReason: text("incomplete_reason").$type<UnderstandingIncompleteReason>(),
+    coverageMetadata: jsonb("coverage_metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(jsonObject),
+    budgetMicrousd: bigint("budget_microusd", { mode: "number" }).notNull().default(0),
+    pricingProfileVersion: text("pricing_profile_version"),
     structuredOutput: jsonb("structured_output").$type<SolicitationUnderstandingContent>(),
     processingStartedAt: timestamp("processing_started_at", { withTimezone: true })
       .notNull()
@@ -77,12 +93,20 @@ export const solicitationUnderstandings = pgTable(
       sql`${table.status} IN ('pending', 'completed', 'failed')`,
     ),
     check(
+      "solicitation_understandings_completeness_check",
+      sql`${table.completenessStatus} IN ('complete', 'partial')`,
+    ),
+    check(
       "solicitation_understandings_completed_output_check",
       sql`${table.status} <> 'completed' OR ${table.structuredOutput} IS NOT NULL`,
     ),
     check(
       "solicitation_understandings_stale_timestamp_check",
       sql`NOT ${table.isStale} OR ${table.staleAt} IS NOT NULL`,
+    ),
+    check(
+      "solicitation_understandings_budget_nonnegative_check",
+      sql`${table.budgetMicrousd} >= 0`,
     ),
     check(
       "solicitation_understandings_usage_nonnegative_check",
@@ -117,6 +141,56 @@ export const solicitationUnderstandingInputs = pgTable(
       table.opportunityDocumentVersionId,
     ),
     index("solicitation_understanding_inputs_version_idx").on(table.opportunityDocumentVersionId),
+  ],
+);
+
+export const solicitationUnderstandingChunks = pgTable(
+  "solicitation_understanding_chunks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    solicitationUnderstandingId: uuid("solicitation_understanding_id")
+      .notNull()
+      .references(() => solicitationUnderstandings.id, { onDelete: "cascade" }),
+    opportunityDocumentVersionId: uuid("opportunity_document_version_id")
+      .notNull()
+      .references(() => opportunityDocumentVersions.id, { onDelete: "cascade" }),
+    documentExtractionId: uuid("document_extraction_id").references(() => documentExtractions.id, {
+      onDelete: "set null",
+    }),
+    chunkKey: text("chunk_key").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    status: text("status").notNull().default("planned"),
+    charCount: bigint("char_count", { mode: "number" }).notNull(),
+    estimatedInputTokenCount: bigint("estimated_input_token_count", { mode: "number" }),
+    outputTokenCount: bigint("output_token_count", { mode: "number" }),
+    estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+    actualCostMicrousd: bigint("actual_cost_microusd", { mode: "number" }),
+    pricingProfileVersion: text("pricing_profile_version"),
+    structuredOutput: jsonb("structured_output").$type<Record<string, unknown>>(),
+    skipReason: text("skip_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("solicitation_understanding_chunks_key_uidx").on(
+      table.solicitationUnderstandingId,
+      table.chunkKey,
+    ),
+    index("solicitation_understanding_chunks_fingerprint_idx").on(table.inputFingerprint),
+    index("solicitation_understanding_chunks_version_idx").on(table.opportunityDocumentVersionId),
+    check(
+      "solicitation_understanding_chunks_status_check",
+      sql`${table.status} IN ('planned', 'processed', 'reused', 'skipped')`,
+    ),
+    check(
+      "solicitation_understanding_chunks_usage_nonnegative_check",
+      sql`${table.charCount} >= 0
+        AND (${table.estimatedInputTokenCount} IS NULL OR ${table.estimatedInputTokenCount} >= 0)
+        AND (${table.outputTokenCount} IS NULL OR ${table.outputTokenCount} >= 0)
+        AND (${table.estimatedCostMicrousd} IS NULL OR ${table.estimatedCostMicrousd} >= 0)
+        AND (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)`,
+    ),
   ],
 );
 
