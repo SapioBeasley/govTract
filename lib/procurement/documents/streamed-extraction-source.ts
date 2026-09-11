@@ -34,6 +34,7 @@ export async function collectDocumentStreamForExtraction(input: {
   maxBufferBytes: number;
   maxSourceBytes: number;
   spoolToDisk: boolean;
+  bufferInMemory?: boolean;
   tempRoot?: string;
 }): Promise<CollectedDocumentStream> {
   const maxBufferBytes = positiveInteger(input.maxBufferBytes, "maxBufferBytes");
@@ -41,7 +42,8 @@ export async function collectDocumentStreamForExtraction(input: {
   const hash = createHash("sha256");
   const memoryChunks: Buffer[] = [];
   let bytesRead = 0;
-  let bufferable = true;
+  let bufferable = input.bufferInMemory !== false;
+  let exceededBufferLimit = false;
   let spoolDirectory: string | null = null;
   let filePath: string | null = null;
   let fileHandle: FileHandle | null = null;
@@ -80,6 +82,7 @@ export async function collectDocumentStreamForExtraction(input: {
         } else {
           memoryChunks.length = 0;
           bufferable = false;
+          exceededBufferLimit = true;
         }
       }
     }
@@ -92,9 +95,9 @@ export async function collectDocumentStreamForExtraction(input: {
     return {
       checksumSha256: hash.digest("hex"),
       bytesRead,
-      buffer: bufferable ? Buffer.concat(memoryChunks) : null,
+      buffer: bufferable && input.bufferInMemory !== false ? Buffer.concat(memoryChunks) : null,
       filePath,
-      exceededBufferLimit: !bufferable,
+      exceededBufferLimit,
       cleanup,
     };
   } catch (error) {
