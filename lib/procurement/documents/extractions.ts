@@ -87,6 +87,7 @@ export function prepareExtractionSegments(
     maxExtractedBytes?: number;
     maxSegmentBytes?: number;
     maxSegments?: number;
+    partialExtraction?: boolean;
   } = {},
 ): PreparedExtraction {
   const maxExtractedBytes = positiveInteger(limits.maxExtractedBytes, DEFAULT_MAX_EXTRACTED_BYTES);
@@ -96,7 +97,8 @@ export function prepareExtractionSegments(
   const segments: PreparedExtractionSegment[] = [];
   let extractedCharCount = 0;
   let extractedByteCount = 0;
-  let truncationReason: PreparedExtraction["truncationReason"] = null;
+  let truncationReason: PreparedExtraction["truncationReason"] =
+    limits.partialExtraction === true ? "extractor_partial" : null;
 
   for (const source of input) {
     if (segments.length >= maxSegments) {
