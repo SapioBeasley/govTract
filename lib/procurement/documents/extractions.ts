@@ -28,7 +28,12 @@ export type PreparedExtraction = {
   extractedCharCount: number;
   extractedByteCount: number;
   truncated: boolean;
-  truncationReason: "document_byte_limit" | "segment_byte_limit" | "segment_count_limit" | null;
+  truncationReason:
+    | "document_byte_limit"
+    | "segment_byte_limit"
+    | "segment_count_limit"
+    | "extractor_partial"
+    | null;
 };
 
 function positiveInteger(value: number | undefined, fallback: number) {
