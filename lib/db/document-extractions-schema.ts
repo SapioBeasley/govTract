@@ -12,7 +12,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { opportunityDocumentVersions } from "./schema";
+import {
+  opportunities,
+  opportunityDocuments,
+  opportunityDocumentVersions,
+} from "./schema";
 
 const jsonObject = sql`'{}'::jsonb`;
 
@@ -100,5 +104,36 @@ export const opportunityDocumentVersionExtractions = pgTable(
     index("opportunity_document_version_extractions_extraction_idx").on(
       table.documentExtractionId,
     ),
+  ],
+);
+
+export const documentExtractionCloseouts = pgTable(
+  "document_extraction_closeouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    opportunityId: uuid("opportunity_id")
+      .notNull()
+      .references(() => opportunities.id, { onDelete: "cascade" }),
+    opportunityDocumentId: uuid("opportunity_document_id")
+      .notNull()
+      .references(() => opportunityDocuments.id, { onDelete: "cascade" }),
+    opportunityDocumentVersionId: uuid("opportunity_document_version_id")
+      .notNull()
+      .references(() => opportunityDocumentVersions.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    reason: text("reason").notNull().default("opportunity_inactive"),
+    failureCode: text("failure_code"),
+    triggerSource: text("trigger_source").notNull(),
+    triggerAgency: text("trigger_agency"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("document_extraction_closeouts_version_uidx").on(
+      table.opportunityDocumentVersionId,
+    ),
+    index("document_extraction_closeouts_status_idx").on(table.status, table.requestedAt),
+    index("document_extraction_closeouts_opportunity_idx").on(table.opportunityId),
   ],
 );
