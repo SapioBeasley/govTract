@@ -68,7 +68,13 @@ export async function loadLatestSolicitationUnderstanding(
       createdAt: solicitationUnderstandings.createdAt,
     })
     .from(solicitationUnderstandings)
-    .where(eq(solicitationUnderstandings.opportunityId, opportunityId))
+    .where(
+      and(
+        eq(solicitationUnderstandings.opportunityId, opportunityId),
+        eq(solicitationUnderstandings.status, "completed"),
+        isNotNull(solicitationUnderstandings.structuredOutput),
+      ),
+    )
     .orderBy(desc(solicitationUnderstandings.createdAt), desc(solicitationUnderstandings.id))
     .limit(1);
   const row = rows[0];
