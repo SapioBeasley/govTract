@@ -6,6 +6,8 @@ import {
   authorizeUnderstandingRun,
   estimateMaximumCostMicrousd,
   evaluateModelCallBudget,
+  evaluateUnderstandingFreshness,
+  loadUnderstandingBudgetPolicyFromEnv,
   planUnderstandingInputs,
   type UnderstandingDocumentInput,
   type UnderstandingModelPricingProfile,
@@ -56,6 +58,26 @@ function document(
 test("default paid-AI budget is zero for automatic and manual understanding", () => {
   assert.equal(DEFAULT_UNDERSTANDING_BUDGET_POLICY.automaticMaxCostMicrousd, 0);
   assert.equal(DEFAULT_UNDERSTANDING_BUDGET_POLICY.manualMaxCostMicrousd, 0);
+});
+
+test("budget policy can be raised later through runtime configuration without changing planner logic", () => {
+  const configured = loadUnderstandingBudgetPolicyFromEnv({
+    GOVTRACT_AI_AUTOMATIC_BUDGET_USD: "0.25",
+    GOVTRACT_AI_MANUAL_BUDGET_USD: "1.5",
+    GOVTRACT_AI_UNDERSTANDING_PER_DOCUMENT_CHAR_BUDGET: "1234",
+    GOVTRACT_AI_UNDERSTANDING_PER_OPPORTUNITY_CHAR_BUDGET: "5678",
+    GOVTRACT_AI_UNDERSTANDING_MAX_CHUNK_CHARS: "321",
+    GOVTRACT_AI_UNDERSTANDING_MAX_OUTPUT_TOKENS_PER_CALL: "2048",
+  });
+
+  assert.deepEqual(configured, {
+    automaticMaxCostMicrousd: 250_000,
+    manualMaxCostMicrousd: 1_500_000,
+    perDocumentCharBudget: 1_234,
+    perOpportunityCharBudget: 5_678,
+    maxChunkChars: 321,
+    maxOutputTokensPerCall: 2_048,
+  });
 });
 
 test("estimates maximum cost from bounded input/output token budgets", () => {
@@ -130,6 +152,23 @@ test("run authorization permits one automatic cycle and requires explicit user a
       explicitManualUserAction: true,
     }).allowed,
     true,
+  );
+});
+
+test("changed fingerprints mark output stale without authorizing automatic regeneration", () => {
+  assert.deepEqual(
+    evaluateUnderstandingFreshness({
+      previousInputFingerprint: "old",
+      currentInputFingerprint: "new",
+    }),
+    { isStale: true, shouldAutomaticallyRegenerate: false, staleReason: "input_changed" },
+  );
+  assert.deepEqual(
+    evaluateUnderstandingFreshness({
+      previousInputFingerprint: "same",
+      currentInputFingerprint: "same",
+    }),
+    { isStale: false, shouldAutomaticallyRegenerate: false, staleReason: null },
   );
 });
 
