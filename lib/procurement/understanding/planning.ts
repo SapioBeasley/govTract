@@ -120,6 +120,26 @@ function hash(parts: readonly string[]) {
   return digest.digest("hex");
 }
 
+function parsePositiveInteger(value: string | undefined, label: string) {
+  if (value === undefined || value.trim() === "") return undefined;
+  if (!/^\d+$/.test(value.trim())) throw new Error(`${label} must be a positive integer`);
+  const parsed = Number(value);
+  assertPositiveInteger(parsed, label);
+  return parsed;
+}
+
+function parseUsdToMicrousd(value: string | undefined, label: string) {
+  if (value === undefined || value.trim() === "") return undefined;
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d{1,6})?$/.test(normalized)) {
+    throw new Error(`${label} must be a nonnegative USD amount with at most 6 decimal places`);
+  }
+  const [whole, fraction = ""] = normalized.split(".");
+  const microusd = Number(whole) * 1_000_000 + Number(fraction.padEnd(6, "0"));
+  assertNonnegativeInteger(microusd, label);
+  return microusd;
+}
+
 export function resolveUnderstandingBudgetPolicy(
   overrides: Partial<UnderstandingBudgetPolicy> = {},
 ): UnderstandingBudgetPolicy {
@@ -131,6 +151,49 @@ export function resolveUnderstandingBudgetPolicy(
   assertPositiveInteger(resolved.maxChunkChars, "maxChunkChars");
   assertPositiveInteger(resolved.maxOutputTokensPerCall, "maxOutputTokensPerCall");
   return resolved;
+}
+
+export function loadUnderstandingBudgetPolicyFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): UnderstandingBudgetPolicy {
+  const overrides: Partial<UnderstandingBudgetPolicy> = {};
+  const automaticBudget = parseUsdToMicrousd(
+    env.GOVTRACT_AI_AUTOMATIC_BUDGET_USD,
+    "GOVTRACT_AI_AUTOMATIC_BUDGET_USD",
+  );
+  const manualBudget = parseUsdToMicrousd(
+    env.GOVTRACT_AI_MANUAL_BUDGET_USD,
+    "GOVTRACT_AI_MANUAL_BUDGET_USD",
+  );
+  const perDocumentCharBudget = parsePositiveInteger(
+    env.GOVTRACT_AI_UNDERSTANDING_PER_DOCUMENT_CHAR_BUDGET,
+    "GOVTRACT_AI_UNDERSTANDING_PER_DOCUMENT_CHAR_BUDGET",
+  );
+  const perOpportunityCharBudget = parsePositiveInteger(
+    env.GOVTRACT_AI_UNDERSTANDING_PER_OPPORTUNITY_CHAR_BUDGET,
+    "GOVTRACT_AI_UNDERSTANDING_PER_OPPORTUNITY_CHAR_BUDGET",
+  );
+  const maxChunkChars = parsePositiveInteger(
+    env.GOVTRACT_AI_UNDERSTANDING_MAX_CHUNK_CHARS,
+    "GOVTRACT_AI_UNDERSTANDING_MAX_CHUNK_CHARS",
+  );
+  const maxOutputTokensPerCall = parsePositiveInteger(
+    env.GOVTRACT_AI_UNDERSTANDING_MAX_OUTPUT_TOKENS_PER_CALL,
+    "GOVTRACT_AI_UNDERSTANDING_MAX_OUTPUT_TOKENS_PER_CALL",
+  );
+
+  if (automaticBudget !== undefined) overrides.automaticMaxCostMicrousd = automaticBudget;
+  if (manualBudget !== undefined) overrides.manualMaxCostMicrousd = manualBudget;
+  if (perDocumentCharBudget !== undefined) overrides.perDocumentCharBudget = perDocumentCharBudget;
+  if (perOpportunityCharBudget !== undefined) {
+    overrides.perOpportunityCharBudget = perOpportunityCharBudget;
+  }
+  if (maxChunkChars !== undefined) overrides.maxChunkChars = maxChunkChars;
+  if (maxOutputTokensPerCall !== undefined) {
+    overrides.maxOutputTokensPerCall = maxOutputTokensPerCall;
+  }
+
+  return resolveUnderstandingBudgetPolicy(overrides);
 }
 
 export function estimateMaximumCostMicrousd(input: {
@@ -219,6 +282,22 @@ export function authorizeUnderstandingRun(input: {
     return { allowed: false, reason: "manual_user_action_required" };
   }
   return { allowed: true, reason: null };
+}
+
+export function evaluateUnderstandingFreshness(input: {
+  previousInputFingerprint: string;
+  currentInputFingerprint: string;
+}): {
+  isStale: boolean;
+  shouldAutomaticallyRegenerate: false;
+  staleReason: "input_changed" | null;
+} {
+  const isStale = input.previousInputFingerprint !== input.currentInputFingerprint;
+  return {
+    isStale,
+    shouldAutomaticallyRegenerate: false,
+    staleReason: isStale ? "input_changed" : null,
+  };
 }
 
 function chunkFingerprint(input: {
