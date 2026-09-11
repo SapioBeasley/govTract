@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { generateSolicitationUnderstanding } from "@/lib/procurement/understanding/generation";
-import { loadLatestSolicitationUnderstanding } from "@/lib/procurement/understanding/generation-persistence";
+import { loadLatestCompletedSolicitationUnderstanding } from "@/lib/procurement/understanding/read";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,7 +13,7 @@ type RouteContext = {
 };
 
 function publicUnderstanding(
-  understanding: Awaited<ReturnType<typeof loadLatestSolicitationUnderstanding>>,
+  understanding: Awaited<ReturnType<typeof loadLatestCompletedSolicitationUnderstanding>>,
 ) {
   if (!understanding) return null;
   return {
@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   try {
-    const understanding = await loadLatestSolicitationUnderstanding(id);
+    const understanding = await loadLatestCompletedSolicitationUnderstanding(id);
     return NextResponse.json({ understanding: publicUnderstanding(understanding) });
   } catch {
     return NextResponse.json(
