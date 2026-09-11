@@ -9,7 +9,9 @@ import {
 } from "../lib/db/document-extractions-schema";
 import { opportunityDocumentVersions } from "../lib/db/schema";
 import {
+  decideCloseoutExistingExtraction,
   listDocumentCloseoutCandidates,
+  queueInactiveDocumentCloseoutBacklog,
   updateDocumentCloseoutStatus,
   type DocumentCloseoutCandidate,
 } from "../lib/procurement/documents/closeout";
@@ -52,6 +54,7 @@ import {
   markSourceConnectionValidated,
   SourceConnectionUnavailableError,
 } from "../lib/source-connections/repository";
+import type { BrowserSessionEnvelope } from "../lib/source-connections/session";
 
 const SOURCE = "beacon";
 const PROVIDER = "beacon";
@@ -60,6 +63,10 @@ const AGENCY_SLUG = process.env.BEACON_AGENCY ?? "city-of-houston";
 const ARTIFACT_DIR = process.env.BEACON_ARTIFACT_DIR ?? ".artifacts/beacon";
 const DOCUMENT_ARTIFACT_DIR = join(ARTIFACT_DIR, "documents");
 const CLOSEOUT_LIMIT = Math.max(0, Number(process.env.BEACON_DOCUMENT_CLOSEOUT_LIMIT ?? "25"));
+const CLOSEOUT_OPPORTUNITY_LIMIT = Math.max(
+  0,
+  Number(process.env.BEACON_DOCUMENT_CLOSEOUT_OPPORTUNITY_LIMIT ?? "100"),
+);
 const MAX_BYTES = Number(process.env.BEACON_DOCUMENT_MAX_BYTES ?? String(300 * 1024 * 1024));
 const MAX_EXTRACTION_SOURCE_BYTES = Number(
   process.env.BEACON_EXTRACTION_MAX_SOURCE_BYTES ?? String(64 * 1024 * 1024),
@@ -123,7 +130,7 @@ async function fetchWithTimeout(
 }
 
 async function loadValidatedBeaconConnection(): Promise<BeaconConnection> {
-  let session;
+  let session: BrowserSessionEnvelope;
   try {
     session = await loadSourceConnectionSession(PROVIDER);
   } catch (error) {
@@ -326,23 +333,21 @@ async function processCandidate(
   }
 
   if (candidate.checksumSha256) {
-    const reused = await reuseDocumentExtractionIfAvailable({
-      documentVersionIds: [candidate.documentVersionId],
-      checksumSha256: candidate.checksumSha256,
-      extractorName: descriptor.extractorName,
-      extractorVersion: descriptor.extractorVersion,
-    });
-    if (reused) {
-      await updateDocumentCloseoutStatus({ closeoutId: candidate.closeoutId, status: "covered" });
-      return "reused" as const;
-    }
-
     const canonical = await findCanonicalExtraction(
       candidate.checksumSha256,
       descriptor.extractorName,
       descriptor.extractorVersion,
     );
-    if (canonical?.status === "failed" && !RETRY_FAILED_EXTRACTIONS) {
+    const action = decideCloseoutExistingExtraction({
+      status: canonical?.status ?? null,
+      retryFailed: RETRY_FAILED_EXTRACTIONS,
+    });
+    if (action === "reuse" && canonical) {
+      await attachExtraction(canonical.id, candidate.documentVersionId);
+      await updateDocumentCloseoutStatus({ closeoutId: candidate.closeoutId, status: "covered" });
+      return "reused" as const;
+    }
+    if (action === "checkpoint_failed" && canonical) {
       await attachExtraction(canonical.id, candidate.documentVersionId);
       await updateDocumentCloseoutStatus({
         closeoutId: candidate.closeoutId,
@@ -502,8 +507,16 @@ async function main() {
   if (!Number.isSafeInteger(CLOSEOUT_LIMIT) || CLOSEOUT_LIMIT < 0) {
     throw new Error("BEACON_DOCUMENT_CLOSEOUT_LIMIT must be a non-negative integer");
   }
+  if (!Number.isSafeInteger(CLOSEOUT_OPPORTUNITY_LIMIT) || CLOSEOUT_OPPORTUNITY_LIMIT < 0) {
+    throw new Error("BEACON_DOCUMENT_CLOSEOUT_OPPORTUNITY_LIMIT must be a non-negative integer");
+  }
 
   await mkdir(DOCUMENT_ARTIFACT_DIR, { recursive: true });
+  const backlog = await queueInactiveDocumentCloseoutBacklog({
+    source: SOURCE,
+    agency: AGENCY_SLUG,
+    opportunityLimit: CLOSEOUT_OPPORTUNITY_LIMIT,
+  });
   const candidates = await listDocumentCloseoutCandidates({
     source: SOURCE,
     agency: AGENCY_SLUG,
@@ -554,7 +567,9 @@ async function main() {
     agency: AGENCY_SLUG,
     completedAt: new Date().toISOString(),
     limit: CLOSEOUT_LIMIT,
+    opportunityLimit: CLOSEOUT_OPPORTUNITY_LIMIT,
     retryFailed: RETRY_FAILED_EXTRACTIONS,
+    backlog,
     ...counts,
   };
   await writeFile(
