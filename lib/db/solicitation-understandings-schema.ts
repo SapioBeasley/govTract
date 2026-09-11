@@ -84,6 +84,15 @@ export const solicitationUnderstandings = pgTable(
       "solicitation_understandings_stale_timestamp_check",
       sql`NOT ${table.isStale} OR ${table.staleAt} IS NOT NULL`,
     ),
+    check(
+      "solicitation_understandings_usage_nonnegative_check",
+      sql`(${table.inputTokenCount} IS NULL OR ${table.inputTokenCount} >= 0)
+        AND (${table.outputTokenCount} IS NULL OR ${table.outputTokenCount} >= 0)
+        AND (${table.inputCharCount} IS NULL OR ${table.inputCharCount} >= 0)
+        AND (${table.outputCharCount} IS NULL OR ${table.outputCharCount} >= 0)
+        AND (${table.estimatedCostMicrousd} IS NULL OR ${table.estimatedCostMicrousd} >= 0)
+        AND (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)`,
+    ),
   ],
 );
 
