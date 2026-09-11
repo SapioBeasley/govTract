@@ -452,14 +452,18 @@ export function planUnderstandingInputs(input: {
   };
 
   return {
-    inputFingerprint: hash(
-      documents.flatMap((document) => [
+    inputFingerprint: hash([
+      input.config.promptVersion,
+      input.config.modelProvider,
+      input.config.modelName,
+      input.config.modelVersion ?? "",
+      ...documents.flatMap((document) => [
         document.documentVersionId,
         document.checksumSha256,
         document.extractorName,
         document.extractorVersion,
       ]),
-    ),
+    ]),
     chunks,
     coverage,
     completenessStatus: incompleteReason === null ? "complete" : "partial",
