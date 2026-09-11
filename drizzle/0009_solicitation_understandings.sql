@@ -63,7 +63,7 @@ CREATE TABLE "solicitation_understanding_inputs" (
 --> statement-breakpoint
 ALTER TABLE "solicitation_understanding_inputs" ADD CONSTRAINT "solicitation_understanding_inputs_understanding_fk" FOREIGN KEY ("solicitation_understanding_id") REFERENCES "public"."solicitation_understandings"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "solicitation_understanding_inputs" ADD CONSTRAINT "solicitation_understanding_inputs_version_fk" FOREIGN KEY ("opportunity_document_version_id") REFERENCES "public"."opportunity_document_versions"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "solicitation_understanding_inputs" ADD CONSTRAINT "solicitation_understanding_inputs_version_fk" FOREIGN KEY ("opportunity_document_version_id") REFERENCES "public"."opportunity_document_versions"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "solicitation_understanding_inputs" ADD CONSTRAINT "solicitation_understanding_inputs_extraction_fk" FOREIGN KEY ("document_extraction_id") REFERENCES "public"."document_extractions"("id") ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
@@ -84,7 +84,7 @@ CREATE TABLE "solicitation_understanding_evidence" (
 --> statement-breakpoint
 ALTER TABLE "solicitation_understanding_evidence" ADD CONSTRAINT "solicitation_understanding_evidence_understanding_fk" FOREIGN KEY ("solicitation_understanding_id") REFERENCES "public"."solicitation_understandings"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "solicitation_understanding_evidence" ADD CONSTRAINT "solicitation_understanding_evidence_version_fk" FOREIGN KEY ("opportunity_document_version_id") REFERENCES "public"."opportunity_document_versions"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "solicitation_understanding_evidence" ADD CONSTRAINT "solicitation_understanding_evidence_version_fk" FOREIGN KEY ("opportunity_document_version_id") REFERENCES "public"."opportunity_document_versions"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "solicitation_understanding_evidence" ADD CONSTRAINT "solicitation_understanding_evidence_segment_fk" FOREIGN KEY ("document_extraction_segment_id") REFERENCES "public"."document_extraction_segments"("id") ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
