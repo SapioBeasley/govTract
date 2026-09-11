@@ -96,7 +96,7 @@ export const solicitationUnderstandingInputs = pgTable(
       .references(() => solicitationUnderstandings.id, { onDelete: "cascade" }),
     opportunityDocumentVersionId: uuid("opportunity_document_version_id")
       .notNull()
-      .references(() => opportunityDocumentVersions.id, { onDelete: "restrict" }),
+      .references(() => opportunityDocumentVersions.id, { onDelete: "cascade" }),
     documentExtractionId: uuid("document_extraction_id").references(() => documentExtractions.id, {
       onDelete: "set null",
     }),
@@ -121,7 +121,7 @@ export const solicitationUnderstandingEvidence = pgTable(
     findingKey: text("finding_key").notNull(),
     opportunityDocumentVersionId: uuid("opportunity_document_version_id")
       .notNull()
-      .references(() => opportunityDocumentVersions.id, { onDelete: "restrict" }),
+      .references(() => opportunityDocumentVersions.id, { onDelete: "cascade" }),
     documentExtractionSegmentId: uuid("document_extraction_segment_id").references(
       () => documentExtractionSegments.id,
       { onDelete: "set null" },
