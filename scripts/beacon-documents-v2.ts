@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
@@ -26,11 +25,16 @@ import {
   reuseDocumentExtractionIfAvailable,
 } from "../lib/procurement/documents/extraction-persistence";
 import { prepareExtractionSegments } from "../lib/procurement/documents/extractions";
+import { extractPdfContentFromPath } from "../lib/procurement/documents/large-pdf-content";
 import {
   isSupportedDocumentType,
   persistOpportunityDocumentSet,
   type PersistableDocument,
 } from "../lib/procurement/documents/persistence";
+import {
+  collectDocumentStreamForExtraction,
+  DocumentSourceSizeLimitError,
+} from "../lib/procurement/documents/streamed-extraction-source";
 import {
   enrichBeaconDocumentMetadata,
   isBeaconPresignedDocumentUrl,
@@ -67,6 +71,7 @@ const MAX_BYTES = Number(process.env.BEACON_DOCUMENT_MAX_BYTES ?? String(300 * 1
 const MAX_EXTRACTION_SOURCE_BYTES = Number(
   process.env.BEACON_EXTRACTION_MAX_SOURCE_BYTES ?? String(64 * 1024 * 1024),
 );
+const PDF_PAGE_BATCH_SIZE = Number(process.env.BEACON_PDF_PAGE_BATCH_SIZE ?? "8");
 const CONCURRENCY = Math.max(1, Number(process.env.BEACON_DOCUMENT_CONCURRENCY ?? "2"));
 const REQUEST_TIMEOUT_MS = Number(process.env.BEACON_DOCUMENT_TIMEOUT_MS ?? "120000");
 const FORCE_REHASH = process.env.BEACON_DOCUMENT_FORCE_REHASH === "true";
@@ -132,6 +137,8 @@ interface RetrievedDocument {
   bytesRead: number;
   attemptedDownload: boolean;
   contentBuffer?: Buffer | null;
+  contentPath?: string | null;
+  cleanupExtractionSource?: (() => Promise<void>) | null;
   extractionTooLarge?: boolean;
   extractionCheckpoint?: ExtractionCheckpoint;
   usedPresignedRedirect?: boolean;
@@ -406,52 +413,56 @@ async function resolveBeaconDownloadResponse(input: {
   return { response: gatewayResponse, usedPresignedRedirect: false };
 }
 
-async function hashAndMaybeBufferResponse(response: Response, responseSize: number | null) {
+async function* responseBodyChunks(response: Response) {
   if (!response.body) throw new Error("Document response did not include a body");
-
   const reader = response.body.getReader();
-  const hash = createHash("sha256");
-  const chunks: Buffer[] = [];
-  let bytesRead = 0;
-  let bufferable =
-    EXTRACTION_ENABLED &&
-    (responseSize === null || responseSize <= MAX_EXTRACTION_SOURCE_BYTES);
+  let completed = false;
 
   try {
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-
-      bytesRead += value.byteLength;
-      if (bytesRead > MAX_BYTES) {
-        await reader.cancel("govTract document size bound exceeded");
-        throw new DocumentRetrievalError(
-          `Document exceeded BEACON_DOCUMENT_MAX_BYTES (${MAX_BYTES} bytes) while streaming`,
-          "size",
-        );
+      if (done) {
+        completed = true;
+        return;
       }
-
-      hash.update(value);
-      if (bufferable) {
-        if (bytesRead <= MAX_EXTRACTION_SOURCE_BYTES) {
-          chunks.push(Buffer.from(value));
-        } else {
-          chunks.length = 0;
-          bufferable = false;
-        }
-      }
+      if (value) yield value;
     }
   } finally {
+    if (!completed) {
+      await reader.cancel("govTract stopped document streaming").catch(() => {});
+    }
     reader.releaseLock();
   }
+}
 
-  return {
-    checksumSha256: hash.digest("hex"),
-    bytesRead,
-    contentBuffer: bufferable ? Buffer.concat(chunks) : null,
-    extractionTooLarge: EXTRACTION_ENABLED && !bufferable,
-  };
+async function hashAndMaybeBufferResponse(response: Response, spoolPdfToDisk: boolean) {
+  try {
+    const collected = await collectDocumentStreamForExtraction({
+      chunks: responseBodyChunks(response),
+      maxBufferBytes: MAX_EXTRACTION_SOURCE_BYTES,
+      maxSourceBytes: MAX_BYTES,
+      spoolToDisk: spoolPdfToDisk,
+      bufferInMemory: EXTRACTION_ENABLED,
+    });
+
+    return {
+      checksumSha256: collected.checksumSha256,
+      bytesRead: collected.bytesRead,
+      contentBuffer: collected.buffer,
+      contentPath: collected.filePath,
+      cleanupExtractionSource: collected.cleanup,
+      extractionTooLarge:
+        EXTRACTION_ENABLED && collected.exceededBufferLimit && !collected.filePath,
+    };
+  } catch (error) {
+    if (error instanceof DocumentSourceSizeLimitError) {
+      throw new DocumentRetrievalError(
+        `Document exceeded BEACON_DOCUMENT_MAX_BYTES (${MAX_BYTES} bytes) while streaming`,
+        "size",
+      );
+    }
+    throw error;
+  }
 }
 
 async function latestVersion(documentId: string): Promise<LatestVersion | null> {
@@ -589,6 +600,7 @@ async function retrieveDocument(input: {
     EXTRACTION_ENABLED &&
     latest?.checksumSha256 &&
     descriptor &&
+    descriptor.kind !== "pdf" &&
     !FORCE_REHASH &&
     base.fileSizeBytes &&
     base.fileSizeBytes > MAX_EXTRACTION_SOURCE_BYTES
@@ -676,7 +688,10 @@ async function retrieveDocument(input: {
     );
   }
 
-  const streamed = await hashAndMaybeBufferResponse(response, responseSize);
+  const streamed = await hashAndMaybeBufferResponse(
+    response,
+    EXTRACTION_ENABLED && descriptor?.kind === "pdf",
+  );
   const responseMimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() || null;
   return {
     document: {
@@ -691,6 +706,8 @@ async function retrieveDocument(input: {
     bytesRead: streamed.bytesRead,
     attemptedDownload: true,
     contentBuffer: streamed.contentBuffer,
+    contentPath: streamed.contentPath,
+    cleanupExtractionSource: streamed.cleanupExtractionSource,
     extractionTooLarge: streamed.extractionTooLarge,
     usedPresignedRedirect,
   };
@@ -714,7 +731,9 @@ async function processExtraction(input: {
   });
   if (reused) return { status: "reused" as const, bytes: 0 };
 
-  if (input.result.extractionTooLarge || !input.result.contentBuffer) {
+  const useFileBackedPdf =
+    descriptor.kind === "pdf" && !input.result.contentBuffer && Boolean(input.result.contentPath);
+  if (input.result.extractionTooLarge || (!input.result.contentBuffer && !useFileBackedPdf)) {
     await persistDocumentExtractionFailure({
       documentVersionIds: [input.documentVersionId],
       checksumSha256,
@@ -729,12 +748,20 @@ async function processExtraction(input: {
   }
 
   try {
-    const extracted = await extractDocumentContent({
-      name: input.result.document.name,
-      mimeType: input.result.document.mimeType,
-      buffer: input.result.contentBuffer,
-    });
+    const extracted = useFileBackedPdf && input.result.contentPath
+      ? await extractPdfContentFromPath(input.result.contentPath, {
+          pageBatchSize: PDF_PAGE_BATCH_SIZE,
+        })
+      : await extractDocumentContent({
+          name: input.result.document.name,
+          mimeType: input.result.document.mimeType,
+          buffer: input.result.contentBuffer as Buffer,
+        });
     const prepared = prepareExtractionSegments(extracted.segments);
+    if (extracted.metadata.partialExtraction === true && !prepared.truncated) {
+      prepared.truncated = true;
+      prepared.truncationReason = "extractor_partial";
+    }
     const persisted = await persistDocumentExtraction({
       documentVersionIds: [input.documentVersionId],
       checksumSha256,
@@ -790,8 +817,11 @@ async function main() {
       "SOURCE_SESSION_ENCRYPTION_KEY is required to load the persisted Beacon source connection",
     );
   }
-  if (!Number.isFinite(MAX_EXTRACTION_SOURCE_BYTES) || MAX_EXTRACTION_SOURCE_BYTES <= 0) {
-    throw new Error("BEACON_EXTRACTION_MAX_SOURCE_BYTES must be a positive number");
+  if (!Number.isSafeInteger(MAX_EXTRACTION_SOURCE_BYTES) || MAX_EXTRACTION_SOURCE_BYTES <= 0) {
+    throw new Error("BEACON_EXTRACTION_MAX_SOURCE_BYTES must be a positive integer");
+  }
+  if (!Number.isSafeInteger(PDF_PAGE_BATCH_SIZE) || PDF_PAGE_BATCH_SIZE <= 0) {
+    throw new Error("BEACON_PDF_PAGE_BATCH_SIZE must be a positive integer");
   }
   if (!Number.isFinite(BACKFILL_LIMIT)) {
     throw new Error("BEACON_EXTRACTION_BACKFILL_LIMIT must be a number");
@@ -1016,6 +1046,9 @@ async function main() {
         console.error(
           `BEACON_DOCUMENT_ERROR stage=extraction kind=persistence_error opportunity=${opportunityId} key=${persisted.sourceDocumentKey}`,
         );
+      } finally {
+        await retrievedResult.cleanupExtractionSource?.();
+        retrievedResult.cleanupExtractionSource = null;
       }
     }
   }
@@ -1059,6 +1092,8 @@ async function main() {
       skipped: extractionSkippedCount,
       extractedBytesWritten,
       maxSourceBytes: MAX_EXTRACTION_SOURCE_BYTES,
+      maxBufferedSourceBytes: MAX_EXTRACTION_SOURCE_BYTES,
+      largePdfPageBatchSize: PDF_PAGE_BATCH_SIZE,
       retryFailed: RETRY_FAILED_EXTRACTIONS,
     },
     maxBytes: MAX_BYTES,
