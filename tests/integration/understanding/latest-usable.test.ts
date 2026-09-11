@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import postgres from "postgres";
 
-import { loadLatestCompletedSolicitationUnderstanding } from "@/lib/procurement/understanding/generation-persistence";
+import { loadLatestCompletedSolicitationUnderstanding } from "@/lib/procurement/understanding/read";
 import type { SolicitationUnderstandingContent } from "@/lib/procurement/understanding/types";
 
 const canRun = Boolean(process.env.DATABASE_URL);
@@ -86,7 +86,7 @@ test(
 
       const usable = await loadLatestCompletedSolicitationUnderstanding(opportunity.id);
       assert.equal(usable?.id, completed.id);
-      assert.equal(usable?.structuredOutput?.summary, content.summary);
+      assert.equal(usable?.structuredOutput.summary, content.summary);
     } finally {
       if (sourceRecordId) await sql`DELETE FROM source_records WHERE id = ${sourceRecordId}`;
       await sql.end({ timeout: 5 });
