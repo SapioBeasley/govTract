@@ -18,7 +18,8 @@
     "test:source-connections": "tsx --test lib/source-connections/*.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
-    "ingest:beacon:documents": "tsx scripts/beacon-documents-v2.ts"
+    "ingest:beacon:documents": "tsx scripts/beacon-documents-v2.ts",
+    "ingest:beacon:document-closeouts": "tsx scripts/beacon-document-closeouts.ts"
   },
   "dependencies": {
     "@e965/xlsx": "0.20.3",
