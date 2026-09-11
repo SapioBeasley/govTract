@@ -185,7 +185,11 @@ export async function listDocumentCloseoutCandidates(input: {
         eq(documentExtractionCloseouts.status, "failed"),
       )!
     : eq(documentExtractionCloseouts.status, "pending");
-  const conditions: SQL[] = [eq(opportunities.source, input.source), statusCondition];
+  const conditions: SQL[] = [
+    eq(opportunities.source, input.source),
+    eq(opportunities.isActive, false),
+    statusCondition,
+  ];
   if (input.agency) conditions.push(eq(opportunities.agencySlug, input.agency));
 
   const rows = await db
