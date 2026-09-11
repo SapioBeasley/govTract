@@ -157,6 +157,7 @@ export const opportunities = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default(jsonObject),
+    lifecycleState: text("lifecycle_state").notNull().default("active"),
     isActive: boolean("is_active").notNull().default(true),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
@@ -171,6 +172,7 @@ export const opportunities = pgTable(
     index("opportunities_due_at_idx").on(table.dueAt),
     index("opportunities_agency_status_idx").on(table.agencySlug, table.status),
     index("opportunities_source_active_idx").on(table.source, table.isActive),
+    index("opportunities_lifecycle_state_idx").on(table.lifecycleState),
   ],
 );
 

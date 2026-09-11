@@ -14,6 +14,7 @@ import {
   sourceRecords,
 } from "@/lib/db/schema";
 import { isSupportedDocumentType } from "@/lib/procurement/documents/persistence";
+import type { OpportunityLifecycleState } from "@/lib/procurement/lifecycle/opportunity";
 
 export type OpportunityDetailClassification = {
   id: string;
@@ -83,6 +84,7 @@ export type OpportunityDetail = {
   dueAt: Date | null;
   canonicalUrl: string | null;
   location: Record<string, unknown>;
+  lifecycleState: OpportunityLifecycleState;
   isActive: boolean;
   firstSeenAt: Date;
   lastSeenAt: Date;
@@ -130,6 +132,7 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
       dueAt: opportunities.dueAt,
       canonicalUrl: opportunities.canonicalUrl,
       location: opportunities.location,
+      lifecycleState: opportunities.lifecycleState,
       isActive: opportunities.isActive,
       firstSeenAt: opportunities.firstSeenAt,
       lastSeenAt: opportunities.lastSeenAt,
@@ -327,6 +330,7 @@ export const getOpportunityDetail = cache(async (id: string): Promise<Opportunit
 
   return {
     ...opportunity,
+    lifecycleState: opportunity.lifecycleState as OpportunityLifecycleState,
     classifications,
     documents,
     sourceRecord: sourceRecordRows[0] ?? null,

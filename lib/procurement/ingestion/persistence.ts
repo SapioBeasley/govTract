@@ -14,6 +14,15 @@ import {
   persistOpportunityDocumentSet,
   type PersistableDocument,
 } from "@/lib/procurement/documents/persistence";
+import {
+  findOpportunityIdsForSourceRecords,
+  recomputeCanonicalOpportunityLifecycle,
+  recomputeCanonicalOpportunityLifecycles,
+} from "@/lib/procurement/lifecycle/persistence";
+import {
+  deriveSourceOpportunityLifecycle,
+  isOpportunityLifecycleActive,
+} from "@/lib/procurement/lifecycle/opportunity";
 import { recomputeCanonicalOpportunityFields } from "@/lib/procurement/precedence/persistence";
 import { serializeOpportunityPrecedenceFields } from "@/lib/procurement/precedence/opportunity";
 import type { ProcurementSourceAuthority } from "@/lib/procurement/sources/authority";
@@ -261,6 +270,11 @@ export async function persistNormalizedOpportunity(input: {
   const now = new Date();
   const sourceAuthority = input.sourceAuthority ?? "unknown";
   const normalizedPayload = serializeOpportunityPrecedenceFields(input.record);
+  const initialLifecycle = deriveSourceOpportunityLifecycle({
+    sourceRecordActive: true,
+    status: input.record.status,
+    sourceStatus: input.record.sourceStatus,
+  });
   const agencyId = await upsertCanonicalAgency({
     agencySlug: input.record.agencySlug,
     agencyName: input.record.agencyName,
@@ -289,7 +303,8 @@ export async function persistNormalizedOpportunity(input: {
       dueAt: input.record.dueAt,
       canonicalUrl: input.record.canonicalUrl,
       location: input.record.location ?? {},
-      isActive: true,
+      lifecycleState: initialLifecycle.state,
+      isActive: isOpportunityLifecycleActive(initialLifecycle.state),
       firstSeenAt: now,
       lastSeenAt: now,
       updatedAt: now,
@@ -299,7 +314,6 @@ export async function persistNormalizedOpportunity(input: {
       set: {
         sourceRecordId: input.sourceRecordPk,
         sourceRevisionId: input.record.sourceRevisionId,
-        isActive: true,
         lastSeenAt: now,
         updatedAt: now,
       },
@@ -347,6 +361,7 @@ export async function persistNormalizedOpportunity(input: {
     });
 
   await recomputeCanonicalOpportunityFields(opportunity.id);
+  await recomputeCanonicalOpportunityLifecycle(opportunity.id);
 
   await persistOpportunityDocumentSet({
     opportunityId: opportunity.id,
@@ -494,25 +509,21 @@ export async function reconcileCompleteScope(input: {
     eq(sourceRecords.isActive, true),
     notInArray(sourceRecords.sourceRecordId, input.seenSourceRecordIds),
   ];
-  const opportunityConditions = [
-    eq(opportunities.source, input.source),
-    eq(opportunities.isActive, true),
-    notInArray(opportunities.sourceOpportunityId, input.seenSourceRecordIds),
-  ];
 
   if (input.agency) {
     sourceRecordConditions.push(eq(sourceRecords.sourceAgency, input.agency));
-    opportunityConditions.push(eq(opportunities.agencySlug, input.agency));
   }
 
-  await db
+  const archivedSourceRecords = await db
     .update(sourceRecords)
     .set({ isActive: false, updatedAt: now })
-    .where(and(...sourceRecordConditions));
-  await db
-    .update(opportunities)
-    .set({ isActive: false, updatedAt: now })
-    .where(and(...opportunityConditions));
+    .where(and(...sourceRecordConditions))
+    .returning({ id: sourceRecords.id });
+
+  const opportunityIds = await findOpportunityIdsForSourceRecords(
+    archivedSourceRecords.map((row) => row.id),
+  );
+  await recomputeCanonicalOpportunityLifecycles(opportunityIds);
 }
 
 export async function reconcileIngestionScope(input: {
