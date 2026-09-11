@@ -98,3 +98,30 @@ test("terminal evidence is retained when every linked source disappears", () => 
   assert.equal(result.evidence.source, "beacon");
   assert.equal(result.evidence.field, "sourceStatus");
 });
+
+test("authoritative terminal evidence outranks a lower-authority source that still appears active", () => {
+  const result = selectCanonicalOpportunityLifecycle([
+    {
+      source: "beacon",
+      sourceRecordId: "beacon-awarded",
+      sourceRecordActive: true,
+      authority: "authoritative",
+      isPrimary: true,
+      status: "open",
+      sourceStatus: "awarded",
+    },
+    {
+      source: "bidnet",
+      sourceRecordId: "bidnet-open-copy",
+      sourceRecordActive: true,
+      authority: "aggregator",
+      isPrimary: false,
+      status: "open",
+      sourceStatus: "published",
+    },
+  ]);
+
+  assert.equal(result.state, "awarded");
+  assert.equal(result.evidence.kind, "terminal_status");
+  assert.equal(result.evidence.source, "beacon");
+});
