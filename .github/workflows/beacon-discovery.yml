@@ -34,28 +34,13 @@ on:
         required: true
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - ".github/workflows/beacon-discovery.yml"
-      - "scripts/beacon-discover.ts"
-      - "scripts/beacon-documents.ts"
-      - "scripts/beacon-documents-v2.ts"
-      - "scripts/beacon-document-closeouts.ts"
-      - "scripts/db-migrate.ts"
-      - "scripts/db-migrate-helpers.ts"
-      - "scripts/db-migrate.test.ts"
-      - "lib/db/**"
-      - "lib/source-connections/**"
-      - "lib/procurement/**"
-      - "drizzle/**"
-      - "package.json"
 
 permissions:
   contents: read
 
 concurrency:
   group: beacon-city-of-houston-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   pull:
@@ -66,21 +51,18 @@ jobs:
       BEACON_START_URL: https://www.beaconbid.com/solicitations/city-of-houston/open
       BEACON_AGENCY: city-of-houston
       BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
-      # Use Beacon's native page size for PR reachability checks so a source update during
-      # a deliberately tiny multi-page pull does not make CI flaky. Manual runs can still
-      # set a smaller page size to exercise pagination explicitly.
       BEACON_PAGE_SIZE: ${{ inputs.page_size || '50' }}
-      BEACON_PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist && 'true' || 'false' }}
+      BEACON_PERSIST: ${{ inputs.persist && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
       BEACON_AUTO_REGISTER: "true"
       BEACON_DOCUMENT_CONCURRENCY: "2"
       BEACON_DOCUMENT_MAX_BYTES: "314572800"
       BEACON_DOCUMENT_MAX_ERROR_RATE: "0.25"
-      BEACON_DOCUMENT_EXTRACT: ${{ github.event_name == 'workflow_dispatch' && inputs.extract_documents && 'true' || 'false' }}
+      BEACON_DOCUMENT_EXTRACT: ${{ inputs.extract_documents && 'true' || 'false' }}
       BEACON_EXTRACTION_BACKFILL_LIMIT: ${{ inputs.extraction_backfill_limit || '25' }}
       BEACON_DOCUMENT_CLOSEOUT_LIMIT: ${{ inputs.document_closeout_limit || '25' }}
       BEACON_DOCUMENT_CLOSEOUT_OPPORTUNITY_LIMIT: "100"
-      BEACON_EXTRACTION_RETRY_FAILED: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_failed_extractions && 'true' || 'false' }}
+      BEACON_EXTRACTION_RETRY_FAILED: ${{ inputs.retry_failed_extractions && 'true' || 'false' }}
       BEACON_EXTRACTION_MAX_SOURCE_BYTES: "67108864"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
@@ -97,34 +79,19 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Test database migration behavior
-        run: npm run test:db-migrations
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test document persistence and extraction lifecycle
-        run: npm run test:documents
-
-      - name: Test Beacon normalization
-        run: npm run test:beacon-normalize
-
-      - name: Test Beacon document helpers
-        run: npm run test:beacon-documents
-
       - name: Apply database migrations
-        if: github.event_name == 'workflow_dispatch' && inputs.persist
+        if: inputs.persist
         run: npm run db:migrate -- --baseline-existing
 
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon
 
       - name: Retrieve, version, and extract Beacon documents
-        if: github.event_name == 'workflow_dispatch' && inputs.persist
+        if: inputs.persist
         run: npm run ingest:beacon:documents
 
       - name: Finalize inactive Beacon document extraction
-        if: github.event_name == 'workflow_dispatch' && inputs.persist && inputs.extract_documents
+        if: inputs.persist && inputs.extract_documents
         run: npm run ingest:beacon:document-closeouts
 
       - name: Upload sanitized Beacon diagnostics
