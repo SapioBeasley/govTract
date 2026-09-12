@@ -1,7 +1,9 @@
 name: PR validation
 
 on:
+  workflow_dispatch:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - ".github/workflows/pr-validation.yml"
       - "app/**"
@@ -24,6 +26,8 @@ concurrency:
 
 jobs:
   validate:
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     name: Typecheck, build, migrations, and deterministic tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
