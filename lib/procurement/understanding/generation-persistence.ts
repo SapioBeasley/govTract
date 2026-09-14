@@ -1,13 +1,18 @@
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { documentExtractionSegments } from "@/lib/db/document-extractions-schema";
+import { solicitationRequirements } from "@/lib/db/solicitation-requirements-schema";
 import {
   solicitationUnderstandingChunks,
+  solicitationUnderstandingEvidence,
   solicitationUnderstandingInputs,
   solicitationUnderstandings,
 } from "@/lib/db/solicitation-understandings-schema";
 import { opportunities } from "@/lib/db/schema";
+import { deriveSolicitationRequirements } from "@/lib/procurement/requirements/derive";
 
+import { buildUnderstandingEvidenceReferences } from "./evidence";
 import type {
   UnderstandingGenerationTrigger,
   UnderstandingIncompleteReason,
@@ -265,28 +270,104 @@ export async function completeSolicitationUnderstandingRun(input: {
 }) {
   const now = new Date();
   const db = getDb();
-  await db
-    .update(solicitationUnderstandings)
-    .set({
-      status: "completed",
-      completenessStatus: input.completenessStatus,
-      incompleteReason: input.incompleteReason,
-      coverageMetadata: input.coverageMetadata,
-      modelVersion: input.modelVersion,
-      structuredOutput: input.content,
-      processingCompletedAt: now,
-      generatedAt: now,
-      failureCode: null,
-      inputTokenCount: input.inputTokenCount,
-      outputTokenCount: input.outputTokenCount,
-      inputCharCount: input.inputCharCount,
-      outputCharCount: input.outputCharCount,
-      estimatedCostMicrousd: input.estimatedCostMicrousd,
-      actualCostMicrousd: input.actualCostMicrousd,
-      usageMetadata: input.usageMetadata,
-      updatedAt: now,
-    })
-    .where(eq(solicitationUnderstandings.id, input.understandingId));
+
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(solicitationUnderstandings)
+      .set({
+        status: "completed",
+        completenessStatus: input.completenessStatus,
+        incompleteReason: input.incompleteReason,
+        coverageMetadata: input.coverageMetadata,
+        modelVersion: input.modelVersion,
+        structuredOutput: input.content,
+        processingCompletedAt: now,
+        generatedAt: now,
+        failureCode: null,
+        inputTokenCount: input.inputTokenCount,
+        outputTokenCount: input.outputTokenCount,
+        inputCharCount: input.inputCharCount,
+        outputCharCount: input.outputCharCount,
+        estimatedCostMicrousd: input.estimatedCostMicrousd,
+        actualCostMicrousd: input.actualCostMicrousd,
+        usageMetadata: input.usageMetadata,
+        updatedAt: now,
+      })
+      .where(eq(solicitationUnderstandings.id, input.understandingId))
+      .returning({ opportunityId: solicitationUnderstandings.opportunityId });
+    if (!updated) throw new Error("Solicitation understanding not found");
+
+    const chunkRows = await tx
+      .select({
+        documentVersionId: solicitationUnderstandingChunks.opportunityDocumentVersionId,
+        chunkKey: solicitationUnderstandingChunks.chunkKey,
+        structuredOutput: solicitationUnderstandingChunks.structuredOutput,
+      })
+      .from(solicitationUnderstandingChunks)
+      .where(
+        and(
+          eq(solicitationUnderstandingChunks.solicitationUnderstandingId, input.understandingId),
+          inArray(solicitationUnderstandingChunks.status, ["processed", "reused"]),
+          isNotNull(solicitationUnderstandingChunks.structuredOutput),
+        ),
+      )
+      .orderBy(asc(solicitationUnderstandingChunks.ordinal), asc(solicitationUnderstandingChunks.id));
+
+    const evidenceReferences = buildUnderstandingEvidenceReferences({
+      content: input.content,
+      chunks: chunkRows,
+    });
+    const segmentIds = [...new Set(evidenceReferences.map((reference) => reference.documentExtractionSegmentId))];
+    const segmentRows =
+      segmentIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: documentExtractionSegments.id,
+              locator: documentExtractionSegments.locator,
+            })
+            .from(documentExtractionSegments)
+            .where(inArray(documentExtractionSegments.id, segmentIds));
+    const locators = new Map(segmentRows.map((segment) => [segment.id, segment.locator]));
+
+    await tx
+      .delete(solicitationUnderstandingEvidence)
+      .where(eq(solicitationUnderstandingEvidence.solicitationUnderstandingId, input.understandingId));
+    const validEvidence = evidenceReferences.filter((reference) =>
+      locators.has(reference.documentExtractionSegmentId),
+    );
+    if (validEvidence.length > 0) {
+      await tx.insert(solicitationUnderstandingEvidence).values(
+        validEvidence.map((reference) => ({
+          solicitationUnderstandingId: input.understandingId,
+          findingKey: reference.findingKey,
+          opportunityDocumentVersionId: reference.opportunityDocumentVersionId,
+          documentExtractionSegmentId: reference.documentExtractionSegmentId,
+          locator: locators.get(reference.documentExtractionSegmentId) ?? {},
+        })),
+      );
+    }
+
+    const requirements = deriveSolicitationRequirements(input.content);
+    await tx
+      .delete(solicitationRequirements)
+      .where(eq(solicitationRequirements.solicitationUnderstandingId, input.understandingId));
+    if (requirements.length > 0) {
+      await tx.insert(solicitationRequirements).values(
+        requirements.map((requirement) => ({
+          opportunityId: updated.opportunityId,
+          solicitationUnderstandingId: input.understandingId,
+          requirementKey: requirement.requirementKey,
+          requirementType: requirement.type,
+          requirementLevel: requirement.level,
+          text: requirement.text,
+          sourceSection: requirement.sourceSection,
+          sourceFindingKey: requirement.sourceFindingKey,
+          details: requirement.details,
+        })),
+      );
+    }
+  });
 }
 
 export async function failSolicitationUnderstandingRun(input: {

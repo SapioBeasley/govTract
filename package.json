@@ -20,7 +20,8 @@
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:documents": "tsx scripts/beacon-documents-v2.ts",
     "ingest:beacon:document-closeouts": "tsx scripts/beacon-document-closeouts.ts",
-    "understand:opportunities": "tsx scripts/generate-understandings.ts"
+    "understand:opportunities": "tsx scripts/generate-understandings.ts",
+    "requirements:materialize": "tsx scripts/materialize-requirements.ts"
   },
   "dependencies": {
     "@e965/xlsx": "0.20.3",
