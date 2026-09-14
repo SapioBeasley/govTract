@@ -78,7 +78,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
+      # Always apply paid-equivalent accounting even when Google serves the project on its free tier.
+      GEMINI_BILLING_MODE: "billable"
       # Workflow-scoped paid-equivalent ceiling per opportunity. Local/app defaults remain $0.
       GOVTRACT_AI_AUTOMATIC_BUDGET_USD: "0.25"
       UNDERSTANDING_GENERATION_LIMIT: ${{ inputs.understanding_generation_limit || '25' }}
