@@ -1,0 +1,38 @@
+name: Gemini live smoke
+
+on:
+  push:
+    branches:
+      - codex/gemini-live-smoke
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Generate one live solicitation understanding
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
+      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: ${{ vars.GOVTRACT_AI_AUTOMATIC_BUDGET_USD || '0' }}
+      UNDERSTANDING_GENERATION_LIMIT: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Apply database migrations
+        run: npm run db:migrate -- --baseline-existing
+
+      - name: Generate exactly one eligible understanding
+        run: npm run understand:opportunities
