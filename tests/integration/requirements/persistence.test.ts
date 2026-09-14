@@ -21,7 +21,7 @@ function sha256(value: string) {
 }
 
 test(
-  "materializes a completed understanding idempotently and reports missing document evidence as partial",
+  "materializes a completed understanding idempotently, repairs derived classification, and reports missing document evidence as partial",
   { skip: !canRun },
   async () => {
     const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
@@ -55,7 +55,12 @@ test(
         quantities: [],
         qualifications: [],
         insuranceBonding: [],
-        mandatoryEvents: [],
+        mandatoryEvents: [
+          {
+            key: "event.recommended",
+            text: "Attendance at the pre-bid site visit is recommended.",
+          },
+        ],
         pricingInstructions: [],
         submissionComponents: [
           { key: "submission.package", text: "Submit the required response package." },
@@ -78,28 +83,44 @@ test(
       assert.ok(understanding?.id);
 
       const first = await materializeRequirementsForUnderstanding(understanding.id);
-      assert.deepEqual(first, { state: "materialized", requirementCount: 1 });
+      assert.deepEqual(first, { state: "materialized", requirementCount: 2 });
 
-      const [persisted] = await sql<{ id: string }[]>`
-        SELECT id FROM solicitation_requirements
+      const persisted = await sql<{ id: string; requirement_key: string; requirement_level: string }[]>`
+        SELECT id, requirement_key, requirement_level
+        FROM solicitation_requirements
         WHERE solicitation_understanding_id = ${understanding.id}
+        ORDER BY requirement_key
       `;
-      assert.ok(persisted?.id);
+      assert.equal(persisted.length, 2);
+      const recommended = persisted.find(
+        (requirement) => requirement.requirement_key === "mandatoryEvents:event.recommended",
+      );
+      assert.ok(recommended);
+      assert.equal(recommended.requirement_level, "optional");
+
+      await sql`
+        UPDATE solicitation_requirements
+        SET requirement_level = 'required'
+        WHERE id = ${recommended.id}
+      `;
 
       const second = await materializeRequirementsForUnderstanding(understanding.id);
-      assert.deepEqual(second, { state: "materialized", requirementCount: 1 });
-      const [persistedAgain] = await sql<{ id: string }[]>`
-        SELECT id FROM solicitation_requirements
-        WHERE solicitation_understanding_id = ${understanding.id}
+      assert.deepEqual(second, { state: "materialized", requirementCount: 2 });
+      const [repaired] = await sql<{ id: string; requirement_level: string }[]>`
+        SELECT id, requirement_level
+        FROM solicitation_requirements
+        WHERE id = ${recommended.id}
       `;
-      assert.equal(persistedAgain?.id, persisted.id, "backfill reruns must preserve requirement identity");
+      assert.equal(repaired?.id, recommended.id, "rematerialization must preserve requirement identity");
+      assert.equal(repaired?.requirement_level, "optional");
 
       const loaded = await loadLatestSolicitationRequirements(opportunity.id);
       assert.ok(loaded);
       assert.equal(loaded.completenessStatus, "partial");
       assert.equal(loaded.incompleteReasons.includes("requirement_evidence_missing"), true);
-      assert.equal(loaded.requirements.length, 1);
+      assert.equal(loaded.requirements.length, 2);
       assert.deepEqual(loaded.requirements[0]?.evidence, []);
+      assert.deepEqual(loaded.requirements[1]?.evidence, []);
     } finally {
       if (sourceRecordId) await sql`DELETE FROM source_records WHERE id = ${sourceRecordId}`;
       await sql.end({ timeout: 5 });
