@@ -10,29 +10,55 @@ permissions:
 
 jobs:
   smoke:
-    name: Generate one live solicitation understanding
+    name: Diagnose Gemini provider access
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
-      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: ${{ vars.GOVTRACT_AI_AUTOMATIC_BUDGET_USD || '0' }}
-      UNDERSTANDING_GENERATION_LIMIT: "1"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Check Gemini model access
+        shell: bash
+        run: |
+          status=$(curl -sS -o model-response.json -w '%{http_code}' \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash)
+          echo "model_lookup_http_status=$status"
+          if [ "$status" != "200" ]; then
+            node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync("model-response.json","utf8")); console.log("gemini_error="+(d?.error?.message ?? "unknown"));'
+            exit 1
+          fi
+          node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync("model-response.json","utf8")); console.log("model="+(d?.name ?? "unknown"));'
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Apply database migrations
-        run: npm run db:migrate -- --baseline-existing
-
-      - name: Generate exactly one eligible understanding
-        run: npm run understand:opportunities
+      - name: Check tiny structured-output request
+        shell: bash
+        run: |
+          cat > request.json <<'JSON'
+          {
+            "contents": [{"parts": [{"text": "Return an object whose ok field is true."}]}],
+            "generationConfig": {
+              "maxOutputTokens": 64,
+              "responseFormat": {
+                "text": {
+                  "mimeType": "application/json",
+                  "schema": {
+                    "type": "object",
+                    "properties": {"ok": {"type": "boolean"}},
+                    "required": ["ok"]
+                  }
+                }
+              }
+            }
+          }
+          JSON
+          status=$(curl -sS -o generate-response.json -w '%{http_code}' \
+            -X POST \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            -H 'content-type: application/json' \
+            --data-binary @request.json \
+            https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent)
+          echo "generate_http_status=$status"
+          if [ "$status" != "200" ]; then
+            node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync("generate-response.json","utf8")); console.log("gemini_error="+(d?.error?.message ?? "unknown"));'
+            exit 1
+          fi
+          node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync("generate-response.json","utf8")); console.log("model_version="+(d?.modelVersion ?? "unknown")); console.log("prompt_tokens="+(d?.usageMetadata?.promptTokenCount ?? 0)); console.log("output_tokens="+(d?.usageMetadata?.candidatesTokenCount ?? 0)); console.log("structured_output_received="+Boolean(d?.candidates?.[0]?.content?.parts?.[0]?.text));'
