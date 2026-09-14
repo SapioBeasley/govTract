@@ -79,6 +79,18 @@ test(
 
       await persistOpportunityDocumentSet({
         opportunityId: opportunity.id,
+        documents: [baseDocument],
+      });
+      const [afterUnchangedReplay] = await sql<{ is_stale: boolean; stale_reason: string | null }[]>`
+        SELECT is_stale, stale_reason
+        FROM solicitation_understandings
+        WHERE id = ${automaticUnderstanding.id}
+      `;
+      assert.equal(afterUnchangedReplay?.is_stale, false);
+      assert.equal(afterUnchangedReplay?.stale_reason, null);
+
+      await persistOpportunityDocumentSet({
+        opportunityId: opportunity.id,
         documents: [
           {
             ...baseDocument,
