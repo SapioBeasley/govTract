@@ -66,11 +66,28 @@ test("derives typed requirement rows without inventing mandatory state", () => {
   assert.equal(byFinding.get("insurance.general")?.type, "insurance");
   assert.equal(byFinding.get("bond.bid")?.type, "bonding");
   assert.equal(byFinding.get("event.prebid")?.type, "mandatory_event");
+  assert.equal(byFinding.get("event.prebid")?.level, "required");
   assert.equal(byFinding.get("pricing.bid")?.type, "pricing");
   assert.equal(byFinding.get("submission.form")?.type, "form");
   assert.equal(byFinding.get("submission.optional")?.level, "optional");
   assert.equal(byFinding.get("late")?.type, "disqualifier");
   assert.equal(byFinding.get("late")?.level, "required");
+});
+
+test("recommended or explicitly non-mandatory events are not promoted to required", () => {
+  const requirements = deriveSolicitationRequirements({
+    ...base,
+    mandatoryEvents: [
+      { key: "event.recommended", text: "Attendance at the pre-bid site visit is recommended." },
+      { key: "event.not-mandatory", text: "The pre-proposal conference is not mandatory." },
+      { key: "event.unknown", text: "A pre-bid conference will be held on October 2." },
+    ],
+  });
+
+  const byFinding = new Map(requirements.map((requirement) => [requirement.sourceFindingKey, requirement]));
+  assert.equal(byFinding.get("event.recommended")?.level, "optional");
+  assert.equal(byFinding.get("event.not-mandatory")?.level, "optional");
+  assert.equal(byFinding.get("event.unknown")?.level, "unknown");
 });
 
 test("questions and ambiguities are not promoted into requirements", () => {
