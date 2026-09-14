@@ -40,6 +40,73 @@ import {
 
 const STRUCTURED_OUTPUT_OVERHEAD_TOKEN_BUDGET = 4_096;
 const SUMMARY_CHAR_LIMIT = 6_000;
+const PROVIDER_FAILURE_MESSAGE_LIMIT = 500;
+
+type UnderstandingProviderFailureDiagnostic = {
+  provider: string;
+  model: string;
+  chunkKey: string | null;
+  category: "http_error" | "invalid_response" | "provider_error";
+  httpStatus: number | null;
+  message: string;
+};
+
+function sanitizeProviderFailureMessage(value: string) {
+  return value
+    .replace(/AIza[A-Za-z0-9_-]{10,}/g, "[REDACTED]")
+    .replace(/((?:x-goog-api-key|api[_ -]?key)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, PROVIDER_FAILURE_MESSAGE_LIMIT);
+}
+
+function describeProviderFailure(input: {
+  error: unknown;
+  provider: string;
+  model: string;
+  chunkKey: string | null;
+}): UnderstandingProviderFailureDiagnostic {
+  const rawMessage = input.error instanceof Error ? input.error.message.trim() : "";
+  const providerOwnedMessage = input.provider === "gemini" && rawMessage.startsWith("Gemini ");
+  const message = providerOwnedMessage
+    ? sanitizeProviderFailureMessage(rawMessage)
+    : "Provider request failed.";
+  const statusMatch = providerOwnedMessage ? rawMessage.match(/\bHTTP\s+(\d{3})\b/i) : null;
+  const httpStatus = statusMatch?.[1] ? Number(statusMatch[1]) : null;
+  const category = httpStatus
+    ? "http_error"
+    : providerOwnedMessage &&
+        /invalid response|invalid JSON|no structured solicitation understanding|invalid solicitation understanding structure/i.test(
+          rawMessage,
+        )
+      ? "invalid_response"
+      : "provider_error";
+
+  return {
+    provider: input.provider,
+    model: input.model,
+    chunkKey: input.chunkKey,
+    category,
+    httpStatus,
+    message,
+  };
+}
+
+function logProviderFailure(input: {
+  understandingId: string;
+  opportunityId: string;
+  diagnostic: UnderstandingProviderFailureDiagnostic;
+}) {
+  console.error(
+    JSON.stringify({
+      event: "solicitation_understanding_provider_failure",
+      understandingId: input.understandingId,
+      opportunityId: input.opportunityId,
+      ...input.diagnostic,
+    }),
+  );
+}
 
 export type UnderstandingGenerationBlockedReason =
   | "automatic_run_already_exists"
@@ -439,6 +506,7 @@ export async function generateSolicitationUnderstanding(
   let inputCharCount = 0;
   let outputCharCount = 0;
   let providerCallCount = 0;
+  const providerFailures: UnderstandingProviderFailureDiagnostic[] = [];
   let resolvedModelVersion = provider.modelVersion;
 
   for (const chunk of reusedChunks) {
@@ -470,9 +538,9 @@ export async function generateSolicitationUnderstanding(
       break;
     }
 
+    providerCallCount += 1;
     try {
       const result = await provider.generate(request);
-      providerCallCount += 1;
       resolvedModelVersion = result.modelVersion ?? resolvedModelVersion;
       const paidOutputTokens = result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount;
       const actualCostMicrousd = estimateMaximumCostMicrousd({
@@ -502,7 +570,15 @@ export async function generateSolicitationUnderstanding(
         actualCostMicrousd,
         pricingProfileVersion: provider.profile.id,
       });
-    } catch {
+    } catch (error) {
+      const diagnostic = describeProviderFailure({
+        error,
+        provider: provider.profile.provider,
+        model: provider.profile.model,
+        chunkKey: chunk.chunkKey,
+      });
+      providerFailures.push(diagnostic);
+      logProviderFailure({ understandingId, opportunityId: input.opportunityId, diagnostic });
       const remainingKeys = plannedChunks.slice(index).map((candidate) => candidate.chunkKey);
       await markUnderstandingChunksSkipped({
         understandingId,
@@ -531,9 +607,9 @@ export async function generateSolicitationUnderstanding(
       return { state: "failed", understandingId, reason: "no_usable_model_output" };
     }
 
+    providerCallCount += 1;
     try {
       const result = await provider.generate(request);
-      providerCallCount += 1;
       resolvedModelVersion = result.modelVersion ?? resolvedModelVersion;
       const paidOutputTokens = result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount;
       const actualCostMicrousd = estimateMaximumCostMicrousd({
@@ -550,11 +626,25 @@ export async function generateSolicitationUnderstanding(
       inputCharCount += request.systemInstruction.length + request.prompt.length;
       outputCharCount += JSON.stringify(result.content).length;
       outputs.push(result.content);
-    } catch {
+    } catch (error) {
+      const diagnostic = describeProviderFailure({
+        error,
+        provider: provider.profile.provider,
+        model: provider.profile.model,
+        chunkKey: null,
+      });
+      providerFailures.push(diagnostic);
+      logProviderFailure({ understandingId, opportunityId: input.opportunityId, diagnostic });
       await failSolicitationUnderstandingRun({
         understandingId,
         failureCode: "provider_failure",
         coverageMetadata: plan.coverage,
+        usageMetadata: {
+          providerCallCount,
+          thoughtsTokenCount,
+          totalProviderTokenCount,
+          providerFailures,
+        },
       });
       return { state: "failed", understandingId, reason: "provider_failure" };
     }
@@ -570,7 +660,12 @@ export async function generateSolicitationUnderstanding(
       outputTokenCount,
       estimatedCostMicrousd,
       actualCostMicrousd: spentCostMicrousd,
-      usageMetadata: { providerCallCount, thoughtsTokenCount, totalProviderTokenCount },
+      usageMetadata: {
+        providerCallCount,
+        thoughtsTokenCount,
+        totalProviderTokenCount,
+        providerFailures,
+      },
     });
     return { state: "failed", understandingId, reason: "no_usable_model_output" };
   }
@@ -608,6 +703,7 @@ export async function generateSolicitationUnderstanding(
       thoughtsTokenCount,
       totalProviderTokenCount,
       reusedChunkCount: reusedChunkKeys.size,
+      providerFailures,
     },
   });
 
