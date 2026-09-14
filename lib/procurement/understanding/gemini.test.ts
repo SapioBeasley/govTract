@@ -70,7 +70,7 @@ test("Gemini provider sends bounded structured-output requests and maps usage me
   assert.equal(body.generationConfig.temperature, undefined);
   assert.equal(body.generationConfig.topP, undefined);
   assert.equal(body.generationConfig.topK, undefined);
-  assert.equal(body.generationConfig.responseFormat.text.mimeType, "application/json");
+  assert.equal(body.generationConfig.responseFormat.text.mimeType, "APPLICATION_JSON");
   assert.equal(body.generationConfig.responseFormat.text.schema.type, "object");
   assert.ok(body.generationConfig.responseFormat.text.schema.required.includes("workBreakdown"));
   assert.ok(body.generationConfig.responseFormat.text.schema.required.includes("submissionComponents"));

@@ -230,7 +230,7 @@ export function createGeminiUnderstandingProvider(
               maxOutputTokens: input.maxOutputTokens,
               responseFormat: {
                 text: {
-                  mimeType: "application/json",
+                  mimeType: "APPLICATION_JSON",
                   schema: solicitationUnderstandingJsonSchema,
                 },
               },
