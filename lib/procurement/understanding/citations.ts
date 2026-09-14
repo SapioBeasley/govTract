@@ -19,21 +19,34 @@ function decodeFinding(
   }
 
   const prefixEnd = finding.key.indexOf("]::");
-  if (!finding.key.startsWith("SOURCE[") || prefixEnd < 7) return finding;
-  const rawIds = finding.key.slice(7, prefixEnd);
-  const stableKey = finding.key.slice(prefixEnd + 3).trim() || finding.key;
-  const sourceSegmentIds = [...new Set(
-    rawIds
-      .split(",")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0 && allowedSourceSegmentIds.has(value)),
-  )];
+  if (finding.key.startsWith("SOURCE[") && prefixEnd >= 7) {
+    const rawIds = finding.key.slice(7, prefixEnd);
+    const stableKey = finding.key.slice(prefixEnd + 3).trim() || finding.key;
+    const sourceSegmentIds = [...new Set(
+      rawIds
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0 && allowedSourceSegmentIds.has(value)),
+    )];
 
-  return {
-    ...finding,
-    key: stableKey,
-    details: { ...(finding.details ?? {}), sourceSegmentIds },
-  };
+    return {
+      ...finding,
+      key: stableKey,
+      details: { ...(finding.details ?? {}), sourceSegmentIds },
+    };
+  }
+
+  if (allowedSourceSegmentIds.size === 1) {
+    return {
+      ...finding,
+      details: {
+        ...(finding.details ?? {}),
+        sourceSegmentIds: [...allowedSourceSegmentIds],
+      },
+    };
+  }
+
+  return finding;
 }
 
 export function attachSourceSegmentCitations(
