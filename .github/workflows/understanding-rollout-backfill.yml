@@ -16,7 +16,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
+      # Always apply paid-equivalent accounting even when Google serves the project on its free tier.
+      GEMINI_BILLING_MODE: "billable"
       GOVTRACT_AI_AUTOMATIC_BUDGET_USD: "0.25"
       UNDERSTANDING_GENERATION_LIMIT: "50"
       REQUIREMENTS_MATERIALIZATION_REFRESH: "true"
