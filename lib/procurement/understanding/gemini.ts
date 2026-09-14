@@ -228,7 +228,6 @@ export function createGeminiUnderstandingProvider(
             ],
             generationConfig: {
               maxOutputTokens: input.maxOutputTokens,
-              temperature: 0.2,
               responseFormat: {
                 text: {
                   mimeType: "application/json",
