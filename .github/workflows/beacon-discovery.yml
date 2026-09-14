@@ -21,12 +21,21 @@ on:
         required: true
         type: boolean
         default: true
+      generate_understandings:
+        description: Attempt the one automatic solicitation-understanding cycle for eligible opportunities
+        required: true
+        type: boolean
+        default: true
       extraction_backfill_limit:
         description: Maximum already-hashed documents to redownload for first-time extraction in this run
         required: false
         default: "25"
       document_closeout_limit:
         description: Maximum inactive document closeout items to process in this run
+        required: false
+        default: "25"
+      understanding_generation_limit:
+        description: Maximum opportunities to consider for automatic understanding in this run
         required: false
         default: "25"
       retry_failed_extractions:
@@ -66,6 +75,10 @@ jobs:
       BEACON_EXTRACTION_MAX_SOURCE_BYTES: "67108864"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
+      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: ${{ vars.GOVTRACT_AI_AUTOMATIC_BUDGET_USD || '0' }}
+      UNDERSTANDING_GENERATION_LIMIT: ${{ inputs.understanding_generation_limit || '25' }}
 
     steps:
       - name: Checkout
@@ -93,6 +106,10 @@ jobs:
       - name: Finalize inactive Beacon document extraction
         if: inputs.persist && inputs.extract_documents
         run: npm run ingest:beacon:document-closeouts
+
+      - name: Generate eligible solicitation understandings
+        if: inputs.persist && inputs.generate_understandings
+        run: npm run understand:opportunities
 
       - name: Upload sanitized Beacon diagnostics
         if: always()

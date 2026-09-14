@@ -18,7 +18,10 @@ import {
 } from "lucide-react";
 
 import { OpportunityDocumentList } from "@/components/opportunity-document-list";
+import { UnderstandingActionButton } from "@/components/understanding-action-button";
 import { getOpportunityDetail } from "@/lib/opportunities/detail";
+import { loadLatestSolicitationUnderstanding } from "@/lib/procurement/understanding/generation-persistence";
+import type { SolicitationUnderstandingFinding } from "@/lib/procurement/understanding/types";
 
 export const dynamic = "force-dynamic";
 
@@ -100,13 +103,51 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="min-w-0 scroll-mt-24 overflow-hidden rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
+    <section
+      id={id}
+      className="min-w-0 scroll-mt-24 overflow-hidden rounded-2xl border bg-white p-5 shadow-sm sm:p-6"
+    >
       <div className="mb-4 flex min-w-0 items-center gap-2">
         <span className="shrink-0 text-[var(--primary)]">{icon}</span>
-        <h2 className="min-w-0 break-words text-lg font-semibold tracking-tight [overflow-wrap:anywhere]">{title}</h2>
+        <h2 className="min-w-0 break-words text-lg font-semibold tracking-tight [overflow-wrap:anywhere]">
+          {title}
+        </h2>
       </div>
       {children}
     </section>
+  );
+}
+
+function FindingList({ findings }: { findings: SolicitationUnderstandingFinding[] }) {
+  if (findings.length === 0) {
+    return <p className="text-sm text-[var(--muted-foreground)]">No supported findings.</p>;
+  }
+  return (
+    <ul className="grid min-w-0 gap-2 text-sm leading-6">
+      {findings.map((finding) => (
+        <li
+          key={finding.key}
+          className="min-w-0 break-words rounded-lg bg-[var(--muted)]/45 px-3 py-2 [overflow-wrap:anywhere]"
+        >
+          {finding.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FindingGroup({
+  title,
+  findings,
+}: {
+  title: string;
+  findings: SolicitationUnderstandingFinding[];
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border p-4">
+      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+      <FindingList findings={findings} />
+    </div>
   );
 }
 
@@ -121,6 +162,8 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
   const opportunity = await getOpportunityDetail(id);
   if (!opportunity) notFound();
 
+  const understanding = await loadLatestSolicitationUnderstanding(opportunity.id);
+  const understandingContent = understanding?.structuredOutput ?? null;
   const description = toPlainText(opportunity.description);
   const sourceUrl = opportunity.canonicalUrl ?? opportunity.sourceRecord?.canonicalUrl ?? null;
   const sourceRecord = opportunity.sourceRecord;
@@ -168,22 +211,52 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
           <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
-                <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[var(--accent-foreground)]">{formatSource(opportunity.source)}</span>
-                {opportunity.status ? <span className="rounded-full border px-2.5 py-1 capitalize text-[var(--muted-foreground)]">{opportunity.status}</span> : null}
-                {opportunity.opportunityType ? <span className="rounded-full bg-[var(--muted)] px-2.5 py-1 text-[var(--muted-foreground)]">{opportunity.opportunityType}</span> : null}
+                <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[var(--accent-foreground)]">
+                  {formatSource(opportunity.source)}
+                </span>
+                {opportunity.status ? (
+                  <span className="rounded-full border px-2.5 py-1 capitalize text-[var(--muted-foreground)]">
+                    {opportunity.status}
+                  </span>
+                ) : null}
+                {opportunity.opportunityType ? (
+                  <span className="rounded-full bg-[var(--muted)] px-2.5 py-1 text-[var(--muted-foreground)]">
+                    {opportunity.opportunityType}
+                  </span>
+                ) : null}
               </div>
 
-              <h1 className="mt-4 break-words text-2xl font-semibold leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-3xl lg:text-4xl">{opportunity.title}</h1>
+              <h1 className="mt-4 break-words text-2xl font-semibold leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-3xl lg:text-4xl">
+                {opportunity.title}
+              </h1>
 
               <div className="mt-4 flex min-w-0 flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--muted-foreground)]">
-                {opportunity.agencyName ? <span className="inline-flex min-w-0 items-center gap-1.5"><Building2 className="size-4 shrink-0" /><span className="break-words [overflow-wrap:anywhere]">{opportunity.agencyName}</span></span> : null}
-                <span className="inline-flex items-center gap-1.5"><MapPin className="size-4 shrink-0" />{formatLocation(opportunity.location)}</span>
-                {opportunity.solicitationNumber ? <span className="inline-flex min-w-0 items-center gap-1.5"><Hash className="size-4 shrink-0" /><span className="break-all">{opportunity.solicitationNumber}</span></span> : null}
+                {opportunity.agencyName ? (
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Building2 className="size-4 shrink-0" />
+                    <span className="break-words [overflow-wrap:anywhere]">{opportunity.agencyName}</span>
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1.5">
+                  <MapPin className="size-4 shrink-0" />
+                  {formatLocation(opportunity.location)}
+                </span>
+                {opportunity.solicitationNumber ? (
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Hash className="size-4 shrink-0" />
+                    <span className="break-all">{opportunity.solicitationNumber}</span>
+                  </span>
+                ) : null}
               </div>
             </div>
 
             {sourceUrl ? (
-              <a href={sourceUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90">
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90"
+              >
                 View original source <ExternalLink className="size-4" />
               </a>
             ) : null}
@@ -192,7 +265,13 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
 
         <nav className="mt-5 flex max-w-full gap-2 overflow-x-auto pb-1 text-sm">
           {["At a Glance", "Understand", "Requirements", "Submission", "Evaluation", "Documents", "Intelligence", "Evidence"].map((label) => (
-            <a key={label} href={`#${label.toLowerCase().replace(/\s+/g, "-")}`} className="whitespace-nowrap rounded-full border bg-white px-3 py-1.5 font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]">{label}</a>
+            <a
+              key={label}
+              href={`#${label.toLowerCase().replace(/\s+/g, "-")}`}
+              className="whitespace-nowrap rounded-full border bg-white px-3 py-1.5 font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+            >
+              {label}
+            </a>
           ))}
         </nav>
 
@@ -210,7 +289,9 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
                 ["Source status", opportunity.sourceStatus ?? "Not provided"],
               ].map(([label, value]) => (
                 <div key={label} className="min-w-0 rounded-xl bg-[var(--muted)]/55 p-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">{label}</dt>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                    {label}
+                  </dt>
                   <dd className="mt-1 break-words text-sm font-medium [overflow-wrap:anywhere]">{value}</dd>
                 </div>
               ))}
@@ -218,35 +299,138 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
 
             {opportunity.departments.length || opportunity.categories.length || opportunity.classifications.length ? (
               <div className="mt-5 flex min-w-0 flex-wrap gap-2">
-                {opportunity.departments.map((department) => <span key={`department-${department}`} className="max-w-full break-words rounded-full border px-2.5 py-1 text-xs [overflow-wrap:anywhere]">{department}</span>)}
-                {opportunity.classifications.map((classification) => (
-                  <span key={classification.id} className="inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1 text-xs text-[var(--muted-foreground)]" title={classification.name}>
-                    <Tag className="size-3 shrink-0" /> {classification.scheme.toUpperCase()}{classification.code ? ` ${classification.code}` : ""}
+                {opportunity.departments.map((department) => (
+                  <span
+                    key={`department-${department}`}
+                    className="max-w-full break-words rounded-full border px-2.5 py-1 text-xs [overflow-wrap:anywhere]"
+                  >
+                    {department}
                   </span>
                 ))}
-                {opportunity.categories.slice(0, 6).map((category) => <span key={`category-${category}`} className="max-w-full break-words rounded-full bg-[var(--muted)] px-2.5 py-1 text-xs [overflow-wrap:anywhere]">{category}</span>)}
+                {opportunity.classifications.map((classification) => (
+                  <span
+                    key={classification.id}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1 text-xs text-[var(--muted-foreground)]"
+                    title={classification.name}
+                  >
+                    <Tag className="size-3 shrink-0" /> {classification.scheme.toUpperCase()}
+                    {classification.code ? ` ${classification.code}` : ""}
+                  </span>
+                ))}
+                {opportunity.categories.slice(0, 6).map((category) => (
+                  <span
+                    key={`category-${category}`}
+                    className="max-w-full break-words rounded-full bg-[var(--muted)] px-2.5 py-1 text-xs [overflow-wrap:anywhere]"
+                  >
+                    {category}
+                  </span>
+                ))}
               </div>
             ) : null}
           </Section>
 
           <Section id="understand" title="Understand" icon={<CheckCircle2 className="size-5" />}>
-            {description ? <div className="whitespace-pre-line break-words text-sm leading-7 [overflow-wrap:anywhere]">{description}</div> : <EmptyState>The source did not provide a usable description. Document-backed solicitation understanding will appear here after the understanding pipeline runs.</EmptyState>}
+            <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-wrap gap-2 text-xs font-medium">
+                {understandingContent ? (
+                  <span className="rounded-full border px-2.5 py-1 capitalize">
+                    {understanding?.completenessStatus ?? "partial"}
+                  </span>
+                ) : null}
+                {understanding?.isStale ? (
+                  <span className="rounded-full border px-2.5 py-1">Stale</span>
+                ) : null}
+                {understanding?.incompleteReason ? (
+                  <span className="max-w-full break-words rounded-full bg-[var(--muted)] px-2.5 py-1 text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
+                    {understanding.incompleteReason.replaceAll("_", " ")}
+                  </span>
+                ) : null}
+              </div>
+              <UnderstandingActionButton
+                opportunityId={opportunity.id}
+                hasUnderstanding={Boolean(understandingContent)}
+              />
+            </div>
+
+            {understandingContent ? (
+              <div className="grid min-w-0 gap-4">
+                <p className="break-words text-sm leading-7 [overflow-wrap:anywhere]">
+                  {understandingContent.summary}
+                </p>
+                {understandingContent.questionsAmbiguities.length ? (
+                  <FindingGroup title="Questions / ambiguities" findings={understandingContent.questionsAmbiguities} />
+                ) : null}
+              </div>
+            ) : description ? (
+              <div className="grid min-w-0 gap-3">
+                <div className="whitespace-pre-line break-words text-sm leading-7 [overflow-wrap:anywhere]">
+                  {description}
+                </div>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  This is source description text, not a generated solicitation understanding.
+                </p>
+              </div>
+            ) : (
+              <EmptyState>
+                The source did not provide a usable description. Generate understanding after document extraction is available.
+              </EmptyState>
+            )}
           </Section>
 
           <Section id="requirements" title="Requirements" icon={<ClipboardCheck className="size-5" />}>
-            <EmptyState>Structured mandatory requirements have not been generated yet. This section is ready to reference extracted document evidence once the understanding pipeline is available.</EmptyState>
+            {understandingContent ? (
+              <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+                <FindingGroup title="Scope" findings={understandingContent.scope} />
+                <FindingGroup title="Work breakdown" findings={understandingContent.workBreakdown} />
+                <FindingGroup title="Deliverables" findings={understandingContent.deliverables} />
+                <FindingGroup title="Qualifications" findings={understandingContent.qualifications} />
+                <FindingGroup title="Insurance / bonding" findings={understandingContent.insuranceBonding} />
+                <FindingGroup title="Mandatory events" findings={understandingContent.mandatoryEvents} />
+                <FindingGroup title="Quantities" findings={understandingContent.quantities} />
+                <FindingGroup title="Disqualifiers" findings={understandingContent.disqualifiers} />
+              </div>
+            ) : (
+              <EmptyState>Structured mandatory requirements have not been generated yet.</EmptyState>
+            )}
           </Section>
 
           <Section id="submission" title="Submission" icon={<CalendarDays className="size-5" />}>
             <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-              <div className="min-w-0 rounded-xl bg-[var(--muted)]/55 p-4"><div className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Due</div><div className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{formatDate(opportunity.dueAt)}</div></div>
-              <div className="min-w-0 rounded-xl bg-[var(--muted)]/55 p-4"><div className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Submission instructions</div><div className="mt-1 text-sm text-[var(--muted-foreground)]">Pending structured understanding</div></div>
+              <div className="min-w-0 rounded-xl bg-[var(--muted)]/55 p-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Due</div>
+                <div className="mt-1 break-words font-medium [overflow-wrap:anywhere]">
+                  {formatDate(opportunity.dueAt)}
+                </div>
+              </div>
+              {understandingContent ? (
+                <FindingGroup title="Submission components" findings={understandingContent.submissionComponents} />
+              ) : (
+                <div className="min-w-0 rounded-xl bg-[var(--muted)]/55 p-4">
+                  <div className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                    Submission instructions
+                  </div>
+                  <div className="mt-1 text-sm text-[var(--muted-foreground)]">Pending structured understanding</div>
+                </div>
+              )}
             </div>
-            {sourceUrl ? <p className="mt-4 text-sm text-[var(--muted-foreground)]">Verify the official submission method and updated instructions on the original procurement source before responding.</p> : null}
+            {understandingContent ? (
+              <div className="mt-3">
+                <FindingGroup title="Pricing instructions" findings={understandingContent.pricingInstructions} />
+              </div>
+            ) : null}
+            {sourceUrl ? (
+              <p className="mt-4 text-sm text-[var(--muted-foreground)]">
+                Verify the official submission method and updated instructions on the original procurement source before responding.
+              </p>
+            ) : null}
           </Section>
 
           <Section id="evaluation" title="Evaluation" icon={<Scale className="size-5" />}>
-            <EmptyState>Evaluation criteria have not been structured yet. The page remains available while downstream understanding is pending or unavailable.</EmptyState>
+            {understandingContent ? (
+              <FindingList findings={understandingContent.evaluationCriteria} />
+            ) : (
+              <EmptyState>Evaluation criteria have not been structured yet.</EmptyState>
+            )}
           </Section>
 
           <Section id="documents" title={`Documents (${opportunity.documents.length})`} icon={<FileText className="size-5" />}>
@@ -258,7 +442,9 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
           </Section>
 
           <Section id="intelligence" title="Intelligence" icon={<ShieldCheck className="size-5" />}>
-            <EmptyState>No reliable historical intelligence has been identified for this opportunity yet. Missing intelligence does not block solicitation review.</EmptyState>
+            <EmptyState>
+              No reliable historical intelligence has been identified for this opportunity yet. Missing intelligence does not block solicitation review.
+            </EmptyState>
           </Section>
 
           <Section id="evidence" title="Evidence" icon={<Hash className="size-5" />}>
