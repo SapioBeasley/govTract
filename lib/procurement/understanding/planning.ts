@@ -22,7 +22,7 @@ export const DEFAULT_UNDERSTANDING_BUDGET_POLICY: Readonly<UnderstandingBudgetPo
   manualMaxCostMicrousd: 0,
   perDocumentCharBudget: 200_000,
   perOpportunityCharBudget: 600_000,
-  maxChunkChars: 32_000,
+  maxChunkChars: 200_000,
   maxOutputTokensPerCall: 8_192,
 };
 
@@ -72,6 +72,7 @@ export type UnderstandingPlannedChunk = {
   documentVersionId: string;
   extractionId: string | null;
   segmentId: string;
+  sourceSegmentIds: string[];
   ordinal: number;
   part: number;
   content: string;
@@ -185,14 +186,9 @@ export function loadUnderstandingBudgetPolicyFromEnv(
   if (automaticBudget !== undefined) overrides.automaticMaxCostMicrousd = automaticBudget;
   if (manualBudget !== undefined) overrides.manualMaxCostMicrousd = manualBudget;
   if (perDocumentCharBudget !== undefined) overrides.perDocumentCharBudget = perDocumentCharBudget;
-  if (perOpportunityCharBudget !== undefined) {
-    overrides.perOpportunityCharBudget = perOpportunityCharBudget;
-  }
+  if (perOpportunityCharBudget !== undefined) overrides.perOpportunityCharBudget = perOpportunityCharBudget;
   if (maxChunkChars !== undefined) overrides.maxChunkChars = maxChunkChars;
-  if (maxOutputTokensPerCall !== undefined) {
-    overrides.maxOutputTokensPerCall = maxOutputTokensPerCall;
-  }
-
+  if (maxOutputTokensPerCall !== undefined) overrides.maxOutputTokensPerCall = maxOutputTokensPerCall;
   return resolveUnderstandingBudgetPolicy(overrides);
 }
 
@@ -203,9 +199,7 @@ export function estimateMaximumCostMicrousd(input: {
 }) {
   assertNonnegativeInteger(input.inputTokenBudget, "inputTokenBudget");
   assertNonnegativeInteger(input.outputTokenBudget, "outputTokenBudget");
-
   if (input.profile.billingMode === "non_billable") return 0;
-
   const inputCost =
     (input.inputTokenBudget * input.profile.inputCostMicrousdPerMillionTokens) / 1_000_000;
   const outputCost =
@@ -236,35 +230,17 @@ export function evaluateModelCallBudget(input: {
   assertNonnegativeInteger(input.spentCostMicrousd, "spentCostMicrousd");
   assertNonnegativeInteger(input.profile.inputTokenLimit, "profile.inputTokenLimit");
   assertNonnegativeInteger(input.profile.outputTokenLimit, "profile.outputTokenLimit");
-
   const estimatedCostMicrousd = estimateMaximumCostMicrousd(input);
   const remainingCostMicrousd = Math.max(0, input.maxCostMicrousd - input.spentCostMicrousd);
-
   if (input.inputTokenBudget > input.profile.inputTokenLimit) {
-    return {
-      allowed: false,
-      estimatedCostMicrousd,
-      remainingCostMicrousd,
-      reason: "model_input_limit",
-    };
+    return { allowed: false, estimatedCostMicrousd, remainingCostMicrousd, reason: "model_input_limit" };
   }
   if (input.outputTokenBudget > input.profile.outputTokenLimit) {
-    return {
-      allowed: false,
-      estimatedCostMicrousd,
-      remainingCostMicrousd,
-      reason: "model_output_limit",
-    };
+    return { allowed: false, estimatedCostMicrousd, remainingCostMicrousd, reason: "model_output_limit" };
   }
   if (estimatedCostMicrousd > remainingCostMicrousd) {
-    return {
-      allowed: false,
-      estimatedCostMicrousd,
-      remainingCostMicrousd,
-      reason: "budget_exceeded",
-    };
+    return { allowed: false, estimatedCostMicrousd, remainingCostMicrousd, reason: "budget_exceeded" };
   }
-
   return { allowed: true, estimatedCostMicrousd, remainingCostMicrousd, reason: null };
 }
 
@@ -275,12 +251,8 @@ export function authorizeUnderstandingRun(input: {
 }):
   | { allowed: true; reason: null }
   | { allowed: false; reason: "automatic_run_already_exists" | "manual_user_action_required" } {
-  if (input.trigger === "automatic_initial" && input.automaticRunExists) {
-    return { allowed: false, reason: "automatic_run_already_exists" };
-  }
-  if (input.trigger === "manual" && !input.explicitManualUserAction) {
-    return { allowed: false, reason: "manual_user_action_required" };
-  }
+  if (input.trigger === "automatic_initial" && input.automaticRunExists) return { allowed: false, reason: "automatic_run_already_exists" };
+  if (input.trigger === "manual" && !input.explicitManualUserAction) return { allowed: false, reason: "manual_user_action_required" };
   return { allowed: true, reason: null };
 }
 
@@ -300,10 +272,63 @@ export function evaluateUnderstandingFreshness(input: {
   };
 }
 
-function chunkFingerprint(input: {
-  document: UnderstandingDocumentInput;
+function normalizePromptSourceText(value: string) {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t ]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+type SourcePiece = {
   segment: UnderstandingSegmentInput;
   part: number;
+  content: string;
+  serialized: string;
+  charCount: number;
+};
+
+function sourceMarker(segmentId: string) {
+  return `[[SOURCE_SEGMENT:${segmentId}]]`;
+}
+
+function splitNormalizedSegment(
+  segment: UnderstandingSegmentInput,
+  maxChunkChars: number,
+): SourcePiece[] {
+  const normalized = normalizePromptSourceText(segment.content);
+  if (!normalized) return [];
+  const pieces: SourcePiece[] = [];
+  let offset = 0;
+  let part = 0;
+  while (offset < normalized.length) {
+    let end = Math.min(normalized.length, offset + maxChunkChars);
+    if (end < normalized.length) {
+      const candidate = normalized.slice(offset, end);
+      const boundary = Math.max(candidate.lastIndexOf("\n"), candidate.lastIndexOf(" "));
+      if (boundary > maxChunkChars * 0.6) end = offset + boundary;
+    }
+    const content = normalized.slice(offset, end).trim();
+    if (content) {
+      pieces.push({
+        segment,
+        part,
+        content,
+        serialized: `${sourceMarker(segment.id)}\n${content}`,
+        charCount: content.length,
+      });
+    }
+    offset = end;
+    while (offset < normalized.length && /\s/.test(normalized[offset]!)) offset += 1;
+    part += 1;
+  }
+  return pieces;
+}
+
+function chunkFingerprint(input: {
+  document: UnderstandingDocumentInput;
+  pieces: SourcePiece[];
   content: string;
   config: UnderstandingPlanningConfig;
 }) {
@@ -311,8 +336,11 @@ function chunkFingerprint(input: {
     input.document.checksumSha256,
     input.document.extractorName,
     input.document.extractorVersion,
-    input.segment.contentHashSha256,
-    String(input.part),
+    ...input.pieces.flatMap((piece) => [
+      piece.segment.id,
+      piece.segment.contentHashSha256,
+      String(piece.part),
+    ]),
     hash([input.content]),
     input.config.promptVersion,
     input.config.modelProvider,
@@ -325,33 +353,43 @@ function splitDocument(
   document: UnderstandingDocumentInput,
   config: UnderstandingPlanningConfig,
 ): Omit<UnderstandingPlannedChunk, "status" | "skipReason">[] {
+  const pieces = [...document.segments]
+    .sort((a, b) => a.ordinal - b.ordinal || a.id.localeCompare(b.id))
+    .flatMap((segment) => splitNormalizedSegment(segment, config.maxChunkChars));
   const chunks: Omit<UnderstandingPlannedChunk, "status" | "skipReason">[] = [];
-  let ordinal = 0;
+  let pendingPieces: SourcePiece[] = [];
+  let pendingSourceChars = 0;
 
-  const segments = [...document.segments].sort(
-    (a, b) => a.ordinal - b.ordinal || a.id.localeCompare(b.id),
-  );
-  for (const segment of segments) {
-    if (!segment.content) continue;
-    let part = 0;
-    for (let offset = 0; offset < segment.content.length; offset += config.maxChunkChars) {
-      const content = segment.content.slice(offset, offset + config.maxChunkChars);
-      const inputFingerprint = chunkFingerprint({ document, segment, part, content, config });
-      chunks.push({
-        chunkKey: `${document.documentVersionId}:${segment.id}:${part}`,
-        documentVersionId: document.documentVersionId,
-        extractionId: document.extractionId,
-        segmentId: segment.id,
-        ordinal,
-        part,
-        content,
-        charCount: content.length,
-        inputFingerprint,
-      });
-      ordinal += 1;
-      part += 1;
+  const flush = () => {
+    if (pendingPieces.length === 0) return;
+    const ordinal = chunks.length;
+    const sourceSegmentIds = [...new Set(pendingPieces.map((piece) => piece.segment.id))];
+    const content = pendingPieces.map((piece) => piece.serialized).join("\n");
+    chunks.push({
+      chunkKey: `${document.documentVersionId}:pack:${ordinal}`,
+      documentVersionId: document.documentVersionId,
+      extractionId: document.extractionId,
+      segmentId: sourceSegmentIds[0]!,
+      sourceSegmentIds,
+      ordinal,
+      part: 0,
+      content,
+      charCount: pendingSourceChars,
+      inputFingerprint: chunkFingerprint({ document, pieces: pendingPieces, content, config }),
+    });
+    pendingPieces = [];
+    pendingSourceChars = 0;
+  };
+
+  for (const piece of pieces) {
+    if (pendingPieces.length > 0 && pendingSourceChars + piece.charCount > config.maxChunkChars) {
+      flush();
     }
+    pendingPieces.push(piece);
+    pendingSourceChars += piece.charCount;
+    if (pendingSourceChars >= config.maxChunkChars) flush();
   }
+  flush();
   return chunks;
 }
 

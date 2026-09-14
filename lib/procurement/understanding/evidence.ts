@@ -35,7 +35,14 @@ function normalizeText(value: string) {
 
 function segmentIdFromChunkKey(chunkKey: string) {
   const parts = chunkKey.split(":");
+  if (parts[1] === "pack") return null;
   return parts.length >= 3 && parts[1] ? parts[1] : null;
+}
+
+function citedSegmentIds(details: Record<string, unknown> | undefined) {
+  const value = details?.sourceSegmentIds;
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0))];
 }
 
 export function buildUnderstandingEvidenceReferences(input: {
@@ -52,19 +59,31 @@ export function buildUnderstandingEvidenceReferences(input: {
 
       for (const chunk of input.chunks) {
         if (!isSolicitationUnderstandingContent(chunk.structuredOutput)) continue;
-        if (!chunk.structuredOutput[section].some((candidate) => normalizeText(candidate.text) === target)) {
-          continue;
+        const candidates = chunk.structuredOutput[section].filter(
+          (candidate) => normalizeText(candidate.text) === target,
+        );
+        if (candidates.length === 0) continue;
+
+        for (const candidate of candidates) {
+          const segmentIds = citedSegmentIds(candidate.details);
+          const fallbackSegmentId = segmentIdFromChunkKey(chunk.chunkKey);
+          const resolvedSegmentIds = segmentIds.length > 0
+            ? segmentIds
+            : fallbackSegmentId
+              ? [fallbackSegmentId]
+              : [];
+
+          for (const segmentId of resolvedSegmentIds) {
+            const dedupeKey = `${finding.key}\0${chunk.documentVersionId}\0${segmentId}`;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            references.push({
+              findingKey: finding.key,
+              opportunityDocumentVersionId: chunk.documentVersionId,
+              documentExtractionSegmentId: segmentId,
+            });
+          }
         }
-        const segmentId = segmentIdFromChunkKey(chunk.chunkKey);
-        if (!segmentId) continue;
-        const dedupeKey = `${finding.key}\0${chunk.documentVersionId}\0${segmentId}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        references.push({
-          findingKey: finding.key,
-          opportunityDocumentVersionId: chunk.documentVersionId,
-          documentExtractionSegmentId: segmentId,
-        });
       }
     }
   }
