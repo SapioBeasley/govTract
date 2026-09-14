@@ -117,7 +117,7 @@ async function seedOpportunity(sql: postgres.Sql) {
 }
 
 test(
-  "a chunk provider failure persists sanitized diagnostics and counts the failed call attempt",
+  "a chunk provider failure persists sanitized diagnostics and counts retry attempts",
   { skip: !canRun },
   async () => {
     const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
@@ -138,7 +138,7 @@ test(
       modelVersion: "fixture-gemini-v1",
       async generate() {
         calls += 1;
-        if (calls === 2) {
+        if (calls >= 2) {
           throw new Error(
             `Gemini generateContent failed with HTTP 429: quota exhausted; x-goog-api-key=${secret}`,
           );
@@ -176,7 +176,7 @@ test(
       if (result.state !== "completed") return;
       assert.equal(result.completenessStatus, "partial");
       assert.equal(result.incompleteReason, "chunk_failure");
-      assert.equal(calls, 2);
+      assert.equal(calls, 4);
 
       const [run] = await sql<{
         usage_metadata: {
@@ -195,8 +195,8 @@ test(
         FROM solicitation_understandings
         WHERE id = ${result.understandingId}
       `;
-      assert.equal(run?.usage_metadata.providerCallCount, 2);
-      assert.equal(run?.usage_metadata.providerFailures?.length, 1);
+      assert.equal(run?.usage_metadata.providerCallCount, 4);
+      assert.equal(run?.usage_metadata.providerFailures?.length, 3);
 
       const failure = run?.usage_metadata.providerFailures?.[0];
       assert.equal(failure?.provider, "gemini");
