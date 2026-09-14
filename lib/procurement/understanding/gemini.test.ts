@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGeminiUnderstandingProvider } from "./gemini";
+import {
+  createGeminiUnderstandingProvider,
+  loadGeminiUnderstandingProviderConfigFromEnv,
+} from "./gemini";
 
 const validUnderstanding = {
   summary: "Replace the facility roof and restore affected flashing.",
@@ -20,6 +23,20 @@ const validUnderstanding = {
   disqualifiers: [{ key: "disqualifier.late", text: "Late submissions may be rejected." }],
   questionsAmbiguities: [],
 };
+
+test("Gemini solicitation understanding defaults to 3.5 Flash-Lite with its matching standard pricing profile", () => {
+  const config = loadGeminiUnderstandingProviderConfigFromEnv({
+    GEMINI_API_KEY: "fixture-key",
+    GEMINI_BILLING_MODE: "billable",
+  });
+
+  assert.equal(config.model, "gemini-3.5-flash-lite");
+  assert.equal(config.pricingProfileVersion, "gemini-3.5-flash-lite-standard-2026-09");
+  assert.equal(config.inputTokenLimit, 1_048_576);
+  assert.equal(config.outputTokenLimit, 65_536);
+  assert.equal(config.inputCostMicrousdPerMillionTokens, 300_000);
+  assert.equal(config.outputCostMicrousdPerMillionTokens, 2_500_000);
+});
 
 test("Gemini provider sends bounded structured-output requests and maps usage metadata", async () => {
   let requestUrl = "";
