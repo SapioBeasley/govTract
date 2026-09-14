@@ -1,12 +1,12 @@
 import { isSolicitationUnderstandingContent } from "./types";
 import type { UnderstandingModelProvider, UnderstandingProviderUsage } from "./provider";
 
-const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-const DEFAULT_PRICING_PROFILE_VERSION = "gemini-3.8-flash-standard-2026-09";
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_PRICING_PROFILE_VERSION = "gemini-3.5-flash-lite-standard-2026-09";
 const DEFAULT_INPUT_TOKEN_LIMIT = 1_048_576;
 const DEFAULT_OUTPUT_TOKEN_LIMIT = 65_536;
-const DEFAULT_INPUT_COST_USD_PER_MILLION = 0.75;
-const DEFAULT_OUTPUT_COST_USD_PER_MILLION = 3.75;
+const DEFAULT_INPUT_COST_USD_PER_MILLION = 0.3;
+const DEFAULT_OUTPUT_COST_USD_PER_MILLION = 2.5;
 
 const findingSchema = {
   type: "object",
