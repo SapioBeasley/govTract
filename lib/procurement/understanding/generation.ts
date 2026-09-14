@@ -22,9 +22,14 @@ import {
   markUnderstandingChunkProcessed,
   markUnderstandingChunksSkipped,
 } from "./generation-persistence";
+import { attachSourceSegmentCitations } from "./citations";
 import { createGeminiUnderstandingProviderFromEnv } from "./gemini";
 import { loadPersistedUnderstandingDocuments } from "./persistence";
 import type { UnderstandingModelProvider, UnderstandingProviderRequest } from "./provider";
+import {
+  callUnderstandingProviderWithRetry,
+  estimateProviderRequestTokenBudgets,
+} from "./provider-call";
 import {
   buildMetadataOnlyUnderstandingPrompt,
   buildUnderstandingChunkPrompt,
@@ -38,7 +43,6 @@ import {
   type SolicitationUnderstandingFinding,
 } from "./types";
 
-const STRUCTURED_OUTPUT_OVERHEAD_TOKEN_BUDGET = 4_096;
 const SUMMARY_CHAR_LIMIT = 6_000;
 const PROVIDER_FAILURE_MESSAGE_LIMIT = 500;
 
@@ -177,11 +181,6 @@ function hashStable(value: unknown) {
 
 function planningPromptCompatibilityVersion(context: OpportunityUnderstandingContext) {
   return `${UNDERSTANDING_PROMPT_VERSION}:${hashStable(context)}`;
-}
-
-function conservativeInputTokenBudget(request: UnderstandingProviderRequest) {
-  const bytes = Buffer.byteLength(`${request.systemInstruction}\n${request.prompt}`, "utf8");
-  return bytes + STRUCTURED_OUTPUT_OVERHEAD_TOKEN_BUDGET;
 }
 
 function maxCostForTrigger(policy: UnderstandingBudgetPolicy, trigger: UnderstandingGenerationTrigger) {
@@ -347,15 +346,26 @@ function preflightCall(input: {
   maxCostMicrousd: number;
   spentCostMicrousd: number;
 }) {
-  const inputTokenBudget = conservativeInputTokenBudget(input.request);
-  const decision = evaluateModelCallBudget({
+  const tokenBudgets = estimateProviderRequestTokenBudgets(input.request);
+  const costDecision = evaluateModelCallBudget({
     profile: input.provider.profile,
-    inputTokenBudget,
+    inputTokenBudget: tokenBudgets.billingInputTokenEstimate,
     outputTokenBudget: input.request.maxOutputTokens,
     maxCostMicrousd: input.maxCostMicrousd,
     spentCostMicrousd: input.spentCostMicrousd,
   });
-  return { inputTokenBudget, decision };
+  if (tokenBudgets.contextInputTokenUpperBound > input.provider.profile.inputTokenLimit) {
+    return {
+      inputTokenBudget: tokenBudgets.billingInputTokenEstimate,
+      decision: {
+        allowed: false as const,
+        estimatedCostMicrousd: costDecision.estimatedCostMicrousd,
+        remainingCostMicrousd: costDecision.remainingCostMicrousd,
+        reason: "model_input_limit" as const,
+      },
+    };
+  }
+  return { inputTokenBudget: tokenBudgets.billingInputTokenEstimate, decision: costDecision };
 }
 
 function requestForChunk(
@@ -538,9 +548,29 @@ export async function generateSolicitationUnderstanding(
       break;
     }
 
-    providerCallCount += 1;
     try {
-      const result = await provider.generate(request);
+      const { result } = await callUnderstandingProviderWithRetry({
+        provider,
+        request,
+        chunkKey: chunk.chunkKey,
+        onAttempt: () => {
+          providerCallCount += 1;
+        },
+        onFailure: ({ error }) => {
+          const diagnostic = describeProviderFailure({
+            error,
+            provider: provider.profile.provider,
+            model: provider.profile.model,
+            chunkKey: chunk.chunkKey,
+          });
+          providerFailures.push(diagnostic);
+          logProviderFailure({ understandingId, opportunityId: input.opportunityId, diagnostic });
+        },
+      });
+      const citedContent = attachSourceSegmentCitations(
+        result.content,
+        new Set(chunk.sourceSegmentIds),
+      );
       resolvedModelVersion = result.modelVersion ?? resolvedModelVersion;
       const paidOutputTokens = result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount;
       const actualCostMicrousd = estimateMaximumCostMicrousd({
@@ -556,14 +586,14 @@ export async function generateSolicitationUnderstanding(
       thoughtsTokenCount += result.usage.thoughtsTokenCount;
       totalProviderTokenCount += result.usage.totalTokenCount;
       inputCharCount += request.systemInstruction.length + request.prompt.length;
-      outputCharCount += JSON.stringify(result.content).length;
+      outputCharCount += JSON.stringify(citedContent).length;
       processedChunkKeys.add(chunk.chunkKey);
-      outputs.push(result.content);
+      outputs.push(citedContent);
 
       await markUnderstandingChunkProcessed({
         understandingId,
         chunkKey: chunk.chunkKey,
-        content: result.content,
+        content: citedContent,
         estimatedInputTokenCount: preflight.inputTokenBudget,
         outputTokenCount: paidOutputTokens,
         estimatedCostMicrousd: preflight.decision.estimatedCostMicrousd,
@@ -607,9 +637,26 @@ export async function generateSolicitationUnderstanding(
       return { state: "failed", understandingId, reason: "no_usable_model_output" };
     }
 
-    providerCallCount += 1;
     try {
-      const result = await provider.generate(request);
+      const { result } = await callUnderstandingProviderWithRetry({
+        provider,
+        request,
+        chunkKey: null,
+        onAttempt: () => {
+          providerCallCount += 1;
+        },
+        onFailure: ({ error }) => {
+          const diagnostic = describeProviderFailure({
+            error,
+            provider: provider.profile.provider,
+            model: provider.profile.model,
+            chunkKey: null,
+          });
+          providerFailures.push(diagnostic);
+          logProviderFailure({ understandingId, opportunityId: input.opportunityId, diagnostic });
+        },
+      });
+      const citedContent = attachSourceSegmentCitations(result.content, new Set());
       resolvedModelVersion = result.modelVersion ?? resolvedModelVersion;
       const paidOutputTokens = result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount;
       const actualCostMicrousd = estimateMaximumCostMicrousd({
@@ -624,8 +671,8 @@ export async function generateSolicitationUnderstanding(
       thoughtsTokenCount += result.usage.thoughtsTokenCount;
       totalProviderTokenCount += result.usage.totalTokenCount;
       inputCharCount += request.systemInstruction.length + request.prompt.length;
-      outputCharCount += JSON.stringify(result.content).length;
-      outputs.push(result.content);
+      outputCharCount += JSON.stringify(citedContent).length;
+      outputs.push(citedContent);
     } catch (error) {
       const diagnostic = describeProviderFailure({
         error,
