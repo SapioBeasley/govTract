@@ -79,6 +79,12 @@ const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 48;
 const FEDERAL_SOURCES = ["sam", "sam.gov", "sam-gov"];
 
+function normalizePositiveInteger(value: number | undefined, fallback: number, max?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const normalized = Math.max(1, Math.floor(value));
+  return max === undefined ? normalized : Math.min(max, normalized);
+}
+
 function marketConditions(market: OpportunityFeedMarket) {
   const conditions = [eq(opportunities.isActive, true)];
 
@@ -215,11 +221,8 @@ export async function getOpportunityFeed(
   const db = getDb();
   const conditions = buildConditions(filters);
   const where = and(...conditions);
-  const requestedPage = Math.max(1, Math.floor(filters.page ?? 1));
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, Math.floor(filters.pageSize ?? DEFAULT_PAGE_SIZE)),
-  );
+  const requestedPage = normalizePositiveInteger(filters.page, 1);
+  const pageSize = normalizePositiveInteger(filters.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
   const [countRow] = await db
     .select({ count: sql<number>`count(*)::int` })

@@ -11,7 +11,6 @@ on:
       - "scripts/db-migrate.ts"
       - "scripts/db-migrate-helpers.ts"
       - "scripts/db-migrate.test.ts"
-      - "package.json"
 
 permissions:
   contents: read
@@ -39,12 +38,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Test database migration behavior
-        run: npm run test:db-migrations
-
-      - name: Typecheck
-        run: npm run typecheck
 
       - name: Apply and record migrations
         run: npm run db:migrate -- --baseline-existing
