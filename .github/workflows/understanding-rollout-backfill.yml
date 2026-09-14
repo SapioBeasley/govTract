@@ -1,0 +1,44 @@
+name: One-time Understanding rollout backfill
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    if: contains(github.event.head_commit.message, '[understanding-rollout-backfill]')
+    name: Repair requirements and backfill initial understandings
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
+      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: "0.25"
+      UNDERSTANDING_GENERATION_LIMIT: "50"
+      REQUIREMENTS_MATERIALIZATION_REFRESH: "true"
+      REQUIREMENTS_MATERIALIZATION_LIMIT: "100"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Apply database migrations
+        run: npm run db:migrate -- --baseline-existing
+
+      - name: Repair derived requirements from persisted Understanding output
+        run: npm run requirements:materialize
+
+      - name: Backfill missing initial Understandings
+        run: npm run understand:opportunities
