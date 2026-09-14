@@ -1,0 +1,48 @@
+name: Gemini Flash-Lite quality check
+
+on:
+  push:
+    branches:
+      - codex/gemini-35-flash-lite
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_BILLING_MODE: billable
+      GEMINI_MODEL: gemini-3.5-flash-lite
+      GEMINI_MODEL_VERSION: ""
+      GEMINI_PRICING_PROFILE_VERSION: gemini-3.5-flash-lite-standard-2026-09
+      GEMINI_INPUT_TOKEN_LIMIT: "1048576"
+      GEMINI_OUTPUT_TOKEN_LIMIT: "65536"
+      GEMINI_INPUT_COST_USD_PER_MILLION: "0.30"
+      GEMINI_OUTPUT_COST_USD_PER_MILLION: "2.50"
+      GOVTRACT_AI_MANUAL_BUDGET_USD: "0.75"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify configured inputs
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL"
+          test -n "$GEMINI_API_KEY"
+          echo "model=$GEMINI_MODEL"
+          echo "manual_budget_usd=$GOVTRACT_AI_MANUAL_BUDGET_USD"
+      - name: Verify model metadata
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL" \
+            | jq '{name, inputTokenLimit, outputTokenLimit}'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run one explicitly authorized manual understanding
+        run: npx tsx scripts/gemini-flash-lite-quality.ts
