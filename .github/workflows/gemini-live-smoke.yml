@@ -39,7 +39,7 @@ jobs:
               "maxOutputTokens": 64,
               "responseFormat": {
                 "text": {
-                  "mimeType": "application/json",
+                  "mimeType": "APPLICATION_JSON",
                   "schema": {
                     "type": "object",
                     "properties": {"ok": {"type": "boolean"}},
