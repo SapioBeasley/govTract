@@ -6,6 +6,7 @@ import { solicitationUnderstandings } from "../lib/db/solicitation-understanding
 import { materializeRequirementsForUnderstanding } from "../lib/procurement/requirements/persistence";
 
 const LIMIT = Math.max(0, Number(process.env.REQUIREMENTS_MATERIALIZATION_LIMIT ?? "100"));
+const REFRESH = process.env.REQUIREMENTS_MATERIALIZATION_REFRESH === "true";
 
 async function main() {
   if (LIMIT === 0) {
@@ -13,24 +14,43 @@ async function main() {
     return;
   }
 
-  const rows = await getDb()
-    .select({ id: solicitationUnderstandings.id })
-    .from(solicitationUnderstandings)
-    .leftJoin(
-      solicitationRequirements,
-      eq(solicitationRequirements.solicitationUnderstandingId, solicitationUnderstandings.id),
-    )
-    .where(
-      and(
-        eq(solicitationUnderstandings.status, "completed"),
-        isNotNull(solicitationUnderstandings.structuredOutput),
-        isNull(solicitationRequirements.id),
-      ),
-    )
-    .orderBy(asc(solicitationUnderstandings.createdAt), asc(solicitationUnderstandings.id))
-    .limit(LIMIT);
+  const db = getDb();
+  const rows = REFRESH
+    ? await db
+        .select({ id: solicitationUnderstandings.id })
+        .from(solicitationUnderstandings)
+        .where(
+          and(
+            eq(solicitationUnderstandings.status, "completed"),
+            isNotNull(solicitationUnderstandings.structuredOutput),
+          ),
+        )
+        .orderBy(asc(solicitationUnderstandings.createdAt), asc(solicitationUnderstandings.id))
+        .limit(LIMIT)
+    : await db
+        .select({ id: solicitationUnderstandings.id })
+        .from(solicitationUnderstandings)
+        .leftJoin(
+          solicitationRequirements,
+          eq(solicitationRequirements.solicitationUnderstandingId, solicitationUnderstandings.id),
+        )
+        .where(
+          and(
+            eq(solicitationUnderstandings.status, "completed"),
+            isNotNull(solicitationUnderstandings.structuredOutput),
+            isNull(solicitationRequirements.id),
+          ),
+        )
+        .orderBy(asc(solicitationUnderstandings.createdAt), asc(solicitationUnderstandings.id))
+        .limit(LIMIT);
 
-  const summary = { eligible: rows.length, materialized: 0, requirements: 0, notReady: 0 };
+  const summary = {
+    eligible: rows.length,
+    materialized: 0,
+    requirements: 0,
+    notReady: 0,
+    refresh: REFRESH,
+  };
   for (const row of rows) {
     const result = await materializeRequirementsForUnderstanding(row.id);
     if (result.state === "materialized") {

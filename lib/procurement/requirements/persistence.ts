@@ -72,11 +72,19 @@ export async function materializeRequirementsForUnderstanding(understandingId: s
           sourceFindingKey: requirement.sourceFindingKey,
           details: requirement.details,
         })
-        .onConflictDoNothing({
+        .onConflictDoUpdate({
           target: [
             solicitationRequirements.solicitationUnderstandingId,
             solicitationRequirements.requirementKey,
           ],
+          set: {
+            requirementType: requirement.type,
+            requirementLevel: requirement.level,
+            text: requirement.text,
+            sourceSection: requirement.sourceSection,
+            sourceFindingKey: requirement.sourceFindingKey,
+            details: requirement.details,
+          },
         });
     }
 

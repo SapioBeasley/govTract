@@ -43,6 +43,8 @@ on:
         required: true
         type: boolean
         default: false
+  schedule:
+      - cron: "17 0,12 * * *"
 
 permissions:
   contents: read
@@ -61,13 +63,13 @@ jobs:
       BEACON_AGENCY: city-of-houston
       BEACON_MAX_PAGES: ${{ inputs.max_pages || '100' }}
       BEACON_PAGE_SIZE: ${{ inputs.page_size || '50' }}
-      BEACON_PERSIST: ${{ inputs.persist && 'true' || 'false' }}
+      BEACON_PERSIST: ${{ (github.event_name == 'schedule' || inputs.persist) && 'true' || 'false' }}
       BEACON_ARTIFACT_DIR: .artifacts/beacon
       BEACON_AUTO_REGISTER: "true"
       BEACON_DOCUMENT_CONCURRENCY: "2"
       BEACON_DOCUMENT_MAX_BYTES: "314572800"
       BEACON_DOCUMENT_MAX_ERROR_RATE: "0.25"
-      BEACON_DOCUMENT_EXTRACT: ${{ inputs.extract_documents && 'true' || 'false' }}
+      BEACON_DOCUMENT_EXTRACT: ${{ (github.event_name == 'schedule' || inputs.extract_documents) && 'true' || 'false' }}
       BEACON_EXTRACTION_BACKFILL_LIMIT: ${{ inputs.extraction_backfill_limit || '25' }}
       BEACON_DOCUMENT_CLOSEOUT_LIMIT: ${{ inputs.document_closeout_limit || '25' }}
       BEACON_DOCUMENT_CLOSEOUT_OPPORTUNITY_LIMIT: "100"
@@ -76,8 +78,10 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_BILLING_MODE: ${{ vars.GEMINI_BILLING_MODE || 'billable' }}
-      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: ${{ vars.GOVTRACT_AI_AUTOMATIC_BUDGET_USD || '0' }}
+      # Always apply paid-equivalent accounting even when Google serves the project on its free tier.
+      GEMINI_BILLING_MODE: "billable"
+      # Workflow-scoped paid-equivalent ceiling per opportunity. Local/app defaults remain $0.
+      GOVTRACT_AI_AUTOMATIC_BUDGET_USD: "0.25"
       UNDERSTANDING_GENERATION_LIMIT: ${{ inputs.understanding_generation_limit || '25' }}
 
     steps:
@@ -93,22 +97,22 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Apply database migrations
-        if: inputs.persist
+        if: github.event_name == 'schedule' || inputs.persist
         run: npm run db:migrate -- --baseline-existing
 
       - name: Pull Beacon opportunities
         run: npm run ingest:beacon
 
       - name: Retrieve, version, and extract Beacon documents
-        if: inputs.persist
+        if: github.event_name == 'schedule' || inputs.persist
         run: npm run ingest:beacon:documents
 
       - name: Finalize inactive Beacon document extraction
-        if: inputs.persist && inputs.extract_documents
+        if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.extract_documents)
         run: npm run ingest:beacon:document-closeouts
 
       - name: Generate eligible solicitation understandings
-        if: inputs.persist && inputs.generate_understandings
+        if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.generate_understandings)
         run: npm run understand:opportunities
 
       - name: Upload sanitized Beacon diagnostics

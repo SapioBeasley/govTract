@@ -72,7 +72,6 @@ const requirementSections: readonly SolicitationRequirementSourceSection[] = [
 ];
 
 const sectionDefaultsToRequired = new Set<SolicitationRequirementSourceSection>([
-  "mandatoryEvents",
   "pricingInstructions",
   "submissionComponents",
   "disqualifiers",
@@ -98,7 +97,12 @@ function classifyLevel(
   if (explicit === false) return "optional";
 
   const text = normalizeText(finding.text);
-  if (/\boptional\b/.test(text)) return "optional";
+  if (
+    /\b(optional|recommended|encouraged|voluntary)\b/.test(text) ||
+    /\bnot\s+(?:required|mandatory)\b/.test(text)
+  ) {
+    return "optional";
+  }
   if (sectionDefaultsToRequired.has(section)) return "required";
   if (
     /\b(must|shall|required|mandatory)\b/.test(text) ||
