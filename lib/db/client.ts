@@ -3,6 +3,7 @@ import postgres from "postgres";
 import * as canonicalSchema from "./canonical-schema";
 import * as coreSchema from "./schema";
 import * as documentExtractionSchema from "./document-extractions-schema";
+import * as solicitationRequirementSchema from "./solicitation-requirements-schema";
 import * as solicitationUnderstandingSchema from "./solicitation-understandings-schema";
 import * as sourceConnectionSchema from "./source-connections-schema";
 
@@ -10,6 +11,7 @@ const schema = {
   ...coreSchema,
   ...canonicalSchema,
   ...documentExtractionSchema,
+  ...solicitationRequirementSchema,
   ...solicitationUnderstandingSchema,
   ...sourceConnectionSchema,
 };
