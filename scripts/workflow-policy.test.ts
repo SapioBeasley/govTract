@@ -35,6 +35,24 @@ test("Beacon operational ingestion runs on a bounded schedule without becoming P
   assert.doesNotMatch(content, /npm run test:/);
 });
 
+test("one-time Understanding rollout backfill is merge-marker gated and bounded", async () => {
+  const content = await workflow(".github/workflows/understanding-rollout-backfill.yml");
+
+  assert.match(content, /^\s{2}push:\s*$/m);
+  assert.match(content, /branches:\s*\[main\]/);
+  assert.match(
+    content,
+    /contains\(github\.event\.head_commit\.message, '\[understanding-rollout-backfill\]'\)/,
+  );
+  assert.match(content, /GOVTRACT_AI_AUTOMATIC_BUDGET_USD:\s*"0\.25"/);
+  assert.match(content, /UNDERSTANDING_GENERATION_LIMIT:\s*"50"/);
+  assert.match(content, /REQUIREMENTS_MATERIALIZATION_REFRESH:\s*"true"/);
+  assert.match(content, /npm run requirements:materialize/);
+  assert.match(content, /npm run understand:opportunities/);
+  assert.doesNotMatch(content, /^\s{2}schedule:\s*$/m);
+  assert.doesNotMatch(content, /^\s{2}pull_request:\s*$/m);
+});
+
 test("production database migration runs only migration work after merge", async () => {
   const content = await workflow(".github/workflows/db-migrate.yml");
 
