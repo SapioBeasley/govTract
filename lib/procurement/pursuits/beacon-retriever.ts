@@ -1,7 +1,10 @@
 import { createWriteStream } from "node:fs";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { eq } from "drizzle-orm";
 
+import { getDb } from "@/lib/db/client";
+import { opportunities } from "@/lib/db/schema";
 import {
   isBeaconPresignedDocumentUrl,
   resolveBeaconDocumentDownloadUrl,
@@ -101,19 +104,26 @@ export function createBeaconPursuitDocumentRetriever(input: {
         );
       }
 
+      const db = getDb();
+      const [opportunity] = await db
+        .select({ sourceOpportunityId: opportunities.sourceOpportunityId })
+        .from(opportunities)
+        .where(eq(opportunities.id, document.opportunityId))
+        .limit(1);
+      if (!opportunity?.sourceOpportunityId) {
+        throw new SnapshotRetrievalError("missing", "Beacon source solicitation id is unavailable");
+      }
+
       const downloadUrl = resolveBeaconDocumentDownloadUrl({
-        sourceOpportunityId: document.opportunityId,
+        sourceOpportunityId: opportunity.sourceOpportunityId,
         sourceDocumentKey: document.sourceDocumentKey,
       });
-      // The canonical opportunity UUID differs from Beacon's solicitation UUID. The caller should
-      // provide the Beacon source opportunity id when it is known through the document key context.
-      // Fall back to the document route stored in the source document metadata via the helper below.
       if (!downloadUrl) {
         throw new SnapshotRetrievalError("missing", "Beacon document route could not be resolved");
       }
 
       const cookieHeader = await getCookieHeader();
-      let response = await resolveResponse({
+      const response = await resolveResponse({
         downloadUrl,
         sourceDocumentKey: document.sourceDocumentKey,
         cookieHeader,
