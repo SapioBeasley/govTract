@@ -23,6 +23,11 @@ type ApiPayload = {
   error?: { message?: string };
 };
 
+type RequestResult = {
+  ok: boolean;
+  saved: SavedOpportunityClientState | null;
+};
+
 const STATUS_LABELS: Record<SavedOpportunityStatus, string> = {
   saved: "Saved",
   reviewing: "Reviewing",
@@ -78,7 +83,10 @@ export function SavedOpportunityControl({
     );
   }, [saved, status, notes, priority, internalDeadline]);
 
-  async function request(method: "POST" | "PATCH" | "DELETE", body?: Record<string, unknown>) {
+  async function request(
+    method: "POST" | "PATCH" | "DELETE",
+    body?: Record<string, unknown>,
+  ): Promise<RequestResult> {
     setPending(true);
     setMessage(null);
     try {
@@ -90,20 +98,21 @@ export function SavedOpportunityControl({
       const payload = (await response.json().catch(() => null)) as ApiPayload | null;
       if (!response.ok) {
         setMessage(payload?.error?.message ?? "Saved opportunity could not be updated.");
-        return null;
+        return { ok: false, saved };
       }
-      setSaved(payload?.saved ?? null);
-      if (payload?.saved) {
-        setStatus(payload.saved.status);
-        setNotes(payload.saved.notes ?? "");
-        setPriority(payload.saved.priority);
-        setInternalDeadline(toLocalInput(payload.saved.internalDeadline));
+      const nextSaved = payload?.saved ?? null;
+      setSaved(nextSaved);
+      if (nextSaved) {
+        setStatus(nextSaved.status);
+        setNotes(nextSaved.notes ?? "");
+        setPriority(nextSaved.priority);
+        setInternalDeadline(toLocalInput(nextSaved.internalDeadline));
       }
       router.refresh();
-      return payload?.saved ?? null;
+      return { ok: true, saved: nextSaved };
     } catch {
       setMessage("Saved opportunity could not be updated.");
-      return null;
+      return { ok: false, saved };
     } finally {
       setPending(false);
     }
@@ -111,7 +120,7 @@ export function SavedOpportunityControl({
 
   async function save() {
     const result = await request("POST");
-    if (result) setMessage("Opportunity saved.");
+    if (result.ok && result.saved) setMessage("Opportunity saved.");
   }
 
   async function update() {
@@ -122,12 +131,12 @@ export function SavedOpportunityControl({
       priority,
       internalDeadline: isoDeadline,
     });
-    if (result) setMessage("Pursuit details saved.");
+    if (result.ok && result.saved) setMessage("Pursuit details saved.");
   }
 
   async function remove() {
     const result = await request("DELETE");
-    if (result === null) {
+    if (result.ok && result.saved === null) {
       setStatus("saved");
       setNotes("");
       setPriority(0);
