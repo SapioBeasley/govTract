@@ -108,6 +108,7 @@ export async function applyBeaconLifecycleObservation(input: {
     .set({
       normalizedPayload: {
         ...link.normalizedPayload,
+        status: input.state.replaceAll("_", " "),
         sourceStatus: input.sourceStatus,
       },
       evidence: {
