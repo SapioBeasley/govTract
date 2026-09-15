@@ -1,10 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { eq } from "drizzle-orm";
 
-import { getDb } from "@/lib/db/client";
-import { opportunities } from "@/lib/db/schema";
 import {
   isBeaconPresignedDocumentUrl,
   resolveBeaconDocumentDownloadUrl,
@@ -69,7 +66,13 @@ async function resolveResponse(input: {
   if (gateway.status >= 300 && gateway.status < 400) {
     const location = gateway.headers.get("location");
     await gateway.body?.cancel();
-    if (!location || !isBeaconPresignedDocumentUrl({ url: location, sourceDocumentKey: input.sourceDocumentKey })) {
+    if (
+      !location ||
+      !isBeaconPresignedDocumentUrl({
+        url: location,
+        sourceDocumentKey: input.sourceDocumentKey,
+      })
+    ) {
       throw new SnapshotRetrievalError("http", "Beacon returned an unexpected document redirect");
     }
     return fetchWithTimeout(location, { method: "GET", redirect: "manual" }, input.timeoutMs);
@@ -104,18 +107,8 @@ export function createBeaconPursuitDocumentRetriever(input: {
         );
       }
 
-      const db = getDb();
-      const [opportunity] = await db
-        .select({ sourceOpportunityId: opportunities.sourceOpportunityId })
-        .from(opportunities)
-        .where(eq(opportunities.id, document.opportunityId))
-        .limit(1);
-      if (!opportunity?.sourceOpportunityId) {
-        throw new SnapshotRetrievalError("missing", "Beacon source solicitation id is unavailable");
-      }
-
       const downloadUrl = resolveBeaconDocumentDownloadUrl({
-        sourceOpportunityId: opportunity.sourceOpportunityId,
+        sourceOpportunityId: document.sourceOpportunityId,
         sourceDocumentKey: document.sourceDocumentKey,
       });
       if (!downloadUrl) {
@@ -143,7 +136,10 @@ export function createBeaconPursuitDocumentRetriever(input: {
         if (response.status === 404) {
           throw new SnapshotRetrievalError("missing", "Beacon source document is no longer available");
         }
-        throw new SnapshotRetrievalError("http", `Beacon source document returned HTTP ${response.status}`);
+        throw new SnapshotRetrievalError(
+          "http",
+          `Beacon source document returned HTTP ${response.status}`,
+        );
       }
       if (!response.body) {
         throw new SnapshotRetrievalError("missing", "Beacon source document returned no body");
@@ -154,7 +150,12 @@ export function createBeaconPursuitDocumentRetriever(input: {
         transform(chunk, _encoding, callback) {
           byteCount += Buffer.byteLength(chunk);
           if (byteCount > document.maxBytes) {
-            callback(new SnapshotRetrievalError("size", "Source document exceeds the pursuit snapshot byte limit"));
+            callback(
+              new SnapshotRetrievalError(
+                "size",
+                "Source document exceeds the pursuit snapshot byte limit",
+              ),
+            );
             return;
           }
           callback(null, chunk);
@@ -173,7 +174,8 @@ export function createBeaconPursuitDocumentRetriever(input: {
 
       return {
         retrievedAt: new Date(),
-        mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim() || document.mimeType,
+        mimeType:
+          response.headers.get("content-type")?.split(";", 1)[0]?.trim() || document.mimeType,
       };
     },
   };
