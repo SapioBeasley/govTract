@@ -85,6 +85,7 @@ jobs:
       BEACON_EXTRACTION_RETRY_FAILED: ${{ inputs.retry_failed_extractions && 'true' || 'false' }}
       BEACON_EXTRACTION_MAX_SOURCE_BYTES: "67108864"
       PURSUIT_SNAPSHOT_LIMIT: ${{ inputs.pursuit_snapshot_limit || '10' }}
+      PURSUIT_SNAPSHOT_SOURCE: "beacon"
       PURSUIT_SNAPSHOT_MAX_DOCUMENT_BYTES: "314572800"
       PURSUIT_SNAPSHOT_MAX_TOTAL_BYTES: "1073741824"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
