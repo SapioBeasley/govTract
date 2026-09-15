@@ -27,6 +27,7 @@ function sha256(value: string | Uint8Array) {
 async function seedOpportunity() {
   sequence += 1;
   const suffix = `${process.pid}-${Date.now()}-${sequence}`;
+  const sourceOpportunityId = `opp-${suffix}`;
   await closeDb();
   const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
   try {
@@ -39,7 +40,7 @@ async function seedOpportunity() {
       INSERT INTO opportunities (
         source_record_id, source, source_opportunity_id, title, agency_name
       ) VALUES (
-        ${sourceRecord!.id}, 'snapshot-test', ${`opp-${suffix}`},
+        ${sourceRecord!.id}, 'snapshot-test', ${sourceOpportunityId},
         ${`Snapshot fixture ${suffix}`}, 'City of Houston'
       ) RETURNING id
     `;
@@ -74,6 +75,7 @@ async function seedOpportunity() {
 
     return {
       opportunityId: opportunity!.id,
+      sourceOpportunityId,
       sourceRecordId: sourceRecord!.id,
       documents,
     };
@@ -146,6 +148,45 @@ test("Saved stays lightweight while entering Pursuing prepares the current autho
     assert.equal(prepared.documents.length, 2);
     assert.ok(prepared.documents.every((document) => document.status === "pending"));
   } finally {
+    await cleanup(fixture.sourceRecordId);
+  }
+});
+
+test("snapshot retrieval preserves the source opportunity identity required by source-specific download routes", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  const tempRoot = await mkdtemp(join(tmpdir(), "govtract-snapshot-source-id-"));
+  try {
+    await saveOpportunity({ opportunityId: fixture.opportunityId });
+    await updateSavedOpportunity(fixture.opportunityId, { status: "pursuing" });
+    const prepared = await ensurePursuitSnapshotPrepared(fixture.opportunityId);
+    const seen = new Set<string>();
+    const retriever: PursuitDocumentRetriever = {
+      async retrieveToFile(input) {
+        seen.add(input.sourceOpportunityId);
+        const fixtureDocument = fixture.documents.find(
+          (document) => document.key === input.sourceDocumentKey,
+        );
+        assert.ok(fixtureDocument);
+        await writeFile(input.destinationPath, fixtureDocument.bytes);
+        return {
+          retrievedAt: new Date("2026-09-15T04:00:00.000Z"),
+          mimeType: input.mimeType,
+        };
+      },
+    };
+    const { store } = memoryArtifactStore();
+
+    await processPursuitSnapshot(prepared.id, {
+      retriever,
+      artifactStore: store,
+      tempRoot,
+      maxDocumentBytes: 1024 * 1024,
+      maxSnapshotBytes: 4 * 1024 * 1024,
+    });
+
+    assert.deepEqual([...seen], [fixture.sourceOpportunityId]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
     await cleanup(fixture.sourceRecordId);
   }
 });
@@ -299,7 +340,7 @@ test("auth-blocked files are explicit and mark the pursuit snapshot blocked inst
     const { store } = memoryArtifactStore();
     const result = await processPursuitSnapshot(prepared.id, {
       retriever: fixtureRetriever(
-        new Map([
+        new Map<string, string | SnapshotRetrievalError>([
           [fixture.documents[0]!.key, fixture.documents[0]!.bytes],
           [fixture.documents[1]!.key, new SnapshotRetrievalError("auth_blocked", "Supplier session expired")],
         ]),
