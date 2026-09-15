@@ -3,6 +3,7 @@ import type { ProcurementSourceAuthority } from "@/lib/procurement/sources/autho
 export type OpportunityLifecycleState =
   | "active"
   | "inactive_unknown"
+  | "pending_award"
   | "closed"
   | "awarded"
   | "cancelled";
@@ -50,6 +51,12 @@ export interface CanonicalOpportunityLifecycleResult {
 }
 
 const TERMINAL_STATUS_ALIASES: Record<OpportunityTerminalLifecycleState, Set<string>> = {
+  pending_award: new Set([
+    "pending award",
+    "pending contract award",
+    "awaiting award",
+    "award pending",
+  ]),
   cancelled: new Set([
     "cancelled",
     "canceled",
@@ -77,7 +84,7 @@ function terminalStateForValue(
   const normalized = normalizeStatus(value);
   if (!normalized) return null;
 
-  for (const state of ["cancelled", "awarded", "closed"] as const) {
+  for (const state of ["pending_award", "cancelled", "awarded", "closed"] as const) {
     if (TERMINAL_STATUS_ALIASES[state].has(normalized)) return state;
   }
 
