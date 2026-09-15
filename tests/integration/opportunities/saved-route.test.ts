@@ -56,6 +56,16 @@ test("saved opportunity API validates updates and persists pursuit readiness", {
     assert.equal(created.status, 200);
     assert.equal((await created.json()).saved.status, "saved");
 
+    const nonObject = await PATCH(
+      new Request("http://localhost", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: "null",
+      }),
+      context(fixture.opportunityId),
+    );
+    assert.equal(nonObject.status, 400);
+
     const invalid = await PATCH(
       new Request("http://localhost", {
         method: "PATCH",
