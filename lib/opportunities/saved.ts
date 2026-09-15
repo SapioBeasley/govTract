@@ -167,6 +167,7 @@ export async function updateSavedOpportunity(
     values.snapshotStatus = "incomplete";
   }
 
+  const db = getDb();
   await db
     .update(savedOpportunities)
     .set(values)
