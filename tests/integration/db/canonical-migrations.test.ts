@@ -168,19 +168,40 @@ test(
         VALUES ('Nullable Award')
         RETURNING id
       `;
+      const [sourceRecord] = await sql<{ id: string }[]>`
+        INSERT INTO source_records (
+          source, source_record_id, raw_payload, payload_hash
+        ) VALUES ('constraint-fixture', 'record-1', '{}'::jsonb, 'constraint-hash')
+        RETURNING id
+      `;
+      const [opportunity] = await sql<{ id: string }[]>`
+        INSERT INTO opportunities (
+          source_record_id, source, source_opportunity_id, title
+        ) VALUES (${sourceRecord.id}, 'constraint-fixture', 'opportunity-1', 'Constraint fixture')
+        RETURNING id
+      `;
       assert.ok(agency?.id);
       assert.ok(vendor?.id);
       assert.ok(award?.id);
+      assert.ok(sourceRecord?.id);
+      assert.ok(opportunity?.id);
 
       await assertRejectsSql(
-        () => sql`INSERT INTO opportunity_source_records (
-          opportunity_id, source_record_id, confidence
-        ) VALUES (
-          '00000000-0000-0000-0000-000000000001',
-          '00000000-0000-0000-0000-000000000002',
-          101
-        )`,
+        () => sql`
+          INSERT INTO opportunity_source_records (
+            opportunity_id, source_record_id, confidence
+          ) VALUES (${opportunity.id}, ${sourceRecord.id}, 101)
+        `,
         "opportunity_source_records_confidence_check",
+      );
+
+      await assertRejectsSql(
+        () => sql`
+          INSERT INTO opportunity_award_relationships (
+            opportunity_id, award_id, relationship_type, method, confidence
+          ) VALUES (${opportunity.id}, ${award.id}, 'predecessor', 'deterministic', 101)
+        `,
+        "opportunity_award_relationships_confidence_check",
       );
 
       await assertRejectsSql(
