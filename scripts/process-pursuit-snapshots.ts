@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { closeDb, getDb } from "../lib/db/client";
 import { savedOpportunities } from "../lib/db/saved-opportunities-schema";
+import { opportunities } from "../lib/db/schema";
 import { createVercelBlobSnapshotArtifactStore } from "../lib/procurement/pursuits/artifact-store";
 import { createBeaconPursuitDocumentRetriever } from "../lib/procurement/pursuits/beacon-retriever";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../lib/procurement/pursuits/snapshot";
 
 const LIMIT = Math.max(1, Math.min(50, Number(process.env.PURSUIT_SNAPSHOT_LIMIT ?? "10")));
+const SOURCE = (process.env.PURSUIT_SNAPSHOT_SOURCE ?? "beacon").trim().toLowerCase();
 const MAX_DOCUMENT_BYTES = Math.max(
   1,
   Number(process.env.PURSUIT_SNAPSHOT_MAX_DOCUMENT_BYTES ?? String(300 * 1024 * 1024)),
@@ -24,6 +26,7 @@ const MAX_SNAPSHOT_BYTES = Math.max(
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for pursuit snapshots");
+  if (!SOURCE) throw new Error("PURSUIT_SNAPSHOT_SOURCE must not be blank");
   if (!Number.isFinite(LIMIT) || !Number.isFinite(MAX_DOCUMENT_BYTES) || !Number.isFinite(MAX_SNAPSHOT_BYTES)) {
     throw new Error("Pursuit snapshot limits must be finite numbers");
   }
@@ -32,7 +35,13 @@ async function main() {
   const pursuits = await db
     .select({ opportunityId: savedOpportunities.opportunityId })
     .from(savedOpportunities)
-    .where(eq(savedOpportunities.status, "pursuing"))
+    .innerJoin(opportunities, eq(opportunities.id, savedOpportunities.opportunityId))
+    .where(
+      and(
+        eq(savedOpportunities.status, "pursuing"),
+        eq(opportunities.source, SOURCE),
+      ),
+    )
     .orderBy(asc(savedOpportunities.updatedAt))
     .limit(LIMIT);
 
@@ -59,12 +68,12 @@ async function main() {
         else if (result.status === "blocked") blocked += 1;
         else incomplete += 1;
         console.log(
-          `PURSUIT_SNAPSHOT opportunity=${pursuit.opportunityId} snapshot=${snapshot.id} status=${result.status} stored=${result.stored} blocked=${result.blocked} failed=${result.failed}`,
+          `PURSUIT_SNAPSHOT opportunity=${pursuit.opportunityId} snapshot=${snapshot.id} source=${SOURCE} status=${result.status} stored=${result.stored} blocked=${result.blocked} failed=${result.failed}`,
         );
       } catch (error) {
         errors += 1;
         console.error(
-          `PURSUIT_SNAPSHOT_ERROR opportunity=${pursuit.opportunityId} message=${JSON.stringify(error instanceof Error ? error.message.slice(0, 300) : "unknown")}`,
+          `PURSUIT_SNAPSHOT_ERROR opportunity=${pursuit.opportunityId} source=${SOURCE} message=${JSON.stringify(error instanceof Error ? error.message.slice(0, 300) : "unknown")}`,
         );
       }
     }
@@ -74,7 +83,7 @@ async function main() {
   }
 
   console.log(
-    `PURSUIT_SNAPSHOT_SUMMARY selected=${pursuits.length} complete=${complete} blocked=${blocked} incomplete=${incomplete} errors=${errors}`,
+    `PURSUIT_SNAPSHOT_SUMMARY source=${SOURCE} selected=${pursuits.length} complete=${complete} blocked=${blocked} incomplete=${incomplete} errors=${errors}`,
   );
   if (errors > 0) process.exitCode = 1;
 }
