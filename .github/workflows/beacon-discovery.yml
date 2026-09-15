@@ -38,6 +38,10 @@ on:
         description: Maximum inactive document closeout items to process in this run
         required: false
         default: "25"
+      pursuit_snapshot_limit:
+        description: Maximum pursued opportunities to snapshot in this run
+        required: false
+        default: "10"
       understanding_generation_limit:
         description: Maximum opportunities to consider for automatic understanding in this run
         required: false
@@ -80,8 +84,13 @@ jobs:
       BEACON_DOCUMENT_CLOSEOUT_OPPORTUNITY_LIMIT: "100"
       BEACON_EXTRACTION_RETRY_FAILED: ${{ inputs.retry_failed_extractions && 'true' || 'false' }}
       BEACON_EXTRACTION_MAX_SOURCE_BYTES: "67108864"
+      PURSUIT_SNAPSHOT_LIMIT: ${{ inputs.pursuit_snapshot_limit || '10' }}
+      PURSUIT_SNAPSHOT_SOURCE: "beacon"
+      PURSUIT_SNAPSHOT_MAX_DOCUMENT_BYTES: "314572800"
+      PURSUIT_SNAPSHOT_MAX_TOTAL_BYTES: "1073741824"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
+      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Always apply paid-equivalent accounting even when Google serves the project on its free tier.
       GEMINI_BILLING_MODE: "billable"
@@ -119,6 +128,10 @@ jobs:
       - name: Finalize inactive Beacon document extraction
         if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.extract_documents)
         run: npm run ingest:beacon:document-closeouts
+
+      - name: Snapshot pursued source documents
+        if: github.event_name == 'schedule' || inputs.persist
+        run: npm run pursuit:snapshots
 
       - name: Generate eligible solicitation understandings
         if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.generate_understandings)

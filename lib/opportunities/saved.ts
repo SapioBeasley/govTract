@@ -10,6 +10,7 @@ import {
   type SavedOpportunitySnapshotStatus,
   type SavedOpportunityStatus,
 } from "@/lib/opportunities/saved-types";
+import { ensurePursuitSnapshotPrepared } from "@/lib/procurement/pursuits/snapshot";
 
 export {
   SAVED_OPPORTUNITY_STATUSES,
@@ -177,6 +178,10 @@ export async function updateSavedOpportunity(
         isNull(savedOpportunities.companyProfileId),
       ),
     );
+
+  if (input.status === "pursuing") {
+    await ensurePursuitSnapshotPrepared(opportunityId);
+  }
 
   const updated = await getSavedOpportunity(opportunityId);
   if (!updated) throw new Error("Saved opportunity could not be updated.");
