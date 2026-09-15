@@ -8,7 +8,7 @@ import {
   SAVED_OPPORTUNITY_STATUSES,
   type SavedOpportunityStatus,
   type SavedOpportunitySnapshotStatus,
-} from "@/lib/opportunities/saved";
+} from "@/lib/opportunities/saved-types";
 
 export type SavedOpportunityClientState = {
   status: SavedOpportunityStatus;
