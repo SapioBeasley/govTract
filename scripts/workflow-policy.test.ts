@@ -28,6 +28,9 @@ test("Beacon operational ingestion runs on a bounded schedule without becoming P
   assert.match(content, /^\s{2}schedule:\s*$/m);
   assert.match(content, /^\s{6}- cron:\s*"17 0,12 \* \* \*"\s*$/m);
   assert.match(content, /GOVTRACT_AI_AUTOMATIC_BUDGET_USD:\s*"0\.25"/);
+  assert.match(content, /PURSUIT_SNAPSHOT_LIMIT:\s*\$\{\{ inputs\.pursuit_snapshot_limit \|\| '10' \}\}/);
+  assert.match(content, /BLOB_READ_WRITE_TOKEN:\s*\$\{\{ secrets\.BLOB_READ_WRITE_TOKEN \}\}/);
+  assert.match(content, /npm run pursuit:snapshots/);
   assert.match(content, /github\.event_name == 'schedule' \|\| inputs\.persist/);
   assert.match(content, /github\.event_name == 'schedule' \|\| inputs\.generate_understandings/);
   assert.doesNotMatch(content, /^\s{2}pull_request:\s*$/m);
