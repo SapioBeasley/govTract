@@ -106,6 +106,7 @@ export const pursuitSnapshotDocuments = pgTable(
       { onDelete: "restrict" },
     ),
     source: text("source").notNull(),
+    sourceOpportunityId: text("source_opportunity_id").notNull(),
     sourceDocumentKey: text("source_document_key").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type"),
