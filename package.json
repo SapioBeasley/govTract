@@ -18,6 +18,7 @@
     "test:source-connections": "tsx --test lib/source-connections/*.test.ts",
     "ingest:beacon": "tsx scripts/beacon-discover.ts",
     "ingest:beacon:discover": "tsx scripts/beacon-discover.ts",
+    "ingest:beacon:lifecycle": "tsx scripts/beacon-lifecycle.ts",
     "ingest:beacon:documents": "tsx scripts/beacon-documents-v2.ts",
     "ingest:beacon:document-closeouts": "tsx scripts/beacon-document-closeouts.ts",
     "understand:opportunities": "tsx scripts/generate-understandings.ts",
