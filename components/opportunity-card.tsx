@@ -9,6 +9,7 @@ import {
   Tag,
 } from "lucide-react";
 
+import { QuickSaveButton } from "@/components/quick-save-button";
 import type { OpportunityFeedItem } from "@/lib/opportunities/feed";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -143,7 +144,8 @@ export function OpportunityCard({ item }: { item: OpportunityFeedItem }) {
           <span className="text-[var(--muted-foreground)]">
             {item.categories[0] ?? "Category not provided"}
           </span>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <QuickSaveButton opportunityId={item.id} />
             {item.canonicalUrl ? (
               <a
                 href={item.canonicalUrl}
