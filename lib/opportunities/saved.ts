@@ -3,23 +3,20 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { savedOpportunities } from "@/lib/db/saved-opportunities-schema";
 import { opportunities } from "@/lib/db/schema";
+import {
+  SAVED_OPPORTUNITY_STATUSES,
+  isSavedOpportunitySnapshotStatus,
+  isSavedOpportunityStatus,
+  type SavedOpportunitySnapshotStatus,
+  type SavedOpportunityStatus,
+} from "@/lib/opportunities/saved-types";
 
-export const SAVED_OPPORTUNITY_STATUSES = [
-  "saved",
-  "reviewing",
-  "pursuing",
-  "no_bid",
-  "submitted",
-  "won",
-  "lost",
-] as const;
-
-export type SavedOpportunityStatus = (typeof SAVED_OPPORTUNITY_STATUSES)[number];
-export type SavedOpportunitySnapshotStatus =
-  | "not_required"
-  | "incomplete"
-  | "complete"
-  | "blocked";
+export {
+  SAVED_OPPORTUNITY_STATUSES,
+  isSavedOpportunitySnapshotStatus,
+  isSavedOpportunityStatus,
+};
+export type { SavedOpportunitySnapshotStatus, SavedOpportunityStatus };
 
 export type SavedOpportunityRecord = {
   id: string;
@@ -43,12 +40,13 @@ export type UpdateSavedOpportunityInput = {
   internalDeadline?: Date | null;
 };
 
-export function isSavedOpportunityStatus(value: unknown): value is SavedOpportunityStatus {
-  return (
-    typeof value === "string" &&
-    (SAVED_OPPORTUNITY_STATUSES as readonly string[]).includes(value)
-  );
-}
+type SelectedSavedOpportunity = Omit<
+  SavedOpportunityRecord,
+  "status" | "snapshotStatus"
+> & {
+  status: string;
+  snapshotStatus: string;
+};
 
 function validatePriority(priority: number) {
   if (!Number.isInteger(priority) || priority < 0 || priority > 5) {
@@ -73,11 +71,17 @@ function selection() {
   };
 }
 
-function normalize(row: ReturnType<typeof selection> extends never ? never : any): SavedOpportunityRecord {
+function normalize(row: SelectedSavedOpportunity): SavedOpportunityRecord {
+  if (!isSavedOpportunityStatus(row.status)) {
+    throw new Error("Stored saved opportunity status is invalid.");
+  }
+  if (!isSavedOpportunitySnapshotStatus(row.snapshotStatus)) {
+    throw new Error("Stored saved opportunity snapshot status is invalid.");
+  }
   return {
     ...row,
-    status: row.status as SavedOpportunityStatus,
-    snapshotStatus: row.snapshotStatus as SavedOpportunitySnapshotStatus,
+    status: row.status,
+    snapshotStatus: row.snapshotStatus,
   };
 }
 
@@ -131,9 +135,7 @@ export async function saveOpportunity(input: {
     .onConflictDoNothing();
 
   const saved = await getSavedOpportunity(input.opportunityId);
-  if (!saved) {
-    throw new Error("Opportunity could not be saved.");
-  }
+  if (!saved) throw new Error("Opportunity could not be saved.");
   return saved;
 }
 
@@ -142,9 +144,7 @@ export async function updateSavedOpportunity(
   input: UpdateSavedOpportunityInput,
 ): Promise<SavedOpportunityRecord> {
   let existing = await getSavedOpportunity(opportunityId);
-  if (!existing) {
-    existing = await saveOpportunity({ opportunityId });
-  }
+  if (!existing) existing = await saveOpportunity({ opportunityId });
 
   if (input.status !== undefined && !isSavedOpportunityStatus(input.status)) {
     throw new Error("Invalid saved opportunity status.");
@@ -186,7 +186,7 @@ export async function setSavedOpportunitySnapshotStatus(
   opportunityId: string,
   snapshotStatus: SavedOpportunitySnapshotStatus,
 ): Promise<SavedOpportunityRecord> {
-  if (!["not_required", "incomplete", "complete", "blocked"].includes(snapshotStatus)) {
+  if (!isSavedOpportunitySnapshotStatus(snapshotStatus)) {
     throw new Error("Invalid saved opportunity snapshot status.");
   }
 
