@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Building2, FileText, Heart, Landmark, Settings, Target } from "lucide-react";
 
+import { OpportunityDetailSaveFloat } from "@/components/opportunity-detail-save-float";
+
 import "./globals.css";
 
 const navigation = [
@@ -47,6 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           </aside>
           <main>{children}</main>
         </div>
+        <OpportunityDetailSaveFloat />
       </body>
     </html>
   );
