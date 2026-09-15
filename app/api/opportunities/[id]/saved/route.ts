@@ -37,12 +37,17 @@ function invalid(message: string) {
 }
 
 async function parsePatch(request: Request): Promise<UpdateSavedOpportunityInput | NextResponse> {
-  let body: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    parsed = await request.json();
   } catch {
     return invalid("Request body must be valid JSON.");
   }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return invalid("Request body must be a JSON object.");
+  }
+  const body = parsed as Record<string, unknown>;
 
   const patch: UpdateSavedOpportunityInput = {};
   if (Object.prototype.hasOwnProperty.call(body, "status")) {
@@ -73,9 +78,9 @@ async function parsePatch(request: Request): Promise<UpdateSavedOpportunityInput
     if (body.internalDeadline === null || body.internalDeadline === "") {
       patch.internalDeadline = null;
     } else if (typeof body.internalDeadline === "string") {
-      const parsed = new Date(body.internalDeadline);
-      if (Number.isNaN(parsed.getTime())) return invalid("Internal deadline is invalid.");
-      patch.internalDeadline = parsed;
+      const parsedDeadline = new Date(body.internalDeadline);
+      if (Number.isNaN(parsedDeadline.getTime())) return invalid("Internal deadline is invalid.");
+      patch.internalDeadline = parsedDeadline;
     } else {
       return invalid("Internal deadline must be an ISO date string or null.");
     }
