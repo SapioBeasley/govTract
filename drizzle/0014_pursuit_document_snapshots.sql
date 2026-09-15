@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS "pursuit_snapshot_documents" (
   "opportunity_document_version_id" uuid NOT NULL,
   "source_binary_artifact_id" uuid,
   "source" text NOT NULL,
+  "source_opportunity_id" text NOT NULL,
   "source_document_key" text NOT NULL,
   "filename" text NOT NULL,
   "mime_type" text,
