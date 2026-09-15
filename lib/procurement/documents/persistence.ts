@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { solicitationUnderstandings } from "@/lib/db/solicitation-understandings-schema";
 import {
   opportunityDocuments,
   opportunityDocumentVersions,
@@ -301,6 +302,28 @@ async function persistOpportunityDocument(input: {
   };
 }
 
+async function markCompletedUnderstandingsStaleForDocumentChange(
+  opportunityId: string,
+  now: Date,
+) {
+  const db = getDb();
+  await db
+    .update(solicitationUnderstandings)
+    .set({
+      isStale: true,
+      staleAt: now,
+      staleReason: "source_documents_changed",
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(solicitationUnderstandings.opportunityId, opportunityId),
+        eq(solicitationUnderstandings.status, "completed"),
+        eq(solicitationUnderstandings.isStale, false),
+      ),
+    );
+}
+
 export async function persistOpportunityDocumentSet(input: {
   opportunityId: string;
   documents: PersistableDocument[];
@@ -320,8 +343,9 @@ export async function persistOpportunityDocumentSet(input: {
   }
 
   const now = new Date();
+  let deactivatedDocuments: Array<{ id: string }> = [];
   if (seenKeys.length > 0) {
-    await db
+    deactivatedDocuments = await db
       .update(opportunityDocuments)
       .set({ isActive: false, updatedAt: now })
       .where(
@@ -330,9 +354,10 @@ export async function persistOpportunityDocumentSet(input: {
           eq(opportunityDocuments.isActive, true),
           notInArray(opportunityDocuments.sourceDocumentKey, seenKeys),
         ),
-      );
+      )
+      .returning({ id: opportunityDocuments.id });
   } else {
-    await db
+    deactivatedDocuments = await db
       .update(opportunityDocuments)
       .set({ isActive: false, updatedAt: now })
       .where(
@@ -340,7 +365,14 @@ export async function persistOpportunityDocumentSet(input: {
           eq(opportunityDocuments.opportunityId, input.opportunityId),
           eq(opportunityDocuments.isActive, true),
         ),
-      );
+      )
+      .returning({ id: opportunityDocuments.id });
+  }
+
+  const sourceDocumentSetChanged =
+    deactivatedDocuments.length > 0 || results.some((result) => result.change !== "unchanged");
+  if (sourceDocumentSetChanged) {
+    await markCompletedUnderstandingsStaleForDocumentChange(input.opportunityId, now);
   }
 
   return results;
