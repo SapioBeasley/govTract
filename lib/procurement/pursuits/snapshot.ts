@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
+import { bidWorkspaces } from "@/lib/db/canonical-schema";
 import { getDb } from "@/lib/db/client";
 import {
   pursuitDocumentSnapshots,
@@ -41,6 +42,7 @@ export class SnapshotRetrievalError extends Error {
 export interface PursuitDocumentRetriever {
   retrieveToFile(input: {
     opportunityId: string;
+    sourceOpportunityId: string;
     opportunityDocumentId: string;
     opportunityDocumentVersionId: string;
     source: string;
@@ -71,6 +73,7 @@ type CurrentDocumentVersion = {
   opportunityDocumentId: string;
   opportunityDocumentVersionId: string;
   source: string;
+  sourceOpportunityId: string;
   sourceDocumentKey: string;
   filename: string;
   mimeType: string | null;
@@ -84,6 +87,7 @@ export type PursuitSnapshotDocument = {
   opportunityDocumentVersionId: string;
   sourceBinaryArtifactId: string | null;
   source: string;
+  sourceOpportunityId: string;
   sourceDocumentKey: string;
   filename: string;
   mimeType: string | null;
@@ -111,10 +115,18 @@ export type PursuitSnapshot = {
   documents: PursuitSnapshotDocument[];
 };
 
+type SnapshotContext = {
+  opportunityId: string;
+  savedOpportunityId?: string | null;
+  bidWorkspaceId?: string | null;
+};
+
 function documentSetFingerprint(documents: CurrentDocumentVersion[]) {
   const identity = documents.map((document) => ({
     documentId: document.opportunityDocumentId,
     versionId: document.opportunityDocumentVersionId,
+    source: document.source,
+    sourceOpportunityId: document.sourceOpportunityId,
     sourceDocumentKey: document.sourceDocumentKey,
     versionNumber: document.versionNumber,
     checksumSha256: document.checksumSha256,
@@ -129,6 +141,7 @@ async function loadCurrentDocumentVersions(opportunityId: string) {
       opportunityDocumentId: opportunityDocuments.id,
       opportunityDocumentVersionId: opportunityDocumentVersions.id,
       source: opportunities.source,
+      sourceOpportunityId: opportunities.sourceOpportunityId,
       sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
       filename: opportunityDocumentVersions.name,
       mimeType: opportunityDocumentVersions.mimeType,
@@ -174,6 +187,7 @@ async function loadSnapshot(snapshotId: string): Promise<PursuitSnapshot | null>
       opportunityDocumentVersionId: pursuitSnapshotDocuments.opportunityDocumentVersionId,
       sourceBinaryArtifactId: pursuitSnapshotDocuments.sourceBinaryArtifactId,
       source: pursuitSnapshotDocuments.source,
+      sourceOpportunityId: pursuitSnapshotDocuments.sourceOpportunityId,
       sourceDocumentKey: pursuitSnapshotDocuments.sourceDocumentKey,
       filename: pursuitSnapshotDocuments.filename,
       mimeType: pursuitSnapshotDocuments.mimeType,
@@ -200,44 +214,77 @@ export async function getLatestPursuitSnapshot(opportunityId: string) {
   return snapshot ? loadSnapshot(snapshot.id) : null;
 }
 
-export async function ensurePursuitSnapshotPrepared(opportunityId: string) {
-  const db = getDb();
-  const [saved] = await db
-    .select({ id: savedOpportunities.id, status: savedOpportunities.status })
-    .from(savedOpportunities)
-    .where(eq(savedOpportunities.opportunityId, opportunityId))
-    .limit(1);
+function contextPredicate(context: SnapshotContext) {
+  if (context.savedOpportunityId) {
+    return eq(pursuitDocumentSnapshots.savedOpportunityId, context.savedOpportunityId);
+  }
+  if (context.bidWorkspaceId) {
+    return eq(pursuitDocumentSnapshots.bidWorkspaceId, context.bidWorkspaceId);
+  }
+  throw new Error("A pursuit snapshot requires a saved pursuit or bid workspace context");
+}
 
-  if (!saved || saved.status !== "pursuing") {
-    throw new Error("A pursuit snapshot requires the opportunity to be in Pursuing status");
+async function updateWorkspaceSnapshotReference(input: {
+  bidWorkspaceId: string;
+  snapshotId: string;
+  documentSetFingerprint: string;
+  snapshotStatus: "incomplete" | "complete" | "blocked";
+  markStale?: boolean;
+}) {
+  const db = getDb();
+  const [workspace] = await db
+    .select({ sourceSnapshot: bidWorkspaces.sourceSnapshot })
+    .from(bidWorkspaces)
+    .where(eq(bidWorkspaces.id, input.bidWorkspaceId))
+    .limit(1);
+  if (!workspace) throw new Error("Bid workspace was not found");
+
+  const existing = workspace.sourceSnapshot ?? {};
+  const stale = input.markStale === true || existing.stale === true;
+  const sourceSnapshot: Record<string, unknown> = {
+    ...existing,
+    pursuitSnapshotId: input.snapshotId,
+    documentSetFingerprint: input.documentSetFingerprint,
+    snapshotStatus: input.snapshotStatus,
+    stale,
+  };
+  if (stale) {
+    sourceSnapshot.staleReason = "authoritative_document_set_changed";
+  } else {
+    delete sourceSnapshot.staleReason;
   }
 
-  const currentDocuments = await loadCurrentDocumentVersions(opportunityId);
+  await db
+    .update(bidWorkspaces)
+    .set({ sourceSnapshot, updatedAt: new Date() })
+    .where(eq(bidWorkspaces.id, input.bidWorkspaceId));
+}
+
+async function ensureSnapshotPrepared(context: SnapshotContext) {
+  const db = getDb();
+  const currentDocuments = await loadCurrentDocumentVersions(context.opportunityId);
   const fingerprint = documentSetFingerprint(currentDocuments);
+  const predicate = contextPredicate(context);
   const [existing] = await db
     .select({ id: pursuitDocumentSnapshots.id })
     .from(pursuitDocumentSnapshots)
-    .where(
-      and(
-        eq(pursuitDocumentSnapshots.savedOpportunityId, saved.id),
-        eq(pursuitDocumentSnapshots.documentSetFingerprint, fingerprint),
-      ),
-    )
+    .where(and(predicate, eq(pursuitDocumentSnapshots.documentSetFingerprint, fingerprint)))
     .limit(1);
   if (existing) return (await loadSnapshot(existing.id))!;
 
   const [previous] = await db
     .select({ id: pursuitDocumentSnapshots.id })
     .from(pursuitDocumentSnapshots)
-    .where(eq(pursuitDocumentSnapshots.savedOpportunityId, saved.id))
+    .where(predicate)
     .orderBy(desc(pursuitDocumentSnapshots.createdAt), desc(pursuitDocumentSnapshots.id))
     .limit(1);
 
-  const [created] = await db
+  const createdRows = await db
     .insert(pursuitDocumentSnapshots)
     .values({
-      opportunityId,
-      savedOpportunityId: saved.id,
+      opportunityId: context.opportunityId,
+      savedOpportunityId: context.savedOpportunityId ?? null,
+      bidWorkspaceId: context.bidWorkspaceId ?? null,
       supersedesSnapshotId: previous?.id ?? null,
       documentSetFingerprint: fingerprint,
       status: "incomplete",
@@ -246,8 +293,19 @@ export async function ensurePursuitSnapshotPrepared(opportunityId: string) {
       blockedDocumentCount: 0,
       failedDocumentCount: 0,
     })
+    .onConflictDoNothing()
     .returning({ id: pursuitDocumentSnapshots.id });
-  if (!created) throw new Error("Failed to prepare pursuit document snapshot");
+
+  if (!createdRows[0]) {
+    const [concurrent] = await db
+      .select({ id: pursuitDocumentSnapshots.id })
+      .from(pursuitDocumentSnapshots)
+      .where(and(predicate, eq(pursuitDocumentSnapshots.documentSetFingerprint, fingerprint)))
+      .limit(1);
+    if (!concurrent) throw new Error("Failed to prepare pursuit document snapshot");
+    return (await loadSnapshot(concurrent.id))!;
+  }
+  const created = createdRows[0];
 
   const priorArtifactByVersion = new Map<string, string>();
   if (previous) {
@@ -273,6 +331,7 @@ export async function ensurePursuitSnapshotPrepared(opportunityId: string) {
           opportunityDocumentVersionId: document.opportunityDocumentVersionId,
           sourceBinaryArtifactId: reusedArtifactId ?? null,
           source: document.source,
+          sourceOpportunityId: document.sourceOpportunityId,
           sourceDocumentKey: document.sourceDocumentKey,
           filename: document.filename,
           mimeType: document.mimeType,
@@ -290,12 +349,62 @@ export async function ensurePursuitSnapshotPrepared(opportunityId: string) {
     .update(pursuitDocumentSnapshots)
     .set({ storedDocumentCount: reusedCount, updatedAt: new Date() })
     .where(eq(pursuitDocumentSnapshots.id, created.id));
-  await db
-    .update(savedOpportunities)
-    .set({ snapshotStatus: "incomplete", updatedAt: new Date() })
-    .where(eq(savedOpportunities.id, saved.id));
+
+  if (context.savedOpportunityId) {
+    await db
+      .update(savedOpportunities)
+      .set({ snapshotStatus: "incomplete", updatedAt: new Date() })
+      .where(eq(savedOpportunities.id, context.savedOpportunityId));
+  }
+  if (context.bidWorkspaceId) {
+    await updateWorkspaceSnapshotReference({
+      bidWorkspaceId: context.bidWorkspaceId,
+      snapshotId: created.id,
+      documentSetFingerprint: fingerprint,
+      snapshotStatus: "incomplete",
+      markStale: Boolean(previous),
+    });
+  }
 
   return (await loadSnapshot(created.id))!;
+}
+
+export async function ensurePursuitSnapshotPrepared(opportunityId: string) {
+  const db = getDb();
+  const [saved] = await db
+    .select({ id: savedOpportunities.id, status: savedOpportunities.status })
+    .from(savedOpportunities)
+    .where(
+      and(
+        eq(savedOpportunities.opportunityId, opportunityId),
+        isNull(savedOpportunities.companyProfileId),
+      ),
+    )
+    .limit(1);
+
+  if (!saved || saved.status !== "pursuing") {
+    throw new Error("A pursuit snapshot requires the opportunity to be in Pursuing status");
+  }
+
+  return ensureSnapshotPrepared({ opportunityId, savedOpportunityId: saved.id });
+}
+
+export async function ensureBidWorkspaceSnapshotPrepared(bidWorkspaceId: string) {
+  const db = getDb();
+  const [workspace] = await db
+    .select({
+      id: bidWorkspaces.id,
+      opportunityId: bidWorkspaces.opportunityId,
+    })
+    .from(bidWorkspaces)
+    .where(eq(bidWorkspaces.id, bidWorkspaceId))
+    .limit(1);
+  if (!workspace) throw new Error("Bid workspace was not found");
+
+  return ensureSnapshotPrepared({
+    opportunityId: workspace.opportunityId,
+    bidWorkspaceId: workspace.id,
+  });
 }
 
 async function hashFile(filePath: string) {
@@ -314,7 +423,11 @@ function storageKeyForChecksum(checksumSha256: string) {
 
 function retrievalFailure(error: unknown): { status: "blocked" | "missing" | "failed"; code: string } {
   if (error instanceof SnapshotRetrievalError) {
-    if (error.code === "auth_blocked" || error.code === "source_restricted" || error.code === "storage_unavailable") {
+    if (
+      error.code === "auth_blocked" ||
+      error.code === "source_restricted" ||
+      error.code === "storage_unavailable"
+    ) {
       return { status: "blocked", code: error.code };
     }
     if (error.code === "missing") return { status: "missing", code: error.code };
@@ -355,6 +468,7 @@ export async function processPursuitSnapshot(
       try {
         const retrieval = await options.retriever.retrieveToFile({
           opportunityId: snapshot.opportunityId,
+          sourceOpportunityId: document.sourceOpportunityId,
           opportunityDocumentId: document.opportunityDocumentId,
           opportunityDocumentVersionId: document.opportunityDocumentVersionId,
           source: document.source,
@@ -455,7 +569,11 @@ export async function processPursuitSnapshot(
   const failed = refreshed.documents.filter(
     (document) => document.status === "failed" || document.status === "missing",
   ).length;
-  const status = blocked > 0 ? "blocked" : stored === refreshed.documents.length ? "complete" : "incomplete";
+  const status = blocked > 0
+    ? "blocked"
+    : stored === refreshed.documents.length
+      ? "complete"
+      : "incomplete";
   const now = new Date();
 
   await db
@@ -474,10 +592,19 @@ export async function processPursuitSnapshot(
     await db
       .update(savedOpportunities)
       .set({
-        snapshotStatus: status === "complete" ? "complete" : status === "blocked" ? "blocked" : "incomplete",
+        snapshotStatus:
+          status === "complete" ? "complete" : status === "blocked" ? "blocked" : "incomplete",
         updatedAt: now,
       })
       .where(eq(savedOpportunities.id, snapshot.savedOpportunityId));
+  }
+  if (snapshot.bidWorkspaceId) {
+    await updateWorkspaceSnapshotReference({
+      bidWorkspaceId: snapshot.bidWorkspaceId,
+      snapshotId: snapshot.id,
+      documentSetFingerprint: snapshot.documentSetFingerprint,
+      snapshotStatus: status,
+    });
   }
 
   return {
