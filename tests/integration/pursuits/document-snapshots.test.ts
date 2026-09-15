@@ -89,6 +89,14 @@ async function cleanup(sourceRecordId: string) {
   const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
   try {
     await sql`DELETE FROM source_records WHERE id = ${sourceRecordId}`;
+    await sql`
+      DELETE FROM source_binary_artifacts AS artifact
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM pursuit_snapshot_documents AS document
+        WHERE document.source_binary_artifact_id = artifact.id
+      )
+    `;
   } finally {
     await sql.end({ timeout: 5 });
   }
