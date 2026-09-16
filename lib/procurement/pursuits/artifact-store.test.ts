@@ -16,13 +16,17 @@ type PutCall = {
 
 const filePath = fileURLToPath(import.meta.url);
 
+async function drainBlobBody(body: unknown) {
+  if (body && typeof body === "object" && Symbol.asyncIterator in body) {
+    for await (const _chunk of body as AsyncIterable<unknown>) {
+      // Drain the file stream so the test does not leave an open handle.
+    }
+  }
+}
+
 function createPutBlobMock(calls: PutCall[]): PutBlob {
   return async (pathname, body, options) => {
-    if (body && typeof body === "object" && Symbol.asyncIterator in body) {
-      for await (const _chunk of body as AsyncIterable<unknown>) {
-        // Drain the file stream so the test does not leave an open handle.
-      }
-    }
+    await drainBlobBody(body);
 
     calls.push({
       pathname,
@@ -105,4 +109,45 @@ test("Vercel Blob pursuit artifacts fail closed when neither OIDC nor a legacy t
     },
   );
   assert.equal(calls.length, 0);
+});
+
+test("Vercel Blob SDK failures are blocked as storage unavailable and logged without credentials", async () => {
+  const messages: string[] = [];
+  const originalConsoleError = console.error;
+  const failingPutBlob: PutBlob = async (_pathname, body) => {
+    await drainBlobBody(body);
+    throw new Error(
+      "OIDC is enabled for this project, but not for this token's environment. Authorization: Bearer secret-token VERCEL_OIDC_TOKEN=header.payload.signature",
+    );
+  };
+  const store = createVercelBlobSnapshotArtifactStore({
+    env: {
+      VERCEL_OIDC_TOKEN: "oidc-token",
+      BLOB_STORE_ID: "store_123",
+    },
+    putBlob: failingPutBlob,
+  });
+
+  console.error = (...args: unknown[]) => messages.push(args.map(String).join(" "));
+  try {
+    await assert.rejects(
+      () => store.putFile(artifact),
+      (error: unknown) => {
+        assert.ok(error instanceof SnapshotRetrievalError);
+        assert.equal(error.code, "storage_unavailable");
+        assert.equal(
+          error.message,
+          "OIDC is enabled for this project, but not for this token's environment. Authorization: Bearer [REDACTED] VERCEL_OIDC_TOKEN=[REDACTED]",
+        );
+        return true;
+      },
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]!, /PURSUIT_BLOB_STORE_ERROR code=unknown/);
+  assert.match(messages[0]!, /OIDC is enabled for this project/);
+  assert.doesNotMatch(messages[0]!, /secret-token|header\.payload\.signature/);
 });
