@@ -38,12 +38,18 @@ test("Beacon operational ingestion runs on a bounded schedule without becoming P
   assert.doesNotMatch(content, /vercel@59\.17\.0 env run/);
   assert.match(
     content,
+    /https:\/\/api\.vercel\.com\/v3\/env\/pull\/\$\{VERCEL_PROJECT_ID\}\/production\?source=govtract-github-actions/,
+  );
+  assert.doesNotMatch(
+    content,
     /https:\/\/api\.vercel\.com\/v1\/projects\/\$\{VERCEL_PROJECT_ID\}\/token/,
   );
-  assert.match(
+  assert.doesNotMatch(
     content,
-    /https:\/\/api\.vercel\.com\/v10\/projects\/\$\{VERCEL_PROJECT_ID\}\/env\?decrypt=true&source=govtract-github-actions/,
+    /https:\/\/api\.vercel\.com\/v10\/projects\/\$\{VERCEL_PROJECT_ID\}\/env/,
   );
+  assert.match(content, /body\?\.env\?\.VERCEL_OIDC_TOKEN/);
+  assert.match(content, /body\?\.env\?\.BLOB_STORE_ID/);
   assert.match(content, /Authorization: Bearer \$VERCEL_TOKEN/);
   assert.match(content, /::add-mask::\$VERCEL_OIDC_TOKEN/);
   assert.match(content, /unset VERCEL_TOKEN/);
