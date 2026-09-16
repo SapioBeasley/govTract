@@ -90,7 +90,8 @@ jobs:
       PURSUIT_SNAPSHOT_MAX_TOTAL_BYTES: "1073741824"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SOURCE_SESSION_ENCRYPTION_KEY: ${{ secrets.SOURCE_SESSION_ENCRYPTION_KEY }}
-      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+      VERCEL_ORG_ID: team_PICVswifAiV6qP9Xx4JPAmYW
+      VERCEL_PROJECT_ID: prj_83ZjVMpv1j12g03SO0eirVjhkEOT
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Always apply paid-equivalent accounting even when Google serves the project on its free tier.
       GEMINI_BILLING_MODE: "billable"
@@ -129,9 +130,16 @@ jobs:
         if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.extract_documents)
         run: npm run ingest:beacon:document-closeouts
 
-      - name: Snapshot pursued source documents
+      - name: Snapshot pursued source documents with Vercel Blob OIDC
         if: github.event_name == 'schedule' || inputs.persist
-        run: npm run pursuit:snapshots
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN is required to obtain the short-lived Vercel project OIDC environment for Blob snapshots."
+            exit 1
+          fi
+          npx --yes vercel@59.17.0 env run --environment=production --token "$VERCEL_TOKEN" -- sh -c 'unset VERCEL_TOKEN; npm run pursuit:snapshots'
 
       - name: Generate eligible solicitation understandings
         if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.generate_understandings)
