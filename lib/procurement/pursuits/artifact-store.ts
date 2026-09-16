@@ -6,9 +6,11 @@ import {
   type SnapshotArtifactStore,
 } from "@/lib/procurement/pursuits/snapshot";
 
-type BlobAuthEnvironment = Pick<
-  NodeJS.ProcessEnv,
-  "BLOB_READ_WRITE_TOKEN" | "VERCEL_OIDC_TOKEN" | "BLOB_STORE_ID"
+type BlobAuthEnvironment = Partial<
+  Pick<
+    NodeJS.ProcessEnv,
+    "BLOB_READ_WRITE_TOKEN" | "VERCEL_OIDC_TOKEN" | "BLOB_STORE_ID"
+  >
 >;
 
 type BlobPut = typeof put;
