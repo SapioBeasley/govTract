@@ -21,6 +21,7 @@
     "ingest:beacon:lifecycle": "tsx scripts/beacon-lifecycle.ts",
     "ingest:beacon:documents": "tsx scripts/beacon-documents-v2.ts",
     "ingest:beacon:document-closeouts": "tsx scripts/beacon-document-closeouts.ts",
+    "pursuit:snapshots": "tsx scripts/process-pursuit-snapshots.ts",
     "understand:opportunities": "tsx scripts/generate-understandings.ts",
     "requirements:materialize": "tsx scripts/materialize-requirements.ts"
   },
@@ -28,6 +29,7 @@
     "@e965/xlsx": "0.20.3",
     "@radix-ui/react-slot": "^1.2.3",
     "@sparticuz/chromium": "149.0.0",
+    "@vercel/blob": "2.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "csv-parse": "7.0.2",
