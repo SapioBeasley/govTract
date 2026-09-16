@@ -44,12 +44,13 @@ const artifact = {
   byteCount: 123,
 };
 
-test("Vercel Blob pursuit artifacts use project OIDC without a read-write token", async () => {
+test("Vercel Blob pursuit artifacts prefer project OIDC over an ambient read-write token", async () => {
   const calls: PutCall[] = [];
   const store = createVercelBlobSnapshotArtifactStore({
     env: {
       VERCEL_OIDC_TOKEN: "oidc-token",
       BLOB_STORE_ID: "store_123",
+      BLOB_READ_WRITE_TOKEN: "legacy-env-token",
     },
     putBlob: createPutBlobMock(calls),
   });
