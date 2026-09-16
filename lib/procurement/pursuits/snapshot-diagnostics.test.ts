@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  SnapshotRetrievalError,
-  describeSnapshotFailureForLog,
-} from "@/lib/procurement/pursuits/snapshot";
+import { describeSnapshotFailureForLog } from "@/lib/procurement/pursuits/artifact-store";
+import { SnapshotRetrievalError } from "@/lib/procurement/pursuits/snapshot";
 
 test("snapshot failure diagnostics preserve typed retrieval codes", () => {
   const diagnostic = describeSnapshotFailureForLog(
