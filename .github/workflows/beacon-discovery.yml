@@ -135,12 +135,33 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          set -euo pipefail
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::VERCEL_TOKEN is required to obtain the short-lived Vercel project OIDC environment for Blob snapshots."
+            echo "::error::VERCEL_TOKEN is required to mint short-lived Vercel project OIDC credentials for Blob snapshots."
             exit 1
           fi
-          npx --yes vercel@59.17.0 link --yes --project "$VERCEL_PROJECT_ID" --scope "$VERCEL_ORG_ID" --token "$VERCEL_TOKEN"
-          npx --yes vercel@59.17.0 env run --environment=production --scope "$VERCEL_ORG_ID" --token "$VERCEL_TOKEN" -- sh -c 'unset VERCEL_TOKEN; npm run pursuit:snapshots'
+
+          VERCEL_OIDC_TOKEN="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data '{"source":"govtract-github-actions"}' \
+              "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/token" \
+              | node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(0, "utf8")); if (typeof body.token !== "string" || body.token.length === 0) { console.error("Vercel project OIDC response did not include a token."); process.exit(1); } process.stdout.write(body.token);'
+          )"
+          echo "::add-mask::$VERCEL_OIDC_TOKEN"
+
+          BLOB_STORE_ID="$(
+            curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?decrypt=true&source=govtract-github-actions" \
+              | node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(0, "utf8")); const env = Array.isArray(body.envs) ? body.envs.find((item) => item?.key === "BLOB_STORE_ID" && Array.isArray(item.target) && item.target.includes("production") && typeof item.value === "string" && item.value.length > 0) : undefined; if (!env) { console.error("BLOB_STORE_ID is not available for the Vercel production target."); process.exit(1); } process.stdout.write(env.value);'
+          )"
+
+          unset VERCEL_TOKEN
+          export VERCEL_OIDC_TOKEN BLOB_STORE_ID
+          npm run pursuit:snapshots
 
       - name: Generate eligible solicitation understandings
         if: (github.event_name == 'schedule' || inputs.persist) && (github.event_name == 'schedule' || inputs.generate_understandings)
