@@ -139,6 +139,7 @@ jobs:
             echo "::error::VERCEL_TOKEN is required to obtain the short-lived Vercel project OIDC environment for Blob snapshots."
             exit 1
           fi
+          npx --yes vercel@59.17.0 link --yes --project "$VERCEL_PROJECT_ID" --token "$VERCEL_TOKEN"
           npx --yes vercel@59.17.0 env run --environment=production --token "$VERCEL_TOKEN" -- sh -c 'unset VERCEL_TOKEN; npm run pursuit:snapshots'
 
       - name: Generate eligible solicitation understandings
