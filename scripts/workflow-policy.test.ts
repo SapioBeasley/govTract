@@ -34,14 +34,21 @@ test("Beacon operational ingestion runs on a bounded schedule without becoming P
   assert.match(content, /VERCEL_PROJECT_ID:\s*prj_83ZjVMpv1j12g03SO0eirVjhkEOT/);
   assert.doesNotMatch(content, /BLOB_READ_WRITE_TOKEN/);
   assert.match(content, /VERCEL_TOKEN:\s*\$\{\{ secrets\.VERCEL_TOKEN \}\}/);
+  assert.doesNotMatch(content, /vercel@59\.17\.0 link/);
+  assert.doesNotMatch(content, /vercel@59\.17\.0 env run/);
   assert.match(
     content,
-    /npx --yes vercel@59\.17\.0 link --yes --project "\$VERCEL_PROJECT_ID" --scope "\$VERCEL_ORG_ID" --token "\$VERCEL_TOKEN"/,
+    /https:\/\/api\.vercel\.com\/v1\/projects\/\$\{VERCEL_PROJECT_ID\}\/token/,
   );
   assert.match(
     content,
-    /npx --yes vercel@59\.17\.0 env run --environment=production --scope "\$VERCEL_ORG_ID" --token "\$VERCEL_TOKEN" -- sh -c 'unset VERCEL_TOKEN; npm run pursuit:snapshots'/,
+    /https:\/\/api\.vercel\.com\/v10\/projects\/\$\{VERCEL_PROJECT_ID\}\/env\?decrypt=true&source=govtract-github-actions/,
   );
+  assert.match(content, /Authorization: Bearer \$VERCEL_TOKEN/);
+  assert.match(content, /::add-mask::\$VERCEL_OIDC_TOKEN/);
+  assert.match(content, /unset VERCEL_TOKEN/);
+  assert.match(content, /export VERCEL_OIDC_TOKEN BLOB_STORE_ID/);
+  assert.match(content, /npm run pursuit:snapshots/);
   assert.match(content, /github\.event_name == 'schedule' \|\| inputs\.persist/);
   assert.match(content, /github\.event_name == 'schedule' \|\| inputs\.generate_understandings/);
   assert.doesNotMatch(content, /^\s{2}pull_request:\s*$/m);
