@@ -141,24 +141,24 @@ jobs:
             exit 1
           fi
 
+          VERCEL_ENV_FILE="$(mktemp)"
+          trap 'rm -f "$VERCEL_ENV_FILE"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --output "$VERCEL_ENV_FILE" \
+            "https://api.vercel.com/v3/env/pull/${VERCEL_PROJECT_ID}/production?source=govtract-github-actions"
+
           VERCEL_OIDC_TOKEN="$(
-            curl --fail-with-body --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $VERCEL_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data '{"source":"govtract-github-actions"}' \
-              "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/token" \
-              | node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(0, "utf8")); if (typeof body.token !== "string" || body.token.length === 0) { console.error("Vercel project OIDC response did not include a token."); process.exit(1); } process.stdout.write(body.token);'
+            node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const value = body?.env?.VERCEL_OIDC_TOKEN; if (typeof value !== "string" || value.length === 0) { console.error("VERCEL_OIDC_TOKEN is not available for the Vercel production target."); process.exit(1); } process.stdout.write(value);' "$VERCEL_ENV_FILE"
           )"
           echo "::add-mask::$VERCEL_OIDC_TOKEN"
 
           BLOB_STORE_ID="$(
-            curl --fail-with-body --silent --show-error \
-              --header "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?decrypt=true&source=govtract-github-actions" \
-              | node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(0, "utf8")); const env = Array.isArray(body.envs) ? body.envs.find((item) => item?.key === "BLOB_STORE_ID" && Array.isArray(item.target) && item.target.includes("production") && typeof item.value === "string" && item.value.length > 0) : undefined; if (!env) { console.error("BLOB_STORE_ID is not available for the Vercel production target."); process.exit(1); } process.stdout.write(env.value);'
+            node -e 'const fs = require("node:fs"); const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const value = body?.env?.BLOB_STORE_ID; if (typeof value !== "string" || value.length === 0) { console.error("BLOB_STORE_ID is not available for the Vercel production target."); process.exit(1); } process.stdout.write(value);' "$VERCEL_ENV_FILE"
           )"
 
+          rm -f "$VERCEL_ENV_FILE"
+          trap - EXIT
           unset VERCEL_TOKEN
           export VERCEL_OIDC_TOKEN BLOB_STORE_ID
           npm run pursuit:snapshots
