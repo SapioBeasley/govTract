@@ -36,6 +36,10 @@ test("Beacon operational ingestion runs on a bounded schedule without becoming P
   assert.match(content, /VERCEL_TOKEN:\s*\$\{\{ secrets\.VERCEL_TOKEN \}\}/);
   assert.match(
     content,
+    /npx --yes vercel@59\.17\.0 link --yes --project "\$VERCEL_PROJECT_ID" --token "\$VERCEL_TOKEN"/,
+  );
+  assert.match(
+    content,
     /npx --yes vercel@59\.17\.0 env run --environment=production --token "\$VERCEL_TOKEN" -- sh -c 'unset VERCEL_TOKEN; npm run pursuit:snapshots'/,
   );
   assert.match(content, /github\.event_name == 'schedule' \|\| inputs\.persist/);
