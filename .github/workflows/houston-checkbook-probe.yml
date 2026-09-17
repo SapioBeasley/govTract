@@ -1,0 +1,70 @@
+name: Houston Checkbook source probe
+
+on:
+  push:
+    branches:
+      - codex/issue-120-houston-open-checkbook
+    paths:
+      - .github/workflows/houston-checkbook-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public CKAN metadata and schema
+        shell: bash
+        run: |
+          node <<'NODE'
+          const base = "https://openfinance.houstontx.gov/api/3/action";
+          const getJson = async (url) => {
+            const response = await fetch(url, {
+              headers: { "user-agent": "govTract-source-probe/1.0" },
+              signal: AbortSignal.timeout(20000),
+            });
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`);
+            const payload = await response.json();
+            if (!payload.success) throw new Error(`CKAN returned success=false for ${url}`);
+            return payload.result;
+          };
+
+          const packages = await getJson(`${base}/package_list`);
+          const checkbooks = packages.filter((name) => /^checkbook/i.test(name)).sort();
+          console.log("CHECKBOOK_PACKAGES", JSON.stringify(checkbooks));
+          if (checkbooks.length === 0) throw new Error("No checkbook packages found");
+
+          const definitions = [];
+          for (const packageName of checkbooks) {
+            const definition = await getJson(`${base}/package_show?id=${encodeURIComponent(packageName)}`);
+            definitions.push({
+              name: definition.name,
+              title: definition.title,
+              metadata_modified: definition.metadata_modified,
+              resources: (definition.resources ?? []).map((resource) => ({
+                id: resource.id ?? resource.resource_id,
+                name: resource.name,
+                format: resource.format,
+                datastore_active: resource.datastore_active,
+                last_modified: resource.last_modified,
+                hash: resource.hash,
+                url: resource.url,
+              })),
+            });
+          }
+          console.log("CHECKBOOK_DEFINITIONS", JSON.stringify(definitions));
+
+          const newest = [...definitions].reverse().find((definition) =>
+            definition.resources.some((resource) => resource.datastore_active && resource.id)
+          );
+          if (!newest) throw new Error("No active datastore resource found");
+          const resource = newest.resources.find((candidate) => candidate.datastore_active && candidate.id);
+          const sample = await getJson(`${base}/datastore_search?resource_id=${encodeURIComponent(resource.id)}&limit=2&offset=0`);
+          console.log("SAMPLE_PACKAGE", newest.name);
+          console.log("SAMPLE_RESOURCE", JSON.stringify(resource));
+          console.log("SAMPLE_FIELDS", JSON.stringify((sample.fields ?? []).map(({id, type}) => ({id, type}))));
+          console.log("SAMPLE_RECORDS", JSON.stringify(sample.records ?? []));
+          console.log("SAMPLE_TOTAL", sample.total);
+          NODE
