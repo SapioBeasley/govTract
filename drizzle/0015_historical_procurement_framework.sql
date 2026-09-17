@@ -129,7 +129,7 @@ ALTER TABLE "historical_procurement_opportunity_relationships"
   FOREIGN KEY ("historical_procurement_record_id") REFERENCES "public"."historical_procurement_records"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "historical_procurement_opportunity_relationships"
-  ADD CONSTRAINT "historical_procurement_opportunity_relationships_opportunity_id_fk"
+  ADD CONSTRAINT "hist_proc_opp_rel_opportunity_fk"
   FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 CREATE INDEX "historical_procurement_records_type_date_idx" ON "historical_procurement_records" USING btree ("record_type", "occurred_at");
@@ -164,4 +164,4 @@ CREATE UNIQUE INDEX "historical_procurement_opportunity_relationships_uidx" ON "
 --> statement-breakpoint
 CREATE INDEX "historical_procurement_opportunity_relationships_record_idx" ON "historical_procurement_opportunity_relationships" USING btree ("historical_procurement_record_id");
 --> statement-breakpoint
-CREATE INDEX "historical_procurement_opportunity_relationships_opportunity_idx" ON "historical_procurement_opportunity_relationships" USING btree ("opportunity_id");
+CREATE INDEX "hist_proc_opp_rel_opportunity_idx" ON "historical_procurement_opportunity_relationships" USING btree ("opportunity_id");
