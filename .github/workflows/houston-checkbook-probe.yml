@@ -19,8 +19,12 @@ jobs:
         shell: bash
         run: |
           node <<'NODE'
-          const base = "https://openfinance.houstontx.gov/api/3/action";
-          const getJson = async (url) => {
+          const bases = [
+            "https://data.houstontx.gov/api/3/action",
+            "https://openfinance.houstontx.gov/api/3/action",
+          ];
+          const request = async (base, path) => {
+            const url = `${base}/${path}`;
             const response = await fetch(url, {
               headers: { "user-agent": "govTract-source-probe/1.0" },
               signal: AbortSignal.timeout(20000),
@@ -31,14 +35,27 @@ jobs:
             return payload.result;
           };
 
-          const packages = await getJson(`${base}/package_list`);
+          let base;
+          let packages;
+          for (const candidate of bases) {
+            try {
+              packages = await request(candidate, "package_list");
+              base = candidate;
+              console.log("CKAN_BASE", candidate);
+              break;
+            } catch (error) {
+              console.log("CKAN_BASE_FAILED", candidate, error instanceof Error ? error.message : String(error));
+            }
+          }
+          if (!base || !packages) throw new Error("No Houston CKAN endpoint was reachable");
+
           const checkbooks = packages.filter((name) => /^checkbook/i.test(name)).sort();
           console.log("CHECKBOOK_PACKAGES", JSON.stringify(checkbooks));
           if (checkbooks.length === 0) throw new Error("No checkbook packages found");
 
           const definitions = [];
           for (const packageName of checkbooks) {
-            const definition = await getJson(`${base}/package_show?id=${encodeURIComponent(packageName)}`);
+            const definition = await request(base, `package_show?id=${encodeURIComponent(packageName)}`);
             definitions.push({
               name: definition.name,
               title: definition.title,
@@ -61,7 +78,10 @@ jobs:
           );
           if (!newest) throw new Error("No active datastore resource found");
           const resource = newest.resources.find((candidate) => candidate.datastore_active && candidate.id);
-          const sample = await getJson(`${base}/datastore_search?resource_id=${encodeURIComponent(resource.id)}&limit=2&offset=0`);
+          const sample = await request(
+            base,
+            `datastore_search?resource_id=${encodeURIComponent(resource.id)}&limit=2&offset=0`,
+          );
           console.log("SAMPLE_PACKAGE", newest.name);
           console.log("SAMPLE_RESOURCE", JSON.stringify(resource));
           console.log("SAMPLE_FIELDS", JSON.stringify((sample.fields ?? []).map(({id, type}) => ({id, type}))));
