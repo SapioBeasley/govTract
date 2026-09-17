@@ -309,11 +309,11 @@ test(
           source_file_revision: "sha256:fixture",
           source_revision_id: "2",
         });
-        assert.deepEqual(identifiers, [
+        assert.deepEqual([...identifiers], [
           { identifier_type: "contract", identifier_value: "CON-200" },
           { identifier_type: "purchase_order", identifier_value: "PO-100" },
         ]);
-        assert.deepEqual(classifications, [
+        assert.deepEqual([...classifications], [
           { scheme: "NIGP", code: "720-00", method: "source_provided" },
         ]);
       } finally {
