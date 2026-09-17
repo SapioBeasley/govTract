@@ -204,8 +204,6 @@ export const historicalProcurementOpportunityRelationships = pgTable(
     index("historical_procurement_opportunity_relationships_record_idx").on(
       table.historicalProcurementRecordId,
     ),
-    index("historical_procurement_opportunity_relationships_opportunity_idx").on(
-      table.opportunityId,
-    ),
+    index("hist_proc_opp_rel_opportunity_idx").on(table.opportunityId),
   ],
 );
