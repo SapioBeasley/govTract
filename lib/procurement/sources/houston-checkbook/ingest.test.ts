@@ -49,6 +49,7 @@ function createFixture(input?: {
   }> = [];
   const persistedBatchRows: number[] = [];
   const finishes: Array<Record<string, unknown>> = [];
+  const events: string[] = [];
 
   const client = {
     async discoverResources() {
@@ -81,6 +82,7 @@ function createFixture(input?: {
       return "run-fixture";
     },
     async persistPage(page) {
+      events.push(`page:${page.pageNumber}`);
       persistedPages.push({
         pageNumber: page.pageNumber,
         cursor: page.cursor,
@@ -88,6 +90,7 @@ function createFixture(input?: {
       });
     },
     async persistBatch(batch) {
+      events.push(`batch:${batch.records.map((record) => String(record.row._id)).join(",")}`);
       let errors = 0;
       let inserted = 0;
       for (const record of batch.records) {
@@ -116,6 +119,7 @@ function createFixture(input?: {
     persistedPages,
     persistedBatchRows,
     finishes,
+    events,
   };
 }
 
@@ -138,6 +142,7 @@ test("Houston Checkbook backfill traverses every fiscal-year resource, checkpoin
     ],
   );
   assert.deepEqual(fixture.persistedBatchRows, [1, 2, 3, 4, 5]);
+  assert.deepEqual(fixture.events.slice(0, 2), ["batch:1,2", "page:1"]);
   assert.equal(summary.fetched, 5);
   assert.equal(summary.inserted, 4);
   assert.equal(summary.updated, 0);
