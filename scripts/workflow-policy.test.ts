@@ -95,22 +95,16 @@ test("temporary issue-specific route probe workflow has been removed", async () 
 });
 
 
-test("Houston Checkbook ingestion is manual, bounded, and isolated from PR validation", async () => {
-  const content = await workflow(".github/workflows/houston-checkbook.yml");
+test("Houston Checkbook persistent backfill entrypoints are removed", async () => {
+  const workflows = await readdir(".github/workflows");
+  const scripts = await readdir("scripts");
+  const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+    scripts?: Record<string, string>;
+  };
 
-  assert.match(content, /^\s{2}workflow_dispatch:\s*$/m);
-  assert.match(content, /mode:/);
-  assert.match(content, /page_size:/);
-  assert.match(content, /max_pages:/);
-  assert.match(content, /concurrency:/);
-  assert.match(content, /"--concurrency=\$\{\{ inputs\.concurrency \}\}"/);
-  assert.match(content, /fiscal_year:/);
-  assert.match(content, /resume_resource:/);
-  assert.match(content, /resume_offset:/);
-  assert.match(content, /DATABASE_URL:\s*\$\{\{ secrets\.DATABASE_URL \}\}/);
-  assert.match(content, /npm run db:migrate -- --baseline-existing/);
-  assert.match(content, /npm run ingest:houston-checkbook/);
-  assert.doesNotMatch(content, /^\s{2}pull_request:\s*$/m);
-  assert.doesNotMatch(content, /^\s{2}schedule:\s*$/m);
-  assert.doesNotMatch(content, /GEMINI_API_KEY/);
+  assert.ok(!workflows.includes("houston-checkbook.yml"));
+  assert.ok(!scripts.includes("houston-checkbook.ts"));
+  assert.equal(packageJson.scripts?.["ingest:houston-checkbook"], undefined);
+  assert.equal(packageJson.scripts?.["ingest:houston-checkbook:backfill"], undefined);
+  assert.equal(packageJson.scripts?.["ingest:houston-checkbook:refresh"], undefined);
 });
