@@ -54,6 +54,12 @@ async function main() {
   const selectedMode = mode();
   const pageSize = positiveInteger("page-size", 1_000);
   const maxPages = positiveInteger("max-pages", 5_000);
+  const persistenceConcurrency = positiveInteger("concurrency", 16);
+  if (persistenceConcurrency > 32) {
+    throw new Error("--concurrency must be 32 or less");
+  }
+  process.env.DATABASE_POOL_MAX = String(persistenceConcurrency);
+
   const fiscalYear = nonnegativeInteger("fiscal-year");
   const resumeResourceId = argument("resume-resource");
   const resumeOffset = nonnegativeInteger("resume-offset");
@@ -66,9 +72,23 @@ async function main() {
     client: new HoustonCheckbookClient(),
     dependencies: {
       startRun: startIngestionRun,
-      persistPage: persistRawIngestionPage,
-      persistBatch: persistHistoricalProcurementBatch,
-      recordPageCounts: recordPagePersistenceCounts,
+      persistPage: async (page) => {
+        await persistRawIngestionPage(page);
+        console.log(
+          `HOUSTON_CHECKBOOK_PAGE page=${page.pageNumber} records=${page.recordCount} checkpoint=${JSON.stringify(page.cursor)}`,
+        );
+      },
+      persistBatch: (batch) =>
+        persistHistoricalProcurementBatch({
+          ...batch,
+          concurrency: persistenceConcurrency,
+        }),
+      recordPageCounts: async (input) => {
+        await recordPagePersistenceCounts(input);
+        console.log(
+          `HOUSTON_CHECKBOOK_DB page=${input.pageNumber} inserted=${input.counts.inserted} updated=${input.counts.updated} unchanged=${input.counts.unchanged}`,
+        );
+      },
       finishRun: finishIngestionRun,
     },
     mode: selectedMode,
