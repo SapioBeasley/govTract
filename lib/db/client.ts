@@ -24,9 +24,16 @@ const schema = {
 
 let sqlClient: ReturnType<typeof postgres> | null = null;
 
+export function resolveDatabasePoolMax(raw: string | undefined) {
+  if (!raw) return 1;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, 32);
+}
+
 function createDatabase(databaseUrl: string) {
   sqlClient = postgres(databaseUrl, {
-    max: 1,
+    max: resolveDatabasePoolMax(process.env.DATABASE_POOL_MAX),
     prepare: false,
     idle_timeout: 20,
   });

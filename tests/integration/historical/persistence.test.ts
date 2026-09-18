@@ -337,6 +337,7 @@ test(
         adapter: fixtureAdapter(source),
         runId,
         context: context(agency),
+        concurrency: 4,
         records: [
           {
             id: "PARTIAL-1",

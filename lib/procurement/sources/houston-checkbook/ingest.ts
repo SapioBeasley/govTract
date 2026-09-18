@@ -443,8 +443,11 @@ export async function runHoustonCheckbookIngestion(input: {
   };
 
   if (status === "failed") {
+    const checkpointText = checkpoint
+      ? ` lastCheckpoint=${JSON.stringify(checkpoint)}`
+      : " lastCheckpoint=none";
     throw new Error(
-      `Houston Checkbook ingestion failed: ${runError ?? "unknown error"}`,
+      `Houston Checkbook ingestion failed: ${runError ?? "unknown error"}${checkpointText}`,
     );
   }
 

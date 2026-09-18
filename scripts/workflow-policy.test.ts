@@ -102,6 +102,8 @@ test("Houston Checkbook ingestion is manual, bounded, and isolated from PR valid
   assert.match(content, /mode:/);
   assert.match(content, /page_size:/);
   assert.match(content, /max_pages:/);
+  assert.match(content, /concurrency:/);
+  assert.match(content, /"--concurrency=\$\{\{ inputs\.concurrency \}\}"/);
   assert.match(content, /fiscal_year:/);
   assert.match(content, /resume_resource:/);
   assert.match(content, /resume_offset:/);

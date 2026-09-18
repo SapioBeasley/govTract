@@ -144,3 +144,46 @@ test("HoustonCheckbookClient fails closed on malformed CKAN responses", async ()
 
   await assert.rejects(() => client.discoverResources(), /Houston CKAN request failed/);
 });
+
+
+test("HoustonCheckbookClient retries transient network failures and eventually returns the CKAN response", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const client = new HoustonCheckbookClient({
+    requestAttempts: 3,
+    sleepImpl: async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts < 3) throw new TypeError("fetch failed");
+      return new Response(JSON.stringify({ success: true, result: packageFixture }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const resources = await client.discoverResources();
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [500, 1000]);
+  assert.equal(resources.at(-1)?.fiscalYear, 2026);
+});
+
+test("HoustonCheckbookClient does not retry non-transient HTTP 4xx responses", async () => {
+  let attempts = 0;
+  const client = new HoustonCheckbookClient({
+    requestAttempts: 4,
+    sleepImpl: async () => {
+      throw new Error("sleep should not be called");
+    },
+    fetchImpl: async () => {
+      attempts += 1;
+      return new Response("bad request", { status: 400 });
+    },
+  });
+
+  await assert.rejects(() => client.discoverResources(), /HTTP 400/);
+  assert.equal(attempts, 1);
+});

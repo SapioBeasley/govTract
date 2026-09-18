@@ -435,7 +435,13 @@ export async function persistHistoricalProcurementBatch<
   records: readonly TRawRecord[];
   context: HistoricalProcurementSourceContext;
   pageNumber?: number;
+  concurrency?: number;
 }) {
+  const concurrency = input.concurrency ?? 1;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) {
+    throw new Error(`Invalid historical procurement batch concurrency: ${concurrency}`);
+  }
+
   const counts = {
     processed: input.records.length,
     inserted: 0,
@@ -444,7 +450,9 @@ export async function persistHistoricalProcurementBatch<
     errors: 0,
   };
 
-  for (const record of input.records) {
+  let nextIndex = 0;
+
+  async function processRecord(record: TRawRecord) {
     try {
       const result = await persistHistoricalProcurementSourceRecord({
         adapter: input.adapter,
@@ -479,6 +487,19 @@ export async function persistHistoricalProcurementBatch<
       });
     }
   }
+
+  const workerCount = Math.min(concurrency, input.records.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= input.records.length) return;
+        const record = input.records[index];
+        if (record) await processRecord(record);
+      }
+    }),
+  );
 
   return counts;
 }
