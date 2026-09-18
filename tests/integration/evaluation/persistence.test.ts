@@ -3,6 +3,7 @@ import test from "node:test";
 import postgres from "postgres";
 
 import { closeDb } from "@/lib/db/client";
+import type { OpportunityEvaluationResult } from "@/lib/opportunities/evaluation/rules";
 import {
   getOpportunityDecision,
   loadLatestOpportunityEvaluation,
@@ -57,7 +58,7 @@ async function cleanup(fixture: Awaited<ReturnType<typeof seed>>) {
 test("unchanged evaluation inputs persist idempotently and decision stays separate", { skip: !canRun }, async () => {
   const fixture = await seed();
   try {
-    const result = {
+    const result: OpportunityEvaluationResult = {
       ruleVersion: "go-no-go-v1",
       inputFingerprint: "fingerprint-1",
       assessment: "conditional" as const,
