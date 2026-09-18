@@ -53,6 +53,7 @@ async function main() {
   const selectedMode = mode();
   const pageSize = positiveInteger("page-size", 1_000);
   const maxPages = positiveInteger("max-pages", 5_000);
+  const fiscalYear = nonnegativeInteger("fiscal-year");
   const resumeResourceId = argument("resume-resource");
   const resumeOffset = nonnegativeInteger("resume-offset");
 
@@ -71,6 +72,7 @@ async function main() {
     mode: selectedMode,
     pageSize,
     maxPages,
+    ...(fiscalYear !== null ? { fiscalYears: [fiscalYear] } : {}),
     ...(resumeResourceId !== null && resumeOffset !== null
       ? {
           resume: {
