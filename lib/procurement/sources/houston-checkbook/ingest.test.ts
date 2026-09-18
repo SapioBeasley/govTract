@@ -107,6 +107,7 @@ function createFixture(input?: {
         errors,
       };
     },
+    async recordPageCounts() {},
     async finishRun(finish) {
       finishes.push(finish as unknown as Record<string, unknown>);
     },
