@@ -77,6 +77,15 @@ export interface HoustonCheckbookIngestionDependencies {
     unchanged: number;
     errors: number;
   }>;
+  recordPageCounts(input: {
+    runId: string;
+    pageNumber: number;
+    counts: {
+      inserted: number;
+      updated: number;
+      unchanged: number;
+    };
+  }): Promise<void>;
   finishRun(input: {
     runId: string;
     status: "complete" | "partial" | "failed";
@@ -335,6 +344,15 @@ export async function runHoustonCheckbookIngestion(input: {
             offset: page.offset,
           },
           recordCount: records.length,
+        });
+        await input.dependencies.recordPageCounts({
+          runId,
+          pageNumber: pagesFetched,
+          counts: {
+            inserted: counts.inserted,
+            updated: counts.updated,
+            unchanged: counts.unchanged,
+          },
         });
 
         fetched += records.length;
