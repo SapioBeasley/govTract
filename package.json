@@ -23,7 +23,10 @@
     "ingest:beacon:document-closeouts": "tsx scripts/beacon-document-closeouts.ts",
     "pursuit:snapshots": "tsx scripts/process-pursuit-snapshots.ts",
     "understand:opportunities": "tsx scripts/generate-understandings.ts",
-    "requirements:materialize": "tsx scripts/materialize-requirements.ts"
+    "requirements:materialize": "tsx scripts/materialize-requirements.ts",
+    "ingest:houston-checkbook": "tsx scripts/houston-checkbook.ts",
+    "ingest:houston-checkbook:backfill": "tsx scripts/houston-checkbook.ts --mode=backfill",
+    "ingest:houston-checkbook:refresh": "tsx scripts/houston-checkbook.ts --mode=refresh"
   },
   "dependencies": {
     "@e965/xlsx": "0.20.3",
