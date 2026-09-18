@@ -4,6 +4,7 @@ import * as canonicalSchema from "./canonical-schema";
 import * as coreSchema from "./schema";
 import * as documentExtractionSchema from "./document-extractions-schema";
 import * as historicalProcurementSchema from "./historical-procurement-schema";
+import * as opportunityEvaluationSchema from "./opportunity-evaluations-schema";
 import * as pursuitSnapshotSchema from "./pursuit-snapshots-schema";
 import * as savedOpportunitySchema from "./saved-opportunities-schema";
 import * as solicitationRequirementSchema from "./solicitation-requirements-schema";
@@ -15,6 +16,7 @@ const schema = {
   ...canonicalSchema,
   ...documentExtractionSchema,
   ...historicalProcurementSchema,
+  ...opportunityEvaluationSchema,
   ...pursuitSnapshotSchema,
   ...savedOpportunitySchema,
   ...solicitationRequirementSchema,
