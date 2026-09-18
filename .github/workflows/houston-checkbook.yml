@@ -23,6 +23,10 @@ on:
         description: Maximum pages to process in this run
         required: true
         default: "400"
+      concurrency:
+        description: Concurrent historical rows persisted per page
+        required: true
+        default: "16"
       resume_resource:
         description: Optional resource ID from a prior checkpoint
         required: false
@@ -71,6 +75,7 @@ jobs:
             "--mode=${{ inputs.mode }}"
             "--page-size=${{ inputs.page_size }}"
             "--max-pages=${{ inputs.max_pages }}"
+            "--concurrency=${{ inputs.concurrency }}"
           )
 
           if [ -n "${{ inputs.fiscal_year }}" ]; then
