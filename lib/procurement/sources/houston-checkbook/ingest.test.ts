@@ -239,3 +239,41 @@ test("Houston Checkbook ingestion stops at the configured page bound with a rest
     },
   ]);
 });
+
+
+test("Houston Checkbook ingestion failure reports the last committed checkpoint", async () => {
+  const fixture = createFixture({ resources: [resource(2025)] });
+  let calls = 0;
+  fixture.client.fetchPage = async (selected, inputPage) => {
+    calls += 1;
+    if (calls === 2) throw new TypeError("fetch failed");
+    return {
+      fields: [{ id: "_id", type: "int" }],
+      records: [{ _id: 1 }, { _id: 2 }],
+      total: 3,
+      limit: inputPage.limit,
+      offset: inputPage.offset,
+    };
+  };
+
+  await assert.rejects(
+    () =>
+      runHoustonCheckbookIngestion({
+        client: fixture.client,
+        dependencies: fixture.dependencies,
+        mode: "backfill",
+        pageSize: 2,
+      }),
+    /lastCheckpoint=.*"resourceId":"resource-2025".*"offset":2/,
+  );
+
+  assert.equal(fixture.persistedPages.length, 1);
+  assert.deepEqual(fixture.finishes[0]?.checkpoint, {
+    mode: "backfill",
+    fiscalYear: 2025,
+    resourceId: "resource-2025",
+    offset: 2,
+    pageSize: 2,
+    resourceComplete: false,
+  });
+});
