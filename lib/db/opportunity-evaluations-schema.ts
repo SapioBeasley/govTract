@@ -9,7 +9,7 @@ import { companyProfiles } from "./canonical-schema";
 import { opportunities } from "./schema";
 import { solicitationUnderstandings } from "./solicitation-understandings-schema";
 
-const jsonArray = sql\`'[]'::jsonb\`;
+const jsonArray = sql`'[]'::jsonb`;
 
 export const opportunityEvaluations = pgTable(
   "opportunity_evaluations",
@@ -46,7 +46,7 @@ export const opportunityEvaluations = pgTable(
     ),
     check(
       "opportunity_evaluations_assessment_check",
-      sql\`${table.assessment} IN ('go', 'conditional', 'no_go')\`,
+      sql`${table.assessment} IN ('go', 'conditional', 'no_go')`,
     ),
   ],
 );
@@ -77,7 +77,7 @@ export const opportunityEvaluationDecisions = pgTable(
     index("opportunity_evaluation_decisions_decision_idx").on(table.decision, table.updatedAt),
     check(
       "opportunity_evaluation_decisions_value_check",
-      sql\`${table.decision} IN ('pursue', 'do_not_pursue', 'revisit')\`,
+      sql`${table.decision} IN ('pursue', 'do_not_pursue', 'revisit')`,
     ),
   ],
 );
