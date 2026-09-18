@@ -121,14 +121,29 @@ function sourceContext(resource: HoustonCheckbookResource): HistoricalProcuremen
 function selectResources(
   resources: readonly HoustonCheckbookResource[],
   mode: HoustonCheckbookIngestionMode,
+  fiscalYears?: readonly number[],
 ) {
   if (resources.length === 0) {
     throw new Error("Houston Checkbook discovery returned no ingestible resources");
   }
-  if (mode === "backfill") return [...resources].sort((a, b) => a.fiscalYear - b.fiscalYear);
 
-  const newestYear = Math.max(...resources.map((resource) => resource.fiscalYear));
-  return resources
+  const requestedYears = fiscalYears ? new Set(fiscalYears) : null;
+  const eligible = requestedYears
+    ? resources.filter((resource) => requestedYears.has(resource.fiscalYear))
+    : [...resources];
+
+  if (requestedYears && eligible.length === 0) {
+    throw new Error(
+      `Houston Checkbook discovery returned no requested fiscal years: ${[...requestedYears].join(",")}`,
+    );
+  }
+
+  if (mode === "backfill" || requestedYears) {
+    return eligible.sort((a, b) => a.fiscalYear - b.fiscalYear);
+  }
+
+  const newestYear = Math.max(...eligible.map((resource) => resource.fiscalYear));
+  return eligible
     .filter((resource) => resource.fiscalYear === newestYear)
     .sort((a, b) => a.resourceId.localeCompare(b.resourceId));
 }
@@ -160,6 +175,7 @@ export async function runHoustonCheckbookIngestion(input: {
   mode: HoustonCheckbookIngestionMode;
   pageSize?: number;
   maxPages?: number;
+  fiscalYears?: readonly number[];
   resume?: {
     resourceId: string;
     offset: number;
@@ -181,8 +197,15 @@ export async function runHoustonCheckbookIngestion(input: {
     throw new Error(`Invalid Houston Checkbook resume offset: ${input.resume.offset}`);
   }
 
+  if (
+    input.fiscalYears &&
+    input.fiscalYears.some((year) => !Number.isInteger(year) || year < 2000 || year > 2200)
+  ) {
+    throw new Error("Houston Checkbook fiscal-year filters must be four-digit years");
+  }
+
   const discovered = await input.client.discoverResources();
-  let resources = selectResources(discovered, input.mode);
+  let resources = selectResources(discovered, input.mode, input.fiscalYears);
 
   if (input.resume) {
     const resumeIndex = resources.findIndex(
@@ -206,6 +229,7 @@ export async function runHoustonCheckbookIngestion(input: {
       pageSize,
       maxPages,
       resourceIds: resources.map((resource) => resource.resourceId),
+      fiscalYears: resources.map((resource) => resource.fiscalYear),
       ...(input.resume ? { resume: input.resume } : {}),
     },
   });
