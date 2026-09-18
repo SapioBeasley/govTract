@@ -93,3 +93,22 @@ test("temporary issue-specific route probe workflow has been removed", async () 
   const files = await readdir(".github/workflows");
   assert.ok(!files.includes("issue-69-route-probe.yml"));
 });
+
+
+test("Houston Checkbook ingestion is manual, bounded, and isolated from PR validation", async () => {
+  const content = await workflow(".github/workflows/houston-checkbook.yml");
+
+  assert.match(content, /^\s{2}workflow_dispatch:\s*$/m);
+  assert.match(content, /mode:/);
+  assert.match(content, /page_size:/);
+  assert.match(content, /max_pages:/);
+  assert.match(content, /fiscal_year:/);
+  assert.match(content, /resume_resource:/);
+  assert.match(content, /resume_offset:/);
+  assert.match(content, /DATABASE_URL:\s*\$\{\{ secrets\.DATABASE_URL \}\}/);
+  assert.match(content, /npm run db:migrate -- --baseline-existing/);
+  assert.match(content, /npm run ingest:houston-checkbook/);
+  assert.doesNotMatch(content, /^\s{2}pull_request:\s*$/m);
+  assert.doesNotMatch(content, /^\s{2}schedule:\s*$/m);
+  assert.doesNotMatch(content, /GEMINI_API_KEY/);
+});
