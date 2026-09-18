@@ -38,6 +38,10 @@ export interface HoustonCheckbookPage {
   offset: number;
 }
 
+type Sleep = (milliseconds: number) => Promise<void>;
+
+class NonRetryableHoustonCkanError extends Error {}
+
 function nonblank(value: unknown) {
   if (typeof value !== "string") return null;
   const text = value.trim();
@@ -49,6 +53,27 @@ function resourceFiscalYear(name: unknown) {
   if (!text) return null;
   const match = /^Checkbook\s+(\d{4})$/i.exec(text);
   return match ? Number(match[1]) : null;
+}
+
+function retryableHttpStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function errorText(error: unknown) {
+  if (!(error instanceof Error)) return String(error);
+  const cause =
+    error.cause instanceof Error
+      ? error.cause.message
+      : error.cause == null
+        ? null
+        : String(error.cause);
+  return cause && cause !== error.message ? `${error.message}: ${cause}` : error.message;
+}
+
+function defaultSleep(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 export function extractHoustonCheckbookResources(pkg: CkanPackage): HoustonCheckbookResource[] {
@@ -93,30 +118,73 @@ export function extractHoustonCheckbookResources(pkg: CkanPackage): HoustonCheck
 export class HoustonCheckbookClient {
   readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestAttempts: number;
+  private readonly sleepImpl: Sleep;
 
-  constructor(input?: { baseUrl?: string; fetchImpl?: typeof fetch }) {
+  constructor(input?: {
+    baseUrl?: string;
+    fetchImpl?: typeof fetch;
+    requestAttempts?: number;
+    sleepImpl?: Sleep;
+  }) {
     this.baseUrl = input?.baseUrl ?? HOUSTON_CKAN_ACTION_BASE;
     this.fetchImpl = input?.fetchImpl ?? fetch;
+    this.requestAttempts = input?.requestAttempts ?? 4;
+    this.sleepImpl = input?.sleepImpl ?? defaultSleep;
+
+    if (
+      !Number.isInteger(this.requestAttempts) ||
+      this.requestAttempts < 1 ||
+      this.requestAttempts > 10
+    ) {
+      throw new Error(`Invalid Houston CKAN requestAttempts: ${this.requestAttempts}`);
+    }
   }
 
   private async request<T>(path: string): Promise<T> {
-    const response = await this.fetchImpl(`${this.baseUrl}/${path}`, {
-      headers: {
-        accept: "application/json",
-        "user-agent": "govTract-houston-checkbook/1.0",
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
+    let lastError: unknown = new Error("unknown Houston CKAN request failure");
 
-    if (!response.ok) {
-      throw new Error(`Houston CKAN request failed with HTTP ${response.status}: ${path}`);
+    for (let attempt = 1; attempt <= this.requestAttempts; attempt += 1) {
+      try {
+        const response = await this.fetchImpl(`${this.baseUrl}/${path}`, {
+          headers: {
+            accept: "application/json",
+            "user-agent": "govTract-houston-checkbook/1.0",
+          },
+          signal: AbortSignal.timeout(30_000),
+        });
+
+        if (!response.ok) {
+          const error = new Error(
+            `Houston CKAN request failed with HTTP ${response.status}: ${path}`,
+          );
+          if (!retryableHttpStatus(response.status)) {
+            throw new NonRetryableHoustonCkanError(error.message);
+          }
+          throw error;
+        }
+
+        const envelope = (await response.json()) as CkanEnvelope<T>;
+        if (!envelope.success || envelope.result === undefined) {
+          throw new NonRetryableHoustonCkanError(
+            `Houston CKAN request failed: ${path}`,
+          );
+        }
+        return envelope.result;
+      } catch (error) {
+        if (error instanceof NonRetryableHoustonCkanError) throw error;
+        lastError = error;
+        if (attempt >= this.requestAttempts) break;
+
+        const delay = 500 * 2 ** (attempt - 1);
+        await this.sleepImpl(delay);
+      }
     }
 
-    const envelope = (await response.json()) as CkanEnvelope<T>;
-    if (!envelope.success || envelope.result === undefined) {
-      throw new Error(`Houston CKAN request failed: ${path}`);
-    }
-    return envelope.result;
+    throw new Error(
+      `Houston CKAN request failed after ${this.requestAttempts} attempts: ${path}: ${errorText(lastError)}`,
+      { cause: lastError },
+    );
   }
 
   async discoverResources() {
