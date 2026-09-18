@@ -251,6 +251,7 @@ test(
         runId,
         records: [valid, malformed],
         context: context(fixture.resourceId, "hash-v1"),
+        pageNumber: 7,
       });
 
       assert.deepEqual(result, {
@@ -279,8 +280,8 @@ test(
           GROUP BY sr.source_record_id, sr.raw_payload
           ORDER BY sr.source_record_id
         `;
-        const [errorCount] = await sql<{ count: number }[]>`
-          SELECT count(*)::int AS count
+        const [errorCount] = await sql<{ count: number; page_number: number }[]>`
+          SELECT count(*)::int AS count, min(page_number)::int AS page_number
           FROM ingestion_record_errors
           WHERE ingestion_run_id = ${runId}
             AND stage = 'historical_normalize'
@@ -299,6 +300,7 @@ test(
           },
         ]);
         assert.equal(errorCount?.count, 1);
+        assert.equal(errorCount?.page_number, 7);
       } finally {
         await sql.end({ timeout: 5 });
       }
