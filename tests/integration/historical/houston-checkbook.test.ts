@@ -194,7 +194,7 @@ test(
           source_revision_id: string;
         }[]>`
           SELECT
-            count(*) OVER ()::int AS count,
+            (count(*) OVER ())::int AS count,
             hpr.amount::text AS amount,
             hpsr.source_file_revision,
             sr.source_revision_id
