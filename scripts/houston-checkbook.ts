@@ -2,6 +2,7 @@ import {
   closeDb,
   finishIngestionRun,
   persistRawIngestionPage,
+  recordPagePersistenceCounts,
   startIngestionRun,
 } from "@/lib/procurement/ingestion/persistence";
 import { persistHistoricalProcurementBatch } from "@/lib/procurement/historical/persistence";
@@ -67,6 +68,7 @@ async function main() {
       startRun: startIngestionRun,
       persistPage: persistRawIngestionPage,
       persistBatch: persistHistoricalProcurementBatch,
+      recordPageCounts: recordPagePersistenceCounts,
       finishRun: finishIngestionRun,
     },
     mode: selectedMode,
