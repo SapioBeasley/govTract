@@ -18,8 +18,10 @@ import {
 } from "lucide-react";
 
 import { OpportunityDocumentList } from "@/components/opportunity-document-list";
+import { OpportunityEvaluationPanel } from "@/components/opportunity-evaluation-panel";
 import { UnderstandingActionButton } from "@/components/understanding-action-button";
 import { getOpportunityDetail } from "@/lib/opportunities/detail";
+import { loadOpportunityEvaluationState } from "@/lib/opportunities/evaluation/service";
 import { loadLatestSolicitationUnderstanding } from "@/lib/procurement/understanding/generation-persistence";
 import type { SolicitationUnderstandingFinding } from "@/lib/procurement/understanding/types";
 
@@ -162,8 +164,27 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
   const opportunity = await getOpportunityDetail(id);
   if (!opportunity) notFound();
 
-  const understanding = await loadLatestSolicitationUnderstanding(opportunity.id);
+  const [understanding, evaluationState] = await Promise.all([
+    loadLatestSolicitationUnderstanding(opportunity.id),
+    loadOpportunityEvaluationState(opportunity.id),
+  ]);
   const understandingContent = understanding?.structuredOutput ?? null;
+  const initialEvaluation = evaluationState.evaluation
+    ? {
+        ...evaluationState.evaluation,
+        evaluatedAt: evaluationState.evaluation.evaluatedAt.toISOString(),
+        createdAt: evaluationState.evaluation.createdAt.toISOString(),
+        updatedAt: evaluationState.evaluation.updatedAt.toISOString(),
+      }
+    : null;
+  const initialDecision = evaluationState.decision
+    ? {
+        ...evaluationState.decision,
+        decidedAt: evaluationState.decision.decidedAt.toISOString(),
+        createdAt: evaluationState.decision.createdAt.toISOString(),
+        updatedAt: evaluationState.decision.updatedAt.toISOString(),
+      }
+    : null;
   const description = toPlainText(opportunity.description);
   const sourceUrl = opportunity.canonicalUrl ?? opportunity.sourceRecord?.canonicalUrl ?? null;
   const sourceRecord = opportunity.sourceRecord;
@@ -264,13 +285,23 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
         </header>
 
         <nav className="mt-5 flex max-w-full gap-2 overflow-x-auto pb-1 text-sm">
-          {["At a Glance", "Understand", "Requirements", "Submission", "Evaluation", "Documents", "Intelligence", "Evidence"].map((label) => (
+          {[
+            { label: "At a Glance", id: "at-a-glance" },
+            { label: "Understand", id: "understand" },
+            { label: "Go / No-Go", id: "go-no-go" },
+            { label: "Requirements", id: "requirements" },
+            { label: "Submission", id: "submission" },
+            { label: "Evaluation Criteria", id: "evaluation-criteria" },
+            { label: "Documents", id: "documents" },
+            { label: "Intelligence", id: "intelligence" },
+            { label: "Evidence", id: "evidence" },
+          ].map((item) => (
             <a
-              key={label}
-              href={`#${label.toLowerCase().replace(/\s+/g, "-")}`}
+              key={item.id}
+              href={`#${item.id}`}
               className="whitespace-nowrap rounded-full border bg-white px-3 py-1.5 font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
             >
-              {label}
+              {item.label}
             </a>
           ))}
         </nav>
@@ -377,6 +408,15 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
             )}
           </Section>
 
+          <Section id="go-no-go" title="Go / No-Go" icon={<ShieldCheck className="size-5" />}>
+            <OpportunityEvaluationPanel
+              opportunityId={opportunity.id}
+              profileAvailable={evaluationState.profileAvailable}
+              initialEvaluation={initialEvaluation}
+              initialDecision={initialDecision}
+            />
+          </Section>
+
           <Section id="requirements" title="Requirements" icon={<ClipboardCheck className="size-5" />}>
             {understandingContent ? (
               <div className="grid min-w-0 gap-3 lg:grid-cols-2">
@@ -425,7 +465,7 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
             ) : null}
           </Section>
 
-          <Section id="evaluation" title="Evaluation" icon={<Scale className="size-5" />}>
+          <Section id="evaluation-criteria" title="Evaluation Criteria" icon={<Scale className="size-5" />}>
             {understandingContent ? (
               <FindingList findings={understandingContent.evaluationCriteria} />
             ) : (
