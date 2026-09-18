@@ -309,7 +309,7 @@ export async function runHoustonCheckbookIngestion(input: {
         await input.dependencies.persistPage({
           runId,
           pageNumber: pagesFetched,
-          cursor: checkpoint,
+          cursor: { ...checkpoint },
           reportedTotal: page.total,
           rawPayload: {
             source: {
@@ -393,11 +393,13 @@ export async function runHoustonCheckbookIngestion(input: {
     reportedTotal: reportedTotal || null,
     pagesFetched,
     recordsSeen: fetched,
-    checkpoint: checkpoint ?? {
-      mode: input.mode,
-      pageSize,
-      complete: false,
-    },
+    checkpoint: checkpoint
+      ? { ...checkpoint }
+      : {
+          mode: input.mode,
+          pageSize,
+          complete: false,
+        },
     paginationComplete,
     normalizationComplete,
     ...(runError ? { error: runError } : {}),
