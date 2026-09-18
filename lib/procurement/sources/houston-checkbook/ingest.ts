@@ -70,6 +70,7 @@ export interface HoustonCheckbookIngestionDependencies {
     runId: string;
     records: readonly HoustonCheckbookRecord[];
     context: HistoricalProcurementSourceContext;
+    pageNumber: number;
   }): Promise<{
     processed: number;
     inserted: number;
@@ -320,6 +321,7 @@ export async function runHoustonCheckbookIngestion(input: {
           runId,
           records,
           context: sourceContext(resource),
+          pageNumber: pagesFetched,
         });
 
         await input.dependencies.persistPage({
