@@ -306,6 +306,13 @@ export async function runHoustonCheckbookIngestion(input: {
           resourceComplete,
         });
 
+        const counts = await input.dependencies.persistBatch({
+          adapter: houstonCheckbookAdapter,
+          runId,
+          records,
+          context: sourceContext(resource),
+        });
+
         await input.dependencies.persistPage({
           runId,
           pageNumber: pagesFetched,
@@ -328,13 +335,6 @@ export async function runHoustonCheckbookIngestion(input: {
             offset: page.offset,
           },
           recordCount: records.length,
-        });
-
-        const counts = await input.dependencies.persistBatch({
-          adapter: houstonCheckbookAdapter,
-          runId,
-          records,
-          context: sourceContext(resource),
         });
 
         fetched += records.length;
