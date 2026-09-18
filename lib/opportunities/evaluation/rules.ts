@@ -134,6 +134,11 @@ function fingerprint(input: OpportunityEvaluationInput) {
     profile: input.profile,
     opportunity: {
       dueAt: input.opportunity.dueAt?.toISOString() ?? null,
+      deadlineState: input.opportunity.dueAt
+        ? input.opportunity.dueAt.getTime() <= input.now.getTime()
+          ? "expired"
+          : "open"
+        : "unknown",
       location: input.opportunity.location,
       classifications: input.opportunity.classifications,
     },
