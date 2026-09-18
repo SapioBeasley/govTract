@@ -149,3 +149,18 @@ test("same inputs produce the same deterministic fingerprint", () => {
   const second = evaluateOpportunityInputs(input());
   assert.equal(first.inputFingerprint, second.inputFingerprint);
 });
+
+
+test("fingerprint is stable within the same deadline state and changes after expiration", () => {
+  const before = input({ now: new Date("2026-09-18T12:00:00Z") });
+  const laterBefore = input({ now: new Date("2026-09-20T12:00:00Z") });
+  const after = input({ now: new Date("2026-10-16T12:00:00Z") });
+
+  const first = evaluateOpportunityInputs(before);
+  const second = evaluateOpportunityInputs(laterBefore);
+  const expired = evaluateOpportunityInputs(after);
+
+  assert.equal(first.inputFingerprint, second.inputFingerprint);
+  assert.notEqual(first.inputFingerprint, expired.inputFingerprint);
+  assert.equal(expired.assessment, "no_go");
+});
