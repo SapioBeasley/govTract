@@ -434,6 +434,7 @@ export async function persistHistoricalProcurementBatch<
   runId: string;
   records: readonly TRawRecord[];
   context: HistoricalProcurementSourceContext;
+  pageNumber?: number;
 }) {
   const counts = {
     processed: input.records.length,
@@ -470,7 +471,7 @@ export async function persistHistoricalProcurementBatch<
 
       await recordIngestionRecordError({
         runId: input.runId,
-        pageNumber: 1,
+        pageNumber: input.pageNumber ?? 1,
         sourceRecordId,
         stage,
         error: error instanceof Error ? error.message : String(error),
