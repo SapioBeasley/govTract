@@ -6,7 +6,7 @@ import {
 } from "@/lib/opportunities/evaluation/persistence";
 import { loadOpportunityEvaluationState } from "@/lib/opportunities/evaluation/service";
 import { updateSavedOpportunity } from "@/lib/opportunities/saved";
-import { publicDecision } from "../route";
+import { serializeOpportunityDecision } from "@/lib/opportunities/evaluation/serialization";
 
 export const runtime = "nodejs";
 
@@ -77,7 +77,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     return NextResponse.json({
-      decision: publicDecision(recorded),
+      decision: serializeOpportunityDecision(recorded),
       savedStatus: saved.status,
       pursuitSnapshotStatus: saved.snapshotStatus,
     });
