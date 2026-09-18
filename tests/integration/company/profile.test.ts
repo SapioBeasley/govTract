@@ -80,44 +80,51 @@ test("default company profile persists all issue 29 fields and updates one recor
   }
 
   const suffix = `${process.pid}-${Date.now()}`;
-  const first = await saveDefaultCompanyProfile({
-    ...completeInput,
-    name: `Company profile test ${suffix}`,
-  });
+  let profileId: string | null = null;
 
-  const updated = await saveDefaultCompanyProfile({
-    ...completeInput,
-    name: `Company profile test ${suffix}`,
-    preferredKeywords: ["pump", "maintenance", "inspection"],
-    preferredContractMax: 1000000,
-    pastPerformance: ["Updated municipal reference."],
-  });
-
-  assert.equal(updated.id, first.id);
-  assert.equal(updated.isDefault, true);
-  assert.deepEqual(updated.productsServices, completeInput.productsServices);
-  assert.deepEqual(updated.preferredIndustries, completeInput.preferredIndustries);
-  assert.deepEqual(updated.preferredKeywords, ["pump", "maintenance", "inspection"]);
-  assert.deepEqual(updated.excludedKeywords, completeInput.excludedKeywords);
-  assert.deepEqual(updated.serviceAreas, completeInput.serviceAreas);
-  assert.equal(updated.preferredContractMin, 25000);
-  assert.equal(updated.preferredContractMax, 1000000);
-  assert.deepEqual(updated.naicsCodes, completeInput.naicsCodes);
-  assert.deepEqual(updated.certifications, completeInput.certifications);
-  assert.deepEqual(updated.statuses, completeInput.statuses);
-  assert.deepEqual(updated.licenses, completeInput.licenses);
-  assert.deepEqual(updated.governmentRegistrations, completeInput.governmentRegistrations);
-  assert.deepEqual(updated.pastPerformance, ["Updated municipal reference."]);
-
-  const loaded = await getDefaultCompanyProfile();
-  assert.equal(loaded?.id, first.id);
-  assert.equal(loaded?.description, completeInput.description);
-
-  await closeDb();
-  const cleanupSql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
   try {
-    await cleanupSql`DELETE FROM company_profiles WHERE id = ${first.id}`;
+    const first = await saveDefaultCompanyProfile({
+      ...completeInput,
+      name: `Company profile test ${suffix}`,
+    });
+    profileId = first.id;
+
+    const updated = await saveDefaultCompanyProfile({
+      ...completeInput,
+      name: `Company profile test ${suffix}`,
+      preferredKeywords: ["pump", "maintenance", "inspection"],
+      preferredContractMax: 1000000,
+      pastPerformance: ["Updated municipal reference."],
+    });
+
+    assert.equal(updated.id, first.id);
+    assert.equal(updated.isDefault, true);
+    assert.deepEqual(updated.productsServices, completeInput.productsServices);
+    assert.deepEqual(updated.preferredIndustries, completeInput.preferredIndustries);
+    assert.deepEqual(updated.preferredKeywords, ["pump", "maintenance", "inspection"]);
+    assert.deepEqual(updated.excludedKeywords, completeInput.excludedKeywords);
+    assert.deepEqual(updated.serviceAreas, completeInput.serviceAreas);
+    assert.equal(updated.preferredContractMin, 25000);
+    assert.equal(updated.preferredContractMax, 1000000);
+    assert.deepEqual(updated.naicsCodes, completeInput.naicsCodes);
+    assert.deepEqual(updated.certifications, completeInput.certifications);
+    assert.deepEqual(updated.statuses, completeInput.statuses);
+    assert.deepEqual(updated.licenses, completeInput.licenses);
+    assert.deepEqual(updated.governmentRegistrations, completeInput.governmentRegistrations);
+    assert.deepEqual(updated.pastPerformance, ["Updated municipal reference."]);
+
+    const loaded = await getDefaultCompanyProfile();
+    assert.equal(loaded?.id, first.id);
+    assert.equal(loaded?.description, completeInput.description);
   } finally {
-    await cleanupSql.end({ timeout: 5 });
+    await closeDb();
+    if (profileId) {
+      const cleanupSql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+      try {
+        await cleanupSql`DELETE FROM company_profiles WHERE id = ${profileId}`;
+      } finally {
+        await cleanupSql.end({ timeout: 5 });
+      }
+    }
   }
 });
