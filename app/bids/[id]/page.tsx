@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { BidWorkspaceControl } from "@/components/bid-workspace-control";
+import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 
@@ -253,32 +254,18 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
           </Section>
 
           <Section title="Response sections" icon={<FileText className="size-5" />}>
-            {workspace.sections.length ? (
-              <div className="grid min-w-0 gap-3">
-                {workspace.sections.map((section) => (
-                  <article key={section.id} className="min-w-0 rounded-xl border p-4">
-                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                      <h3 className="min-w-0 break-words font-semibold [overflow-wrap:anywhere]">
-                        {section.title}
-                      </h3>
-                      <span className="shrink-0 text-xs font-medium capitalize text-[var(--muted-foreground)]">
-                        {section.status.replaceAll("_", " ")}
-                      </span>
-                    </div>
-                    {section.instructions ? (
-                      <p className="mt-2 break-words text-sm leading-6 text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
-                        {section.instructions}
-                      </p>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyState>
-                No response outline exists yet. #42 will build the solicitation-specific response
-                structure without regenerating AI content on workspace load.
-              </EmptyState>
-            )}
+            <BidOutlineControl
+              workspaceId={workspace.id}
+              initialSections={workspace.sections}
+              requirements={workspace.requirements}
+              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
+              sourceReady={
+                snapshot.snapshotStatus === "complete" &&
+                !snapshot.stale &&
+                workspace.sourceRequirements?.completenessStatus === "complete" &&
+                !workspace.sourceRequirements.isStale
+              }
+            />
           </Section>
         </div>
       </div>
