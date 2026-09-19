@@ -4,7 +4,7 @@ import { generateBidSectionDraft } from "@/lib/bids/draft-persistence";
 
 export const runtime = "nodejs";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The only production entrypoint for AI bid drafting: an explicit POST with a fresh click ID. */
 export async function POST(request: Request, context: { params: Promise<{ id: string; sectionId: string }> }) {
