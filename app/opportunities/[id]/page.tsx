@@ -13,7 +13,6 @@ import {
   Info,
   MapPin,
   Scale,
-  ShieldCheck,
   Tag,
 } from "lucide-react";
 
@@ -264,7 +263,7 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
         </header>
 
         <nav className="mt-5 flex max-w-full gap-2 overflow-x-auto pb-1 text-sm">
-          {["At a Glance", "Understand", "Requirements", "Submission", "Evaluation", "Documents", "Intelligence", "Evidence"].map((label) => (
+          {["At a Glance", "Understand", "Requirements", "Submission", "Evaluation Criteria", "Documents", "Evidence"].map((label) => (
             <a
               key={label}
               href={`#${label.toLowerCase().replace(/\s+/g, "-")}`}
@@ -425,7 +424,7 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
             ) : null}
           </Section>
 
-          <Section id="evaluation" title="Evaluation" icon={<Scale className="size-5" />}>
+          <Section id="evaluation-criteria" title="Evaluation Criteria" icon={<Scale className="size-5" />}>
             {understandingContent ? (
               <FindingList findings={understandingContent.evaluationCriteria} />
             ) : (
@@ -439,12 +438,6 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
             ) : (
               <EmptyState>No document metadata is currently attached to this opportunity.</EmptyState>
             )}
-          </Section>
-
-          <Section id="intelligence" title="Intelligence" icon={<ShieldCheck className="size-5" />}>
-            <EmptyState>
-              No reliable historical intelligence has been identified for this opportunity yet. Missing intelligence does not block solicitation review.
-            </EmptyState>
           </Section>
 
           <Section id="evidence" title="Evidence" icon={<Hash className="size-5" />}>
