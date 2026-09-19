@@ -12,7 +12,7 @@ import { bidSections } from "@/lib/db/canonical-schema";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 import { getDb } from "@/lib/db/client";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type BidDraftGenerationSummary = {
   id: string;
