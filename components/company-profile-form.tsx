@@ -262,9 +262,9 @@ export function CompanyProfileForm({
   return (
     <div className="grid min-w-0 gap-5">
       <div className="rounded-2xl border bg-[var(--muted)]/35 p-4 text-sm leading-6 text-[var(--muted-foreground)]">
-        This profile is the factual input for go/no-go evaluation and future bid drafting. Leave
-        unknown qualifications blank rather than guessing; govTract will treat missing information
-        as unknown.
+        This profile keeps bid preparation and AI-assisted drafting grounded in factual company
+        information. Leave unknown qualifications blank rather than guessing so draft content does
+        not invent claims.
       </div>
 
       <Section
@@ -313,7 +313,7 @@ export function CompanyProfileForm({
 
       <Section
         title="Products, services & capabilities"
-        description="Use one item per line. Keep these factual because they will be compared directly against solicitation scope."
+        description="Use one item per line. Keep these factual so bid drafts can use verified company capabilities without inventing claims."
       >
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           <TextAreaField
@@ -388,7 +388,7 @@ export function CompanyProfileForm({
 
       <Section
         title="Qualifications & registrations"
-        description="Enter only current facts. These can become hard blockers when a solicitation requires them."
+        description="Enter only current facts so bid preparation can accurately address solicitation requirements."
       >
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           <TextAreaField
@@ -420,7 +420,7 @@ export function CompanyProfileForm({
 
       <Section
         title="Past performance"
-        description="Add your own relevant project or performance descriptions, one reference per line. Do not add inferred government history here."
+        description="Add your own relevant project or performance descriptions for factual use in bid drafting, one reference per line."
       >
         <TextAreaField
           label="Past-performance references"

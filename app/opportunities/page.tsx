@@ -268,22 +268,12 @@ export default async function OpportunitiesPage({ searchParams }: OpportunitiesP
               {filter.label}
             </Link>
           ))}
-          <button
-            type="button"
-            disabled
-            title="Available after the matching engine is implemented"
-            className="cursor-not-allowed rounded-full border border-dashed bg-[var(--muted)]/50 px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] opacity-70"
+          <Link
+            href="/saved"
+            className="rounded-full border bg-white px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--muted)]"
           >
-            Best Matches · pending match data
-          </button>
-          <button
-            type="button"
-            disabled
-            title="Available after the saved-opportunity pipeline is implemented"
-            className="cursor-not-allowed rounded-full border border-dashed bg-[var(--muted)]/50 px-3 py-1.5 text-sm font-medium text-[var(--muted-foreground)] opacity-70"
-          >
-            Saved · pending saved state
-          </button>
+            Saved
+          </Link>
         </div>
 
         <form method="get" action="/opportunities" className="mt-6 rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
