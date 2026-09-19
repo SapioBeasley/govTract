@@ -134,6 +134,10 @@ function documentSetFingerprint(documents: CurrentDocumentVersion[]) {
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
+export async function getCurrentOpportunityDocumentSetFingerprint(opportunityId: string) {
+  return documentSetFingerprint(await loadCurrentDocumentVersions(opportunityId));
+}
+
 async function loadCurrentDocumentVersions(opportunityId: string) {
   const db = getDb();
   const rows = await db
@@ -201,6 +205,10 @@ async function loadSnapshot(snapshotId: string): Promise<PursuitSnapshot | null>
     .orderBy(asc(pursuitSnapshotDocuments.sourceDocumentKey));
 
   return { ...snapshot, documents };
+}
+
+export async function getPursuitSnapshot(snapshotId: string) {
+  return loadSnapshot(snapshotId);
 }
 
 export async function getLatestPursuitSnapshot(opportunityId: string) {

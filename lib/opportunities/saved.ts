@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { bidWorkspaces } from "@/lib/db/canonical-schema";
 import { savedOpportunities } from "@/lib/db/saved-opportunities-schema";
 import { opportunities } from "@/lib/db/schema";
 import {
@@ -214,6 +215,20 @@ export async function setSavedOpportunitySnapshotStatus(
 
 export async function deleteSavedOpportunity(opportunityId: string): Promise<boolean> {
   const db = getDb();
+  const [workspace] = await db
+    .select({ id: bidWorkspaces.id })
+    .from(bidWorkspaces)
+    .where(
+      and(
+        eq(bidWorkspaces.opportunityId, opportunityId),
+        isNull(bidWorkspaces.companyProfileId),
+      ),
+    )
+    .limit(1);
+  if (workspace) {
+    throw new Error("Saved pursuit cannot be removed while a Bid Workspace exists.");
+  }
+
   const deleted = await db
     .delete(savedOpportunities)
     .where(

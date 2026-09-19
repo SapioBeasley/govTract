@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 
 import { OpportunityDocumentList } from "@/components/opportunity-document-list";
+import { StartBidButton } from "@/components/start-bid-button";
 import { UnderstandingActionButton } from "@/components/understanding-action-button";
+import { getBidWorkspaceForOpportunity } from "@/lib/bids/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/detail";
 import { loadLatestSolicitationUnderstanding } from "@/lib/procurement/understanding/generation-persistence";
 import type { SolicitationUnderstandingFinding } from "@/lib/procurement/understanding/types";
@@ -161,7 +163,10 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
   const opportunity = await getOpportunityDetail(id);
   if (!opportunity) notFound();
 
-  const understanding = await loadLatestSolicitationUnderstanding(opportunity.id);
+  const [understanding, existingWorkspace] = await Promise.all([
+    loadLatestSolicitationUnderstanding(opportunity.id),
+    getBidWorkspaceForOpportunity(opportunity.id),
+  ]);
   const understandingContent = understanding?.structuredOutput ?? null;
   const description = toPlainText(opportunity.description);
   const sourceUrl = opportunity.canonicalUrl ?? opportunity.sourceRecord?.canonicalUrl ?? null;
@@ -249,16 +254,22 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
               </div>
             </div>
 
-            {sourceUrl ? (
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90"
-              >
-                View original source <ExternalLink className="size-4" />
-              </a>
-            ) : null}
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row lg:flex-col">
+              <StartBidButton
+                opportunityId={opportunity.id}
+                workspaceId={existingWorkspace?.id ?? null}
+              />
+              {sourceUrl ? (
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[var(--muted)]"
+                >
+                  View original source <ExternalLink className="size-4" />
+                </a>
+              ) : null}
+            </div>
           </div>
         </header>
 
