@@ -65,6 +65,7 @@ export type BidWorkspaceRequirement = {
   isRequired: boolean;
   status: string;
   effectiveStatus: ComplianceStatus;
+  canMarkComplete: boolean;
   evidence: Record<string, unknown>;
   responseNotes: string | null;
   sortOrder: number;
@@ -278,14 +279,17 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     sourceRequirements,
     requirements: requirements.map((requirement) => ({
       ...requirement,
-      effectiveStatus: isComplianceEvidence(requirement.evidence)
+      effectiveStatus: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
         ? resolveComplianceStatus(
             requirement.status,
             requirement.evidence,
             sourceSnapshot,
-            sourceRequirements?.understandingId ?? null,
+            sourceRequirements.understandingId,
           )
         : "needs_review" as const,
+      canMarkComplete: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
+        ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId) === "complete"
+        : false,
     })),
     sections,
   };
