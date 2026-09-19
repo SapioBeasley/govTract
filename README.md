@@ -1,6 +1,6 @@
 # govTract
 
-govTract is a multi-source government contracting platform focused initially on helping Houston contractors discover, understand, evaluate, and respond to procurement opportunities.
+govTract is a multi-source government contracting platform with two distinct workflows: live opportunity discovery and bidding, plus historical procurement market research. The initial market focus is Houston while the architecture remains source- and geography-agnostic.
 
 ## Stack
 
@@ -58,9 +58,14 @@ npm run build
 npm run db:check
 ```
 
+## Product paths
+
+1. **Opportunities / Bidding** — search aggregated live opportunities, understand the solicitation, pursue it, prepare the response with guarded AI assistance, and submit through the authoritative submission method.
+2. **Historical Procurement / Market Research** — upload or import past government procurement records, analyze what government entities buy, who buys it, recurrence, values, vendors/awardees, and trends, then decide whether a market is worth investigating. This workflow is standalone and does not use the Company profile as market-fit evidence.
+
 ## Application areas
 
-- `/opportunities` — opportunity discovery
+- `/opportunities` — opportunity discovery and solicitation understanding
 - `/saved` — saved/pursuit pipeline
 - `/bids` — bid workspaces
 - `/company` — contractor profile
