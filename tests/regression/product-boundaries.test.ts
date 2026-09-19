@@ -58,7 +58,7 @@ test("locked product paths have no legacy opportunity matching or go/no-go UI co
 
   assert.match(
     readme,
-    /Opportunities.*Market Research|Market Research.*Opportunities/s,
+    /Opportunities[\\s\\S]*Market Research|Market Research[\\s\\S]*Opportunities/,
     "README should document both locked top-level product paths",
   );
 });
