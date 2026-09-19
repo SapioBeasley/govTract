@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { BidWorkspaceRequirement, BidWorkspaceSection } from "@/lib/bids/workspace";
+import type { BidDraftGenerationSummary } from "@/lib/bids/draft-persistence";
+import { BidDraftAction } from "@/components/bid-draft-action";
 
 function SectionEditor({
   workspaceId,
@@ -13,6 +15,8 @@ function SectionEditor({
   onMove,
   first,
   last,
+  sourceReady,
+  generations,
 }: {
   workspaceId: string;
   section: BidWorkspaceSection;
@@ -20,6 +24,8 @@ function SectionEditor({
   onMove: (id: string, offset: number) => Promise<void>;
   first: boolean;
   last: boolean;
+  sourceReady: boolean;
+  generations: BidDraftGenerationSummary[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(section.title);
@@ -123,6 +129,14 @@ function SectionEditor({
           );
         }) : <span>No requirement links; review before drafting.</span>}
       </div>
+      <BidDraftAction
+        workspaceId={workspaceId}
+        sectionId={section.id}
+        currentContent={section.content}
+        unsavedChanges={changed}
+        sourceReady={sourceReady}
+        generations={generations}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={save} disabled={!changed || pending || !title.trim()}
           className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
@@ -143,12 +157,14 @@ export function BidOutlineControl({
   requirements,
   sourceAvailable,
   sourceReady,
+  generations,
 }: {
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
   requirements: BidWorkspaceRequirement[];
   sourceAvailable: boolean;
   sourceReady: boolean;
+  generations: BidDraftGenerationSummary[];
 }) {
   const router = useRouter();
   const [sections, setSections] = useState(initialSections);
@@ -229,7 +245,8 @@ export function BidOutlineControl({
           {sections.map((section, index) => (
             <SectionEditor key={section.id} workspaceId={workspaceId} section={section}
               requirements={requirements} onMove={move} first={index === 0 || pending}
-              last={index === sections.length - 1 || pending} />
+              last={index === sections.length - 1 || pending} sourceReady={sourceReady}
+              generations={generations} />
           ))}
         </>
       )}
