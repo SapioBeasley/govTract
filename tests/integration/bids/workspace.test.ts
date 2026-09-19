@@ -129,6 +129,19 @@ test("workspace creation is idempotent, enters pursuit, and loads without regene
         true, 'missing', '{}'::jsonb, 1
       )
     `;
+    await assert.rejects(
+      () => fixture.sql`
+        INSERT INTO bid_requirements (
+          bid_workspace_id, source_requirement_key, requirement_type, text, is_required,
+          status, evidence, sort_order
+        ) VALUES (
+          ${first.id}, 'qualification:obsolete-status', 'qualification',
+          'Legacy status must be rejected', true, 'open', '{}'::jsonb, 2
+        )
+      `,
+      { code: "23514" },
+      "the new compliance status constraint must reject legacy open values",
+    );
     await fixture.sql`
       INSERT INTO bid_sections (
         bid_workspace_id, title, instructions, content, status, requirement_links,
