@@ -64,7 +64,7 @@ function ComplianceRow({
           {requirement.requirementType.replaceAll("_", " ")}
         </span>
         <span className="rounded-full border px-2.5 py-1">
-          {requirement.isRequired ? "Required" : "Optional"}
+          {evidence?.requirementLevel === "unknown" ? "Mandatory status unknown" : requirement.isRequired ? "Required" : "Optional"}
         </span>
         {requirement.effectiveStatus === "needs_review" ? (
           <span className="rounded-full border px-2.5 py-1">Needs source review</span>
