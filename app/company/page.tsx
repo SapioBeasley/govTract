@@ -28,7 +28,7 @@ export default async function CompanyPage() {
     <SectionShell
       eyebrow="Profile"
       title="Company"
-      description="Maintain the factual capabilities, qualifications, geography, registrations, and past performance used for go/no-go evaluation and bid drafting."
+      description="Maintain factual contractor information used for bid preparation, AI-assisted drafting, and your own reference."
       icon={Building2}
     >
       <CompanyProfileForm initialProfile={initialProfile} />
