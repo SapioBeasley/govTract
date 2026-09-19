@@ -113,7 +113,7 @@ export function planComplianceMatrix(input: {
         understandingId: input.understandingId,
         sourceRequirementId: requirement.id,
         sourceFindingKey: requirement.sourceFindingKey,
-        requirementLevel: requirement.level,
+        requirementLevel: requirement.level as ComplianceEvidence["requirementLevel"],
         pursuitSnapshotId: snapshot.pursuitSnapshotId,
         references,
         issues: [...issues],
