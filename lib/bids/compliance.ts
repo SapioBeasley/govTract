@@ -29,6 +29,7 @@ export type ComplianceEvidence = {
   understandingId: string;
   sourceRequirementId: string;
   sourceFindingKey: string;
+  requirementLevel: "required" | "optional" | "unknown";
   pursuitSnapshotId: string | null;
   references: ComplianceEvidenceReference[];
   issues: string[];
@@ -84,6 +85,7 @@ export function planComplianceMatrix(input: {
       issues.add("authoritative_document_set_changed");
     }
     if (requirement.evidence.length === 0) issues.add("requirement_evidence_missing");
+    if (requirement.level === "unknown") issues.add("requirement_requiredness_unknown");
 
     const references = requirement.evidence.map((evidence) => {
       const document = snapshotDocuments.get(evidence.opportunityDocumentVersionId);
@@ -105,12 +107,13 @@ export function planComplianceMatrix(input: {
       sourceRequirementKey: `${input.understandingId}:${requirement.id}`,
       requirementType: requirement.type,
       text: requirement.text,
-      isRequired: requirement.level !== "optional",
+      isRequired: requirement.level === "required",
       status: issues.size > 0 ? "needs_review" : "missing",
       evidence: {
         understandingId: input.understandingId,
         sourceRequirementId: requirement.id,
         sourceFindingKey: requirement.sourceFindingKey,
+        requirementLevel: requirement.level,
         pursuitSnapshotId: snapshot.pursuitSnapshotId,
         references,
         issues: [...issues],
@@ -138,7 +141,7 @@ export function resolveComplianceStatus(
     snapshot.documentSetFingerprint !== snapshot.currentDocumentSetFingerprint ||
     evidence.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
     evidence.understandingId !== currentUnderstandingId ||
-    evidence.issues.length > 0 ||
+    evidence.issues.some((issue) => issue !== "snapshot_incomplete" && issue !== "evidence_document_unavailable") ||
     evidence.references.length === 0
   ) return "needs_review";
 
