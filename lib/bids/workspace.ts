@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
+import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
+
 import {
   bidRequirements,
   bidSections,
@@ -51,6 +53,7 @@ export type BidWorkspaceSourceSnapshot = {
     filename: string;
     status: string;
     failureCode: string | null;
+    checksumSha256: string | null;
   }>;
 };
 
@@ -61,6 +64,8 @@ export type BidWorkspaceRequirement = {
   text: string;
   isRequired: boolean;
   status: string;
+  effectiveStatus: ComplianceStatus;
+  canMarkComplete: boolean;
   evidence: Record<string, unknown>;
   responseNotes: string | null;
   sortOrder: number;
@@ -193,6 +198,7 @@ async function loadSourceSnapshot(
         filename: document.filename,
         status: document.status,
         failureCode: document.failureCode,
+        checksumSha256: document.checksumSha256,
       })) ?? [],
   };
 }
@@ -271,7 +277,20 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     notes: state.notes,
     sourceSnapshot,
     sourceRequirements,
-    requirements,
+    requirements: requirements.map((requirement) => ({
+      ...requirement,
+      effectiveStatus: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
+        ? resolveComplianceStatus(
+            requirement.status,
+            requirement.evidence,
+            sourceSnapshot,
+            sourceRequirements.understandingId,
+          )
+        : "needs_review" as const,
+      canMarkComplete: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
+        ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId) === "complete"
+        : false,
+    })),
     sections,
   };
 }

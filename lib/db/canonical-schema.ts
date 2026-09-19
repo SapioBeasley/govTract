@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -341,7 +342,7 @@ export const bidRequirements = pgTable(
     requirementType: text("requirement_type").notNull(),
     text: text("text").notNull(),
     isRequired: boolean("is_required").notNull().default(true),
-    status: text("status").notNull().default("open"),
+    status: text("status").notNull().default("missing"),
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default(jsonObject),
     responseNotes: text("response_notes"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -349,8 +350,12 @@ export const bidRequirements = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("bid_requirements_workspace_source_uidx")
+      .on(table.bidWorkspaceId, table.sourceRequirementKey)
+      .where(sql`${table.sourceRequirementKey} IS NOT NULL`),
     index("bid_requirements_workspace_order_idx").on(table.bidWorkspaceId, table.sortOrder),
     index("bid_requirements_workspace_status_idx").on(table.bidWorkspaceId, table.status),
+    check("bid_requirements_response_status_check", sql`${table.status} IN ('missing', 'drafting', 'complete', 'needs_review', 'not_applicable')`),
   ],
 );
 

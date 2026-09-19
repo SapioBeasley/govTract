@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { BidWorkspaceControl } from "@/components/bid-workspace-control";
+import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 
 export const dynamic = "force-dynamic";
@@ -238,27 +239,17 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
           </Section>
 
           <Section title="Compliance requirements" icon={<CheckCircle2 className="size-5" />}>
-            {workspace.requirements.length ? (
-              <div className="grid min-w-0 gap-2">
-                {workspace.requirements.map((requirement) => (
-                  <div key={requirement.id} className="min-w-0 rounded-lg border p-3">
-                    <div className="flex min-w-0 flex-wrap gap-2 text-xs font-medium text-[var(--muted-foreground)]">
-                      <span className="capitalize">{requirement.status.replaceAll("_", " ")}</span>
-                      <span>·</span>
-                      <span>{requirement.isRequired ? "Required" : "Optional"}</span>
-                    </div>
-                    <p className="mt-1 break-words text-sm leading-6 [overflow-wrap:anywhere]">
-                      {requirement.text}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState>
-                The compliance matrix has not been generated yet. #41 will convert source requirements
-                into actionable bid requirements without changing the solicitation source of truth.
-              </EmptyState>
-            )}
+            <ComplianceMatrixControl
+              workspaceId={workspace.id}
+              requirements={workspace.requirements}
+              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
+              sourceReady={
+                snapshot.snapshotStatus === "complete" &&
+                !snapshot.stale &&
+                workspace.sourceRequirements?.completenessStatus === "complete" &&
+                !workspace.sourceRequirements.isStale
+              }
+            />
           </Section>
 
           <Section title="Response sections" icon={<FileText className="size-5" />}>

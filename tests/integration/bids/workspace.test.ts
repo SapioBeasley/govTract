@@ -126,9 +126,22 @@ test("workspace creation is idempotent, enters pursuit, and loads without regene
         status, evidence, sort_order
       ) VALUES (
         ${first.id}, 'qualification:sbe', 'qualification', 'Provide SBE certification',
-        true, 'open', '{}'::jsonb, 1
+        true, 'missing', '{}'::jsonb, 1
       )
     `;
+    await assert.rejects(
+      () => fixture.sql`
+        INSERT INTO bid_requirements (
+          bid_workspace_id, source_requirement_key, requirement_type, text, is_required,
+          status, evidence, sort_order
+        ) VALUES (
+          ${first.id}, 'qualification:obsolete-status', 'qualification',
+          'Legacy status must be rejected', true, 'open', '{}'::jsonb, 2
+        )
+      `,
+      { code: "23514" },
+      "the new compliance status constraint must reject legacy open values",
+    );
     await fixture.sql`
       INSERT INTO bid_sections (
         bid_workspace_id, title, instructions, content, status, requirement_links,
@@ -163,6 +176,7 @@ test("workspace creation is idempotent, enters pursuit, and loads without regene
     assert.equal(loaded?.id, first.id);
     assert.equal(loadedAgain?.id, first.id);
     assert.equal(loaded?.requirements.length, 1);
+    assert.equal(loaded?.requirements[0]?.status, "missing");
     assert.equal(loaded?.sections.length, 1);
 
     const afterLoad = await fixture.sql<{ snapshots: number; requirements: number; sections: number }[]>`
