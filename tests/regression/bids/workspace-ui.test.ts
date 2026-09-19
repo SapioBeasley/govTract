@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+function source(path: string) {
+  return readFileSync(join(process.cwd(), path), "utf8");
+}
+
+test("Path 1 exposes a real bid workspace and opportunity handoff", () => {
+  const bidsIndex = source("app/bids/page.tsx");
+  const bidDetail = source("app/bids/[id]/page.tsx");
+  const opportunityDetail = source("app/opportunities/[id]/page.tsx");
+  const workspaceService = source("lib/bids/workspace.ts");
+
+  assert.doesNotMatch(bidsIndex, /SectionShell[^\n]*title="Bids"/);
+  assert.match(bidsIndex, /listBidWorkspaces/);
+  assert.match(bidDetail, /Source snapshot/);
+  assert.match(bidDetail, /Source requirements/);
+  assert.match(bidDetail, /Response sections/);
+  assert.match(opportunityDetail, /StartBidButton/);
+  assert.doesNotMatch(
+    workspaceService,
+    /generateSolicitationUnderstanding|Gemini|generateContent|AIProvider/,
+    "opening or creating a Bid Workspace must not invoke AI generation",
+  );
+});

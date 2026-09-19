@@ -323,6 +323,9 @@ export const bidWorkspaces = pgTable(
       table.opportunityId,
       table.companyProfileId,
     ),
+    uniqueIndex("bid_workspaces_single_user_opportunity_uidx")
+      .on(table.opportunityId)
+      .where(sql`${table.companyProfileId} IS NULL`),
     index("bid_workspaces_status_idx").on(table.status, table.updatedAt),
   ],
 );
