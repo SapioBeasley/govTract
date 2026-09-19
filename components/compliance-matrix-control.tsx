@@ -30,9 +30,7 @@ function ComplianceRow({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
-  const canComplete = sourceReady && requirement.effectiveStatus !== "needs_review" || (
-    sourceReady && evidence !== null && requirement.effectiveStatus === "complete"
-  );
+  const canComplete = sourceReady && requirement.canMarkComplete;
 
   async function save() {
     setPending(true);
