@@ -144,6 +144,25 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.equal(modelCalls, 2);
     assert.equal((await listBidDraftGenerations(workspace!.id)).length, 2);
 
+    const editingProvider: BidDraftModelProvider = {
+      ...provider,
+      async generate(prompt) {
+        await updateBidOutlineSection(workspace!.id, section!.id, {
+          content: "Human edit made while the AI request was still running.",
+        });
+        return provider.generate(prompt);
+      },
+    };
+    const raced = await generateBidSectionDraft({
+      workspaceId: workspace!.id, sectionId: section!.id,
+      requestId: randomUUID(), replace: true, provider: editingProvider,
+    });
+    assert.equal(raced.state, "completed");
+    assert.equal(raced.applied, false, "in-flight user edits must never be silently overwritten");
+    const afterRace = await getBidWorkspace(workspace!.id);
+    assert.equal(afterRace?.sections[0]?.content, "Human edit made while the AI request was still running.");
+    assert.equal((await listBidDraftGenerations(workspace!.id)).length, 3);
+
     await sql`
       INSERT INTO opportunity_document_versions (
         opportunity_document_id, version_number, fingerprint, checksum_sha256, name, is_amendment
@@ -155,8 +174,8 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
       () => generateBidSectionDraft({ workspaceId: workspace!.id, sectionId: section!.id,
         requestId: randomUUID(), replace: true, provider }), /changed|stale|snapshot|current/i,
     );
-    assert.equal(modelCalls, 2, "amendment cannot invoke another model call");
-    assert.equal((await listBidDraftGenerations(workspace!.id)).length, 2);
+    assert.equal(modelCalls, 3, "amendment cannot invoke another model call");
+    assert.equal((await listBidDraftGenerations(workspace!.id)).length, 3);
   } finally {
     await closeDb();
     if (sourceId) await sql`DELETE FROM source_records WHERE id = ${sourceId}`;
