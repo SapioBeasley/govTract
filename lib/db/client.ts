@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as canonicalSchema from "./canonical-schema";
+import * as bidDraftGenerationsSchema from "./bid-draft-generations-schema";
 import * as coreSchema from "./schema";
 import * as documentExtractionSchema from "./document-extractions-schema";
 import * as historicalProcurementSchema from "./historical-procurement-schema";
@@ -13,6 +14,7 @@ import * as sourceConnectionSchema from "./source-connections-schema";
 const schema = {
   ...coreSchema,
   ...canonicalSchema,
+  ...bidDraftGenerationsSchema,
   ...documentExtractionSchema,
   ...historicalProcurementSchema,
   ...pursuitSnapshotSchema,
