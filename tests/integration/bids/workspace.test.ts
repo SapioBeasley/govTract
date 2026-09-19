@@ -126,7 +126,7 @@ test("workspace creation is idempotent, enters pursuit, and loads without regene
         status, evidence, sort_order
       ) VALUES (
         ${first.id}, 'qualification:sbe', 'qualification', 'Provide SBE certification',
-        true, 'open', '{}'::jsonb, 1
+        true, 'missing', '{}'::jsonb, 1
       )
     `;
     await fixture.sql`
@@ -163,6 +163,7 @@ test("workspace creation is idempotent, enters pursuit, and loads without regene
     assert.equal(loaded?.id, first.id);
     assert.equal(loadedAgain?.id, first.id);
     assert.equal(loaded?.requirements.length, 1);
+    assert.equal(loaded?.requirements[0]?.status, "missing");
     assert.equal(loaded?.sections.length, 1);
 
     const afterLoad = await fixture.sql<{ snapshots: number; requirements: number; sections: number }[]>`
