@@ -355,7 +355,7 @@ export const bidRequirements = pgTable(
       .where(sql`${table.sourceRequirementKey} IS NOT NULL`),
     index("bid_requirements_workspace_order_idx").on(table.bidWorkspaceId, table.sortOrder),
     index("bid_requirements_workspace_status_idx").on(table.bidWorkspaceId, table.status),
-    check("bid_requirements_response_status_check", sql`${table.status} IN ('open', 'missing', 'drafting', 'complete', 'needs_review', 'not_applicable')`),
+    check("bid_requirements_response_status_check", sql`${table.status} IN ('missing', 'drafting', 'complete', 'needs_review', 'not_applicable')`),
   ],
 );
 
