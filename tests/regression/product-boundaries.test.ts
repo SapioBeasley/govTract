@@ -58,7 +58,11 @@ test("locked product paths have no legacy opportunity matching or go/no-go UI co
 
   assert.match(
     readme,
-    /Opportunities[\\s\\S]*Market Research|Market Research[\\s\\S]*Opportunities/,
-    "README should document both locked top-level product paths",
+    /Opportunities \/ Bidding/,
+    "README should document the Opportunities / Bidding product path",
   );
-});
+  assert.match(
+    readme,
+    /Historical Procurement \/ Market Research/,
+    "README should document the Historical Procurement / Market Research product path",
+  );});
