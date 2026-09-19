@@ -17,6 +17,7 @@ import { BidWorkspaceControl } from "@/components/bid-workspace-control";
 import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { getBidWorkspace } from "@/lib/bids/workspace";
+import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const { id } = await params;
   const workspace = await getBidWorkspace(id);
   if (!workspace) notFound();
+  const generations = await listBidDraftGenerations(workspace.id);
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const snapshot = workspace.sourceSnapshot;
@@ -258,6 +260,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               initialSections={workspace.sections}
               requirements={workspace.requirements}
+              generations={generations}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
               sourceReady={
                 snapshot.snapshotStatus === "complete" &&
