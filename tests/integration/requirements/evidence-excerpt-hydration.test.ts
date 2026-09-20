@@ -98,14 +98,20 @@ test("hydrates legacy null evidence from the exact linked version and checksum w
     assert.equal(loaded.understandingId, understanding.id);
     const references = loaded.requirements[0]?.evidence ?? [];
     assert.equal(references.length, 3);
-    assert.ok(references[0]?.excerpt?.includes("deliver the assembled unit to the City of Houston Cullen Service Center"),
+    // Evidence references are ordered by generated version UUID, not INSERT order.
+    // Identify each assertion by immutable version identity and saved excerpt state.
+    const recovered = references.find((ref) =>
+      ref.opportunityDocumentVersionId === good.id && ref.excerpt !== "Already preserved verbatim proof.");
+    const mismatch = references.find((ref) => ref.opportunityDocumentVersionId === bad.id);
+    const preserved = references.find((ref) => ref.excerpt === "Already preserved verbatim proof.");
+    assert.ok(recovered?.excerpt?.includes("deliver the assembled unit to the City of Houston Cullen Service Center"),
       "legacy null evidence must hydrate the relevant verbatim source passage");
-    assert.ok((references[0]?.excerpt?.length ?? 0) <= 480, "source evidence must be bounded");
-    assert.ok(content.includes(references[0]!.excerpt!), "excerpt must be exact source text, not a paraphrase");
-    assert.equal(references[0]?.documentExtractionSegmentId, segment.id);
-    assert.deepEqual(references[0]?.locator, { page: 2 });
-    assert.equal(references[1]?.excerpt, null, "a linked segment with a mismatched version checksum is not trusted");
-    assert.equal(references[2]?.excerpt, "Already preserved verbatim proof.");
+    assert.ok((recovered?.excerpt?.length ?? 0) <= 480, "source evidence must be bounded");
+    assert.ok(content.includes(recovered!.excerpt!), "excerpt must be exact source text, not a paraphrase");
+    assert.equal(recovered?.documentExtractionSegmentId, segment.id);
+    assert.deepEqual(recovered?.locator, { page: 2 });
+    assert.equal(mismatch?.excerpt, null, "a linked segment with a mismatched version checksum is not trusted");
+    assert.equal(preserved?.opportunityDocumentVersionId, good.id);
     const [saved] = await sql<{ count: number }[]>`
       SELECT count(*) FILTER (WHERE excerpt IS NULL)::int AS count
       FROM solicitation_understanding_evidence WHERE solicitation_understanding_id = ${understanding.id}
