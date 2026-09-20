@@ -273,7 +273,7 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
           </div>
         </header>
 
-        <nav className="mt-5 flex max-w-full gap-2 overflow-x-auto pb-1 text-sm">
+        <nav className="mt-5 flex max-w-full flex-wrap gap-2 pb-1 text-sm" aria-label="Solicitation sections">
           {["At a Glance", "Understand", "Requirements", "Submission", "Evaluation Criteria", "Documents", "Evidence"].map((label) => (
             <a
               key={label}
@@ -436,6 +436,7 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
           </Section>
 
           <Section id="evaluation-criteria" title="Evaluation Criteria" icon={<Scale className="size-5" />}>
+            <p className="mb-3 text-sm text-[var(--muted-foreground)]">These are the buyer’s criteria for evaluating bids, not a market-entry recommendation.</p>
             {understandingContent ? (
               <FindingList findings={understandingContent.evaluationCriteria} />
             ) : (
