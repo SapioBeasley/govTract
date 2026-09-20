@@ -66,3 +66,32 @@ test("locked product paths have no legacy opportunity matching or go/no-go UI co
     /Historical Procurement \/ Market Research/,
     "README should document the Historical Procurement / Market Research product path",
   );});
+
+
+test("opportunity detail remains solicitation-only and supports mobile bid handoff", () => {
+  const detail = source("app/opportunities/[id]/page.tsx");
+  const startBid = source("components/start-bid-button.tsx");
+
+  assert.doesNotMatch(
+    detail,
+    /(?:from|import\s*\()\s*["'][^"']*(?:historical|market-research|opportunity-evaluations)[^"']*["']/i,
+    "Viewing a live opportunity must not load standalone market research or evaluation",
+  );
+  assert.doesNotMatch(detail, /go\s*\/\s*no-go|recurring purchase|market entry/i);
+  assert.match(detail, /getOpportunityDetail\(id\)/);
+  assert.match(detail, /loadLatestSolicitationUnderstanding\(opportunity\.id\)/);
+  assert.match(detail, /<OpportunityDocumentList\b/);
+  assert.match(detail, /<StartBidButton\b/);
+  assert.match(startBid, /\/bids\//, "Start bid must lead to the bid workspace");
+  assert.match(
+    detail,
+    /These are the buyer(?:'|’)s criteria for evaluating bids/,
+    "Evaluation must clearly mean the buyer's solicitation criteria, not market-entry scoring",
+  );
+  assert.match(
+    detail,
+    /<nav className="[^"]*flex-wrap[^"]*"/,
+    "Mobile section navigation must wrap instead of introducing a horizontal scroll region",
+  );
+  assert.match(detail, /overflow-x-clip/);
+});
