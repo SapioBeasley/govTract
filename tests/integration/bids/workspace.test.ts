@@ -279,3 +279,63 @@ test("private source file route rejects unknown and unavailable snapshot documen
     await cleanup(fixture);
   }
 });
+
+
+test("bid workspace routes distinguish valid UUIDs from malformed ids at the HTTP boundary", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    const { GET: getByOpportunity, POST: startBid } = await import(
+      "@/app/api/opportunities/[id]/bid-workspace/route"
+    );
+    const { GET: getByWorkspace } = await import("@/app/api/bids/[id]/route");
+    const opportunityRequest = new Request(
+      `http://localhost/api/opportunities/${fixture.opportunityId}/bid-workspace`,
+    );
+    const opportunityContext = { params: Promise.resolve({ id: fixture.opportunityId }) };
+
+    const beforeCreation = await getByOpportunity(opportunityRequest, opportunityContext);
+    assert.equal(beforeCreation.status, 200, "valid opportunity UUID must not be rejected");
+    assert.deepEqual(await beforeCreation.json(), { workspace: null });
+
+    const created = await startBid(opportunityRequest, opportunityContext);
+    assert.equal(created.status, 200);
+    const first = (await created.json()).workspace;
+    assert.equal(first.opportunityId, fixture.opportunityId);
+
+    const repeated = await startBid(opportunityRequest, opportunityContext);
+    assert.equal(repeated.status, 200);
+    assert.equal((await repeated.json()).workspace.id, first.id, "Start Bid must be idempotent");
+
+    const byOpportunity = await getByOpportunity(opportunityRequest, opportunityContext);
+    assert.equal(byOpportunity.status, 200);
+    assert.equal((await byOpportunity.json()).workspace.id, first.id);
+
+    const missingWorkspace = await getByWorkspace(
+      new Request(`http://localhost/api/bids/${fixture.opportunityId}`),
+      { params: Promise.resolve({ id: fixture.opportunityId }) },
+    );
+    assert.equal(missingWorkspace.status, 404, "a valid non-workspace UUID is not malformed");
+    assert.equal((await missingWorkspace.json()).error.code, "bid_workspace_not_found");
+
+    const byWorkspace = await getByWorkspace(
+      new Request(`http://localhost/api/bids/${first.id}`),
+      { params: Promise.resolve({ id: first.id }) },
+    );
+    assert.equal(byWorkspace.status, 200);
+    assert.equal((await byWorkspace.json()).workspace.id, first.id);
+
+    const malformedContext = { params: Promise.resolve({ id: "not-a-uuid" }) };
+    const invalidGet = await getByOpportunity(opportunityRequest, malformedContext);
+    assert.equal(invalidGet.status, 400);
+    assert.equal((await invalidGet.json()).error.code, "invalid_bid_workspace_request");
+    const invalidPost = await startBid(opportunityRequest, malformedContext);
+    assert.equal(invalidPost.status, 400);
+    const invalidWorkspace = await getByWorkspace(
+      new Request("http://localhost/api/bids/not-a-uuid"), malformedContext,
+    );
+    assert.equal(invalidWorkspace.status, 400);
+    assert.equal((await invalidWorkspace.json()).error.code, "invalid_bid_workspace");
+  } finally {
+    await cleanup(fixture);
+  }
+});
