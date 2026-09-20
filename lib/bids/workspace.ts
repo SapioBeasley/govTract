@@ -126,6 +126,7 @@ export type UpdateBidWorkspaceInput = {
   reviewState?: BidWorkspaceReviewState;
   notes?: string | null;
   confirmedOriginalForms?: string[];
+  humanReviewConfirmed?: boolean;
 };
 
 function metadataState(metadata: Record<string, unknown>) {
@@ -476,6 +477,9 @@ export async function updateBidWorkspace(
   if ((input.status === "complete" || input.reviewState === "approved") &&
       !loaded.finalReview.readyForHumanReview) {
     throw new Error("Resolve every final-review blocker before marking this bid complete or approved");
+  }
+  if (input.reviewState === "approved" && input.humanReviewConfirmed !== true) {
+    throw new Error("Explicit personal review confirmation is required before approval");
   }
   if (input.reviewState === "approved" && input.confirmedOriginalForms !== undefined) {
     throw new Error("Save original form confirmations before completing human review");
