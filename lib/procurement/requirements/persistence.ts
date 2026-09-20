@@ -1,6 +1,8 @@
-import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { documentExtractions, documentExtractionSegments, opportunityDocumentVersionExtractions } from "@/lib/db/document-extractions-schema";
+import { opportunityDocumentVersions } from "@/lib/db/schema";
 import { solicitationRequirements } from "@/lib/db/solicitation-requirements-schema";
 import {
   solicitationUnderstandingEvidence,
@@ -35,6 +37,30 @@ export type SolicitationRequirementSet = {
   isStale: boolean;
   requirements: PersistedSolicitationRequirement[];
 };
+
+const MAX_EVIDENCE_EXCERPT_CHARS = 480;
+
+/** Extract a bounded, verbatim passage from the referenced segment, favoring words in the requirement. */
+function relevantSourcePassage(content: string, requirementText: string): string | null {
+  if (!content.trim()) return null;
+  const terms = new Set((requirementText.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+    .filter((term) => term.length >= 4));
+  const windowSize = MAX_EVIDENCE_EXCERPT_CHARS;
+  const step = Math.floor(windowSize / 2);
+  let best = "";
+  let bestScore = -1;
+  for (let start = 0; start < content.length; start += step) {
+    const passage = content.slice(start, start + windowSize).trim();
+    if (!passage) continue;
+    const found = new Set(passage.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+    const score = [...terms].filter((term) => found.has(term)).length;
+    if (score > bestScore) {
+      best = passage;
+      bestScore = score;
+    }
+  }
+  return best || null;
+}
 
 export async function materializeRequirementsForUnderstanding(understandingId: string) {
   const db = getDb();
@@ -151,6 +177,35 @@ export async function loadLatestSolicitationRequirements(
       asc(solicitationUnderstandingEvidence.id),
     );
 
+  // Older understanding runs pinned the segment/version but left excerpt null.
+  // Hydrate only from the exact extraction linked to that immutable document version,
+  // and only when its extraction checksum matches the recorded document-version checksum.
+  // This is a read-only deterministic recovery: do not regenerate AI understanding or
+  // change the historic evidence record, which may outlive regenerable extraction text.
+  const segmentIds = [...new Set(evidenceRows
+    .filter((evidence) => !evidence.excerpt?.trim() && evidence.documentExtractionSegmentId)
+    .map((evidence) => evidence.documentExtractionSegmentId as string))];
+  const segmentRows = segmentIds.length === 0 ? [] : await db
+    .select({
+      id: documentExtractionSegments.id,
+      content: documentExtractionSegments.content,
+      versionId: opportunityDocumentVersionExtractions.opportunityDocumentVersionId,
+    })
+    .from(documentExtractionSegments)
+    .innerJoin(documentExtractions,
+      eq(documentExtractions.id, documentExtractionSegments.documentExtractionId))
+    .innerJoin(opportunityDocumentVersionExtractions,
+      eq(opportunityDocumentVersionExtractions.documentExtractionId, documentExtractions.id))
+    .innerJoin(opportunityDocumentVersions,
+      eq(opportunityDocumentVersions.id, opportunityDocumentVersionExtractions.opportunityDocumentVersionId))
+    .where(and(
+      inArray(documentExtractionSegments.id, segmentIds),
+      eq(documentExtractions.checksumSha256, opportunityDocumentVersions.checksumSha256),
+    ));
+  const sourceBySegmentAndVersion = new Map(segmentRows.map((segment) => [
+    `${segment.id}:${segment.versionId}`, segment.content,
+  ]));
+
   const evidenceByFinding = new Map<string, SolicitationRequirementEvidence[]>();
   for (const evidence of evidenceRows) {
     const list = evidenceByFinding.get(evidence.findingKey) ?? [];
@@ -165,7 +220,19 @@ export async function loadLatestSolicitationRequirements(
 
   const requirements = rows.map((row) => ({
     ...row,
-    evidence: evidenceByFinding.get(row.sourceFindingKey) ?? [],
+    evidence: (evidenceByFinding.get(row.sourceFindingKey) ?? []).map((evidence) => ({
+      ...evidence,
+      excerpt: evidence.excerpt?.trim()
+        ? evidence.excerpt
+        : evidence.documentExtractionSegmentId
+          ? relevantSourcePassage(
+              sourceBySegmentAndVersion.get(
+                `${evidence.documentExtractionSegmentId}:${evidence.opportunityDocumentVersionId}`,
+              ) ?? "",
+              row.text,
+            )
+          : null,
+    })),
   }));
   const incompleteReasons = new Set<string>();
   if (understanding.incompleteReason) incompleteReasons.add(understanding.incompleteReason);

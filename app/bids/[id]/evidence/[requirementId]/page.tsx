@@ -17,6 +17,16 @@ export default async function ComplianceEvidencePage({ params }: Props) {
   if (!requirement || !isComplianceEvidence(requirement.evidence)) notFound();
 
   const evidence = requirement.evidence;
+  // An older compliance row may predate read-side hydration of its source excerpt.
+  // Resolve only against the same immutable understanding and pinned snapshot.
+  const currentSourceRequirement =
+    workspace.sourceRequirements?.understandingId === evidence.understandingId &&
+    workspace.sourceSnapshot.pursuitSnapshotId === evidence.pursuitSnapshotId &&
+    !workspace.sourceSnapshot.stale
+      ? workspace.sourceRequirements.requirements.find(
+          (source) => source.id === evidence.sourceRequirementId,
+        )
+      : null;
   const historicalSnapshot = evidence.pursuitSnapshotId
     ? await getPursuitSnapshot(evidence.pursuitSnapshotId)
     : null;
@@ -51,6 +61,16 @@ export default async function ComplianceEvidencePage({ params }: Props) {
                 ? documentsById.get(reference.snapshotDocumentId)
                 : null;
               const matchesVersion = historicalDocument?.opportunityDocumentVersionId === reference.opportunityDocumentVersionId;
+              const hydratedExcerpt =
+                matchesVersion &&
+                historicalDocument?.status === "stored" &&
+                historicalDocument.checksumSha256 === reference.checksumSha256
+                  ? currentSourceRequirement?.evidence.find((sourceReference) =>
+                      sourceReference.opportunityDocumentVersionId === reference.opportunityDocumentVersionId &&
+                      sourceReference.documentExtractionSegmentId === reference.documentExtractionSegmentId
+                    )?.excerpt
+                  : null;
+              const excerpt = reference.excerpt?.trim() ? reference.excerpt : hydratedExcerpt;
               return (
                 <section key={`${reference.opportunityDocumentVersionId}-${index}`} className="min-w-0 rounded-xl border bg-white p-4">
                   <h2 className="min-w-0 break-words font-semibold [overflow-wrap:anywhere]">
@@ -62,7 +82,7 @@ export default async function ComplianceEvidencePage({ params }: Props) {
                     <div><dt className="font-semibold">SHA-256</dt><dd className="break-all">{reference.checksumSha256 ?? "Unavailable"}</dd></div>
                     <div><dt className="font-semibold">Historical source state</dt><dd className="break-words">{matchesVersion ? historicalDocument?.status : "Version not matched in pinned snapshot"}</dd></div>
                     <div><dt className="font-semibold">Location</dt><dd className="break-words [overflow-wrap:anywhere]">{JSON.stringify(reference.locator)}</dd></div>
-                    {reference.excerpt ? <div><dt className="font-semibold">Extracted evidence</dt><dd className="break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{reference.excerpt}</dd></div> : null}
+                    {excerpt ? <div><dt className="font-semibold">Extracted evidence</dt><dd className="break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{excerpt}</dd></div> : null}
                   </dl>
                 </section>
               );
