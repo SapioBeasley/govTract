@@ -124,9 +124,14 @@ export function SavedOpportunityControl({
   }
 
   async function update() {
+    const submitting = status === "submitted" && saved?.status !== "submitted";
+    if (submitting && !window.confirm(
+      "Have you actually submitted this bid through the authoritative external channel and verified its receipt? Opening the portal or preparing the package does not count as submission."
+    )) return;
     const isoDeadline = internalDeadline ? new Date(internalDeadline).toISOString() : null;
     const result = await request("PATCH", {
       status,
+      ...(submitting ? { submissionConfirmed: true } : {}),
       notes: notes.trim() || null,
       priority,
       internalDeadline: isoDeadline,
