@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
+import { evaluateBidFinalReview } from "@/lib/bids/final-review";
 
 import {
   bidRequirements,
@@ -90,9 +91,13 @@ export type BidWorkspaceRecord = {
   opportunityTitle: string;
   agencyName: string | null;
   dueAt: Date | null;
+  submissionUrl: string | null;
   status: BidWorkspaceStatus;
   reviewState: BidWorkspaceReviewState;
   notes: string | null;
+  confirmedOriginalForms: string[];
+  finalReview: ReturnType<typeof evaluateBidFinalReview>;
+  finalReviewApprovalCurrent: boolean;
   sourceSnapshot: BidWorkspaceSourceSnapshot;
   sourceRequirements: Awaited<ReturnType<typeof loadLatestSolicitationRequirements>>;
   requirements: BidWorkspaceRequirement[];
@@ -120,6 +125,7 @@ export type UpdateBidWorkspaceInput = {
   status?: BidWorkspaceStatus;
   reviewState?: BidWorkspaceReviewState;
   notes?: string | null;
+  confirmedOriginalForms?: string[];
 };
 
 function metadataState(metadata: Record<string, unknown>) {
@@ -213,6 +219,7 @@ async function selectWorkspace(workspaceId: string) {
       opportunityTitle: opportunities.title,
       agencyName: opportunities.agencyName,
       dueAt: opportunities.dueAt,
+      submissionUrl: opportunities.canonicalUrl,
       status: bidWorkspaces.status,
       sourceSnapshot: bidWorkspaces.sourceSnapshot,
       metadata: bidWorkspaces.metadata,
@@ -270,7 +277,13 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
   ]);
 
   const state = metadataState(row.metadata ?? {});
-  return {
+  const confirmedOriginalForms =
+    row.metadata?.originalFormsFingerprint === sourceSnapshot.documentSetFingerprint &&
+    !sourceSnapshot.stale &&
+    Array.isArray(row.metadata?.confirmedOriginalForms)
+      ? row.metadata.confirmedOriginalForms.filter((id): id is string => typeof id === "string")
+      : [];
+  const workspace = {
     ...row,
     status: row.status,
     reviewState: state.reviewState,
@@ -292,6 +305,23 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
         : false,
     })),
     sections,
+  };
+  const finalReview = evaluateBidFinalReview({
+    workspace,
+    portalUrl: row.submissionUrl,
+    confirmedOriginalForms,
+  });
+  const finalReviewApprovalCurrent = state.reviewState === "approved" &&
+    row.metadata?.finalReviewApprovalFingerprint === finalReview.reviewFingerprint &&
+    finalReview.readyForHumanReview;
+  return {
+    ...workspace,
+    confirmedOriginalForms,
+    finalReview: {
+      ...finalReview,
+      readyForExternalSubmission: finalReviewApprovalCurrent,
+    },
+    finalReviewApprovalCurrent,
   };
 }
 
@@ -423,9 +453,33 @@ export async function updateBidWorkspace(
   if (input.notes !== undefined && input.notes !== null && input.notes.length > 20_000) {
     throw new Error("Bid workspace notes are too long");
   }
+  if (input.confirmedOriginalForms !== undefined && (
+    !Array.isArray(input.confirmedOriginalForms) ||
+    input.confirmedOriginalForms.some((id) => typeof id !== "string") ||
+    new Set(input.confirmedOriginalForms).size !== input.confirmedOriginalForms.length
+  )) {
+    throw new Error("Original source form confirmations must be a unique array of requirement ids");
+  }
 
   const row = await selectWorkspace(workspaceId);
   if (!row) throw new Error("Bid workspace was not found");
+
+  const loaded = await getBidWorkspace(workspaceId);
+  if (!loaded) throw new Error("Bid workspace was not found");
+  if (input.confirmedOriginalForms !== undefined) {
+    const validIds = new Set(loaded.finalReview.sourceChecks
+      .filter((check) => check.originalRequired).map((check) => check.requirementId));
+    if (input.confirmedOriginalForms.some((id) => !validIds.has(id))) {
+      throw new Error("Original form confirmation does not match a current mandatory source form");
+    }
+  }
+  if ((input.status === "complete" || input.reviewState === "approved") &&
+      !loaded.finalReview.readyForHumanReview) {
+    throw new Error("Resolve every final-review blocker before marking this bid complete or approved");
+  }
+  if (input.reviewState === "approved" && input.confirmedOriginalForms !== undefined) {
+    throw new Error("Save original form confirmations before completing human review");
+  }
 
   const current = metadataState(row.metadata ?? {});
   const metadata: Record<string, unknown> = {
@@ -436,6 +490,17 @@ export async function updateBidWorkspace(
     const notes = input.notes?.trim() || null;
     if (notes) metadata.notes = notes;
     else delete metadata.notes;
+  }
+  if (input.confirmedOriginalForms !== undefined) {
+    metadata.confirmedOriginalForms = input.confirmedOriginalForms;
+    metadata.originalFormsFingerprint = loaded.sourceSnapshot.documentSetFingerprint;
+    delete metadata.finalReviewApprovalFingerprint;
+    if (metadata.reviewState === "approved") metadata.reviewState = "needs_changes";
+  }
+  if (input.reviewState === "approved") {
+    metadata.finalReviewApprovalFingerprint = loaded.finalReview.reviewFingerprint;
+  } else if (input.reviewState !== undefined) {
+    delete metadata.finalReviewApprovalFingerprint;
   }
 
   const db = getDb();
