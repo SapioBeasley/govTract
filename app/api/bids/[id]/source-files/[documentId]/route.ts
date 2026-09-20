@@ -8,7 +8,7 @@ import { pursuitSnapshotDocuments, sourceBinaryArtifacts } from "@/lib/db/pursui
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Context = { params: Promise<{ id: string; documentId: string }> };
 
