@@ -13,7 +13,7 @@ function fixture() {
     pursuitSnapshotId: "snapshot-1",
     documentSetFingerprint: fingerprint,
     currentDocumentSetFingerprint: fingerprint,
-    snapshotStatus: "complete" as const,
+    snapshotStatus: "complete" as "complete" | "incomplete" | "blocked" | "unknown",
     stale: false,
     staleReason: null,
     supersedesSnapshotId: null,
