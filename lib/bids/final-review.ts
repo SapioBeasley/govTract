@@ -57,8 +57,11 @@ const submissionTypes = new Set([
 function originalFormRequired(type: string, text: string, details: Record<string, unknown>) {
   if (details.requiredOriginalForm === true || details.templateRequired === true) return true;
   if (type === "form") return true;
-  return (type === "pricing" || type === "certification" || type === "submission_instruction") &&
-    /\b(?:original (?:form|template)|pricing (?:sheet|worksheet|form)|(?:signed|completed) (?:form|affidavit)|provided (?:form|template))\b/i.test(text);
+  if (type === "submission_instruction") {
+    return /\\b(?:original (?:form|template)|provided (?:form|template))\\b/i.test(text);
+  }
+  return (type === "pricing" || type === "certification") &&
+    /\\b(?:original (?:form|template)|pricing (?:sheet|worksheet|form)|(?:signed|completed) (?:form|affidavit)|provided (?:form|template))\\b/i.test(text);
 }
 
 function explicitOriginalFileNames(details: Record<string, unknown>, text: string, filenames: string[]) {
