@@ -101,13 +101,33 @@ test("saved opportunities can move through terminal pursuit statuses and be remo
     await saveOpportunity({ opportunityId: fixture.opportunityId });
     await updateSavedOpportunity(fixture.opportunityId, { status: "reviewing" });
     await updateSavedOpportunity(fixture.opportunityId, { status: "pursuing" });
-    await updateSavedOpportunity(fixture.opportunityId, { status: "submitted" });
+    await updateSavedOpportunity(fixture.opportunityId, { status: "submitted", submissionConfirmed: true });
     await updateSavedOpportunity(fixture.opportunityId, { status: "won" });
 
     assert.equal((await getSavedOpportunity(fixture.opportunityId))?.status, "won");
 
     await deleteSavedOpportunity(fixture.opportunityId);
     assert.equal(await getSavedOpportunity(fixture.opportunityId), null);
+  } finally {
+    await cleanup(fixture.sourceRecordId);
+  }
+});
+
+test("Submitted requires explicit confirmation of actual external submission, never a ready checklist", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    await saveOpportunity({ opportunityId: fixture.opportunityId });
+    await assert.rejects(() => updateSavedOpportunity(fixture.opportunityId, { status: "submitted" }),
+      /confirm.*external submission/i);
+    assert.equal((await getSavedOpportunity(fixture.opportunityId))?.status, "saved");
+    const confirmed = await updateSavedOpportunity(fixture.opportunityId, {
+      status: "submitted", submissionConfirmed: true,
+    });
+    assert.equal(confirmed.status, "submitted");
+    const notesOnly = await updateSavedOpportunity(fixture.opportunityId, {
+      status: "submitted", notes: "Receipt verified at the external portal.",
+    });
+    assert.equal(notesOnly.status, "submitted", "editing an already submitted record is not a new submission");
   } finally {
     await cleanup(fixture.sourceRecordId);
   }
