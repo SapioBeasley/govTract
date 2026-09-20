@@ -37,6 +37,8 @@ export type SavedOpportunityRecord = {
 
 export type UpdateSavedOpportunityInput = {
   status?: SavedOpportunityStatus;
+  /** Confirmed by the user after completing the authoritative external submission. */
+  submissionConfirmed?: boolean;
   notes?: string | null;
   priority?: number;
   internalDeadline?: Date | null;
@@ -150,6 +152,10 @@ export async function updateSavedOpportunity(
 
   if (input.status !== undefined && !isSavedOpportunityStatus(input.status)) {
     throw new Error("Invalid saved opportunity status.");
+  }
+  if (input.status === "submitted" && existing.status !== "submitted" &&
+      input.submissionConfirmed !== true) {
+    throw new Error("Confirm actual external submission before marking this opportunity Submitted.");
   }
   if (input.priority !== undefined) validatePriority(input.priority);
   if (input.internalDeadline !== undefined && input.internalDeadline !== null) {
