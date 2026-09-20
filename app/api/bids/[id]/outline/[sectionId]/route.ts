@@ -4,7 +4,7 @@ import { updateBidOutlineSection, type UpdateBidOutlineSectionInput } from "@/li
 
 export const runtime = "nodejs";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; sectionId: string }> }) {
   const { id, sectionId } = await context.params;
