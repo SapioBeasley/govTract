@@ -237,3 +237,45 @@ test("workspace read model surfaces a newer authoritative document set as stale 
     await cleanup(fixture);
   }
 });
+
+test("final review gate rejects incomplete approval and complete status, without mutating persisted workspace", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity(true);
+  try {
+    const workspace = await ensureBidWorkspaceForOpportunity(fixture.opportunityId);
+    assert.equal(workspace.finalReview.readyForExternalSubmission, false);
+    assert.equal(workspace.finalReview.readyForHumanReview, false);
+    await assert.rejects(() => updateBidWorkspace(workspace.id, { status: "complete" }),
+      /final-review blocker/);
+    await assert.rejects(() => updateBidWorkspace(workspace.id, {
+      reviewState: "approved", humanReviewConfirmed: true,
+    }), /final-review blocker/);
+    const unchanged = await getBidWorkspace(workspace.id);
+    assert.equal(unchanged?.status, "draft");
+    assert.equal(unchanged?.reviewState, "not_started");
+    assert.equal(unchanged?.finalReviewApprovalCurrent, false);
+
+    const updated = await updateBidWorkspace(workspace.id, {
+      reviewState: "in_review", notes: "Confirm the current original source files first.",
+    });
+    assert.equal(updated.reviewState, "in_review");
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("private source file route rejects unknown and unavailable snapshot documents without contacting Blob", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    const workspace = await ensureBidWorkspaceForOpportunity(fixture.opportunityId);
+    const { GET } = await import("@/app/api/bids/[id]/source-files/[documentId]/route");
+    const response = await GET(new Request("http://localhost/source-file"), {
+      params: Promise.resolve({
+        id: workspace.id,
+        documentId: "c07306a2-51cb-4fc9-8906-3d10bff08ea3",
+      }),
+    });
+    assert.equal(response.status, 404);
+  } finally {
+    await cleanup(fixture);
+  }
+});
