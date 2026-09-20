@@ -49,7 +49,7 @@ function fixture() {
   }));
   return {
     workspace: {
-      dueAt: new Date("2026-10-15T22:00:00Z"),
+      dueAt: new Date("2026-10-15T22:00:00Z") as Date | null,
       sourceSnapshot: snapshot,
       sourceRequirements: { understandingId: sourceId, completenessStatus: "complete" as const,
         incompleteReasons: [], isStale: false, requirements },
@@ -58,7 +58,7 @@ function fixture() {
         content: "We will perform the requested work.", status: "draft",
         requirementLinks: {}, sortOrder: 0, wordCount: 7, metadata: {} }],
     },
-    portalUrl: "https://www.beaconbid.com/solicitations/city-of-houston/open",
+    portalUrl: "https://www.beaconbid.com/solicitations/city-of-houston/open" as string | null,
     confirmedOriginalForms: ["source-form-1"],
     now: new Date("2026-09-19T22:00:00Z"),
   };
