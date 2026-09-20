@@ -44,7 +44,7 @@ function fixture() {
   const workspaceRequirements = requirements.map((requirement) => ({
     id: requirement.id, sourceRequirementKey: `${sourceId}:${requirement.id}`,
     requirementType: requirement.type, text: requirement.text, isRequired: true,
-    status: "complete", effectiveStatus: "complete" as const, canMarkComplete: true,
+    status: "complete", effectiveStatus: "complete" as "complete" | "needs_review", canMarkComplete: true,
     evidence: {}, responseNotes: null, sortOrder: 0,
   }));
   return {
