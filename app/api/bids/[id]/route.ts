@@ -45,6 +45,12 @@ async function parsePatch(request: Request): Promise<UpdateBidWorkspaceInput | N
     if (!isBidWorkspaceReviewState(body.reviewState)) return invalid("Unknown review state.");
     patch.reviewState = body.reviewState;
   }
+  if (Object.prototype.hasOwnProperty.call(body, "humanReviewConfirmed")) {
+    if (typeof body.humanReviewConfirmed !== "boolean") {
+      return invalid("Personal review confirmation must be a boolean.");
+    }
+    patch.humanReviewConfirmed = body.humanReviewConfirmed;
+  }
   if (Object.prototype.hasOwnProperty.call(body, "confirmedOriginalForms")) {
     if (!Array.isArray(body.confirmedOriginalForms) ||
         body.confirmedOriginalForms.length > 200 ||
