@@ -378,7 +378,8 @@ test("downstream bid routes honor real workspace, section, request and document 
     const edited = await patchSection(new Request(request("outline/" + sectionId).url, {
       method: "PATCH", body: JSON.stringify({ content: "test" }),
     }), sectionContext);
-    assert.equal(edited.status, 404, "valid section IDs must reach the section service");
+    assert.equal(edited.status, 409, "valid section IDs must reach the section service");
+    assert.equal((await edited.json()).error.message, "Bid response section was not found.");
 
     const { PATCH: patchRequirement } = await import("@/app/api/bids/[id]/compliance/[requirementId]/route");
     const requirement = await patchRequirement(new Request(request("compliance/" + sectionId).url, {
