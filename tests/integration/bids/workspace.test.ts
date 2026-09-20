@@ -339,3 +339,67 @@ test("bid workspace routes distinguish valid UUIDs from malformed ids at the HTT
     await cleanup(fixture);
   }
 });
+
+
+test("downstream bid routes honor real workspace, section, request and document UUIDs", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    const workspace = await ensureBidWorkspaceForOpportunity(fixture.opportunityId);
+    const sectionId = "c07306a2-51cb-4fc9-8906-3d10bff08ea3";
+    const context = { params: Promise.resolve({ id: workspace.id }) };
+    const sectionContext = { params: Promise.resolve({ id: workspace.id, sectionId }) };
+    const request = (suffix: string, body?: string) => new Request(
+      `http://localhost/api/bids/${workspace.id}/${suffix}`,
+      { method: "POST", ...(body === undefined ? {} : { body }) },
+    );
+
+    const { PATCH: patchWorkspace } = await import("@/app/api/bids/[id]/route");
+    const patched = await patchWorkspace(new Request(request("").url, { method: "PATCH" }), context);
+    assert.equal((await patched.json()).error.message, "Request body must be valid JSON.");
+
+    const { POST: compliance } = await import("@/app/api/bids/[id]/compliance/route");
+    const matrix = await compliance(request("compliance"), context);
+    assert.equal(matrix.status, 409);
+    assert.match((await matrix.json()).error.message, /Structured solicitation requirements/);
+
+    const { POST: outline } = await import("@/app/api/bids/[id]/outline/route");
+    const outlined = await outline(request("outline"), context);
+    assert.equal(outlined.status, 409);
+    assert.match((await outlined.json()).error.message, /Structured solicitation requirements/);
+
+    const { PUT: reorder } = await import("@/app/api/bids/[id]/outline/order/route");
+    const reorderResponse = await reorder(new Request(request("outline/order").url, {
+      method: "PUT", body: JSON.stringify({ sectionIds: [sectionId] }),
+    }), context);
+    assert.equal(reorderResponse.status, 409, "real section IDs must reach the ordering service");
+    assert.match((await reorderResponse.json()).error.message, /Each bid response section/);
+
+    const { PATCH: patchSection } = await import("@/app/api/bids/[id]/outline/[sectionId]/route");
+    const edited = await patchSection(new Request(request("outline/" + sectionId).url, {
+      method: "PATCH", body: JSON.stringify({ content: "test" }),
+    }), sectionContext);
+    assert.equal(edited.status, 404, "valid section IDs must reach the section service");
+
+    const { PATCH: patchRequirement } = await import("@/app/api/bids/[id]/compliance/[requirementId]/route");
+    const requirement = await patchRequirement(new Request(request("compliance/" + sectionId).url, {
+      method: "PATCH", body: JSON.stringify({ responseNotes: "test" }),
+    }), { params: Promise.resolve({ id: workspace.id, requirementId: sectionId }) });
+    assert.equal(requirement.status, 404, "valid requirement IDs must reach the compliance service");
+
+    const { GET: sourceFile } = await import("@/app/api/bids/[id]/source-files/[documentId]/route");
+    const sourceResponse = await sourceFile(new Request(request("source-files/" + sectionId).url), {
+      params: Promise.resolve({ id: workspace.id, documentId: sectionId }),
+    });
+    assert.equal(sourceResponse.status, 404);
+    assert.match(await sourceResponse.text(), /Original source file is not available/);
+
+    const { POST: draft } = await import("@/app/api/bids/[id]/outline/[sectionId]/draft/route");
+    const draftResponse = await draft(request("outline/" + sectionId + "/draft", JSON.stringify({
+      requestId: "b07306a2-51cb-4fc9-8906-3d10bff08ea3", replace: false,
+    })), sectionContext);
+    assert.equal(draftResponse.status, 404, "a valid manual request id must reach the missing-section guard");
+    assert.match((await draftResponse.json()).error.message, /section was not found/);
+  } finally {
+    await cleanup(fixture);
+  }
+});
