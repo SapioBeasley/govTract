@@ -45,6 +45,21 @@ async function parsePatch(request: Request): Promise<UpdateBidWorkspaceInput | N
     if (!isBidWorkspaceReviewState(body.reviewState)) return invalid("Unknown review state.");
     patch.reviewState = body.reviewState;
   }
+  if (Object.prototype.hasOwnProperty.call(body, "humanReviewConfirmed")) {
+    if (typeof body.humanReviewConfirmed !== "boolean") {
+      return invalid("Personal review confirmation must be a boolean.");
+    }
+    patch.humanReviewConfirmed = body.humanReviewConfirmed;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "confirmedOriginalForms")) {
+    if (!Array.isArray(body.confirmedOriginalForms) ||
+        body.confirmedOriginalForms.length > 200 ||
+        body.confirmedOriginalForms.some((id: unknown) => typeof id !== "string") ||
+        new Set(body.confirmedOriginalForms).size !== body.confirmedOriginalForms.length) {
+      return invalid("Original form confirmations must be unique source requirement ids.");
+    }
+    patch.confirmedOriginalForms = body.confirmedOriginalForms as string[];
+  }
   if (Object.prototype.hasOwnProperty.call(body, "notes")) {
     if (body.notes !== null && typeof body.notes !== "string") {
       return invalid("Notes must be text or null.");

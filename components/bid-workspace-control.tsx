@@ -15,7 +15,7 @@ const STATUS_LABELS: Record<BidWorkspaceStatus, string> = {
   draft: "Draft",
   in_progress: "In progress",
   ready_for_review: "Ready for review",
-  complete: "Complete",
+  complete: "Draft complete (internal)",
 };
 
 const REVIEW_LABELS: Record<BidWorkspaceReviewState, string> = {
@@ -110,11 +110,12 @@ export function BidWorkspaceControl({
             className="mt-1.5 h-10 w-full rounded-lg border bg-white px-3 text-sm"
           >
             {BID_WORKSPACE_REVIEW_STATES.map((value) => (
-              <option key={value} value={value}>
+              <option key={value} value={value} disabled={value === "approved"}>
                 {REVIEW_LABELS[value]}
               </option>
             ))}
           </select>
+          <span className="mt-1 block text-xs text-[var(--muted-foreground)]">Approve only in Final review after checking the current source package.</span>
         </label>
       </div>
 

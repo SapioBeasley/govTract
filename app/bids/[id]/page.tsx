@@ -16,6 +16,7 @@ import {
 import { BidWorkspaceControl } from "@/components/bid-workspace-control";
 import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
+import { BidFinalReview } from "@/components/bid-final-review";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
@@ -268,6 +269,16 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                 workspace.sourceRequirements?.completenessStatus === "complete" &&
                 !workspace.sourceRequirements.isStale
               }
+            />
+          </Section>
+          
+          <Section title="Final review and external submission" icon={<ClipboardCheck className="size-5" />}>
+            <BidFinalReview
+              workspaceId={workspace.id}
+              opportunityId={workspace.opportunityId}
+              review={workspace.finalReview}
+              confirmedOriginalForms={workspace.confirmedOriginalForms}
+              approvalCurrent={workspace.finalReviewApprovalCurrent}
             />
           </Section>
         </div>

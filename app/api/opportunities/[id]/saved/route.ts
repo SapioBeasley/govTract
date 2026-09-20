@@ -54,6 +54,12 @@ async function parsePatch(request: Request): Promise<UpdateSavedOpportunityInput
     if (!isSavedOpportunityStatus(body.status)) return invalid("Unknown pursuit status.");
     patch.status = body.status;
   }
+  if (Object.prototype.hasOwnProperty.call(body, "submissionConfirmed")) {
+    if (typeof body.submissionConfirmed !== "boolean") {
+      return invalid("Submission confirmation must be a boolean.");
+    }
+    patch.submissionConfirmed = body.submissionConfirmed;
+  }
   if (Object.prototype.hasOwnProperty.call(body, "notes")) {
     if (body.notes !== null && typeof body.notes !== "string") {
       return invalid("Notes must be text or null.");
