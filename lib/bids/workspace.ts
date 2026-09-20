@@ -474,14 +474,16 @@ export async function updateBidWorkspace(
       throw new Error("Original form confirmation does not match a current mandatory source form");
     }
   }
-  if ((input.status === "complete" || input.reviewState === "approved") &&
+  const approvalRequested = input.reviewState === "approved" && input.humanReviewConfirmed === true;
+  if (((input.status === "complete" && row.status !== "complete") || approvalRequested) &&
       !loaded.finalReview.readyForHumanReview) {
     throw new Error("Resolve every final-review blocker before marking this bid complete or approved");
   }
-  if (input.reviewState === "approved" && input.humanReviewConfirmed !== true) {
+  if (input.reviewState === "approved" && !approvalRequested &&
+      metadataState(row.metadata ?? {}).reviewState !== "approved") {
     throw new Error("Explicit personal review confirmation is required before approval");
   }
-  if (input.reviewState === "approved" && input.confirmedOriginalForms !== undefined) {
+  if (approvalRequested && input.confirmedOriginalForms !== undefined) {
     throw new Error("Save original form confirmations before completing human review");
   }
 
@@ -501,9 +503,9 @@ export async function updateBidWorkspace(
     delete metadata.finalReviewApprovalFingerprint;
     if (metadata.reviewState === "approved") metadata.reviewState = "needs_changes";
   }
-  if (input.reviewState === "approved") {
+  if (approvalRequested) {
     metadata.finalReviewApprovalFingerprint = loaded.finalReview.reviewFingerprint;
-  } else if (input.reviewState !== undefined) {
+  } else if (input.reviewState !== undefined && input.reviewState !== "approved") {
     delete metadata.finalReviewApprovalFingerprint;
   }
 
