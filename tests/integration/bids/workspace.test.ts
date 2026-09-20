@@ -403,3 +403,23 @@ test("downstream bid routes honor real workspace, section, request and document 
     await cleanup(fixture);
   }
 });
+
+
+test("bid routes reject malformed and legacy four-group ids without database access", async () => {
+  const { GET: getForOpportunity, POST: startBid } = await import(
+    "@/app/api/opportunities/[id]/bid-workspace/route"
+  );
+  const { GET: getForWorkspace } = await import("@/app/api/bids/[id]/route");
+  for (const id of ["not-a-uuid", "4d3953da-72ee-466b-e7e7c9766fa0"]) {
+    const context = { params: Promise.resolve({ id }) };
+    const opportunityRequest = new Request(`http://localhost/api/opportunities/${id}/bid-workspace`);
+    const opportunity = await getForOpportunity(opportunityRequest, context);
+    assert.equal(opportunity.status, 400);
+    assert.equal((await opportunity.json()).error.code, "invalid_bid_workspace_request");
+    const started = await startBid(opportunityRequest, context);
+    assert.equal(started.status, 400);
+    const workspace = await getForWorkspace(new Request(`http://localhost/api/bids/${id}`), context);
+    assert.equal(workspace.status, 400);
+    assert.equal((await workspace.json()).error.code, "invalid_bid_workspace");
+  }
+});
