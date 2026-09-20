@@ -116,7 +116,9 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
         <p className="mt-2 break-words [overflow-wrap:anywhere]">Method: {review.submission.method}</p>
         <p className="mt-1">Due: {review.submission.dueAt
           ? new Intl.DateTimeFormat("en-US", {
-              dateStyle: "full", timeStyle: "short", timeZone: "America/Chicago", timeZoneName: "short",
+              weekday: "long", month: "long", day: "numeric", year: "numeric",
+              hour: "numeric", minute: "2-digit",
+              timeZone: "America/Chicago", timeZoneName: "short",
             }).format(new Date(review.submission.dueAt))
           : "Not verified — check source instructions"}</p>
         <p className="mt-1">Submission file types, naming, format, and portal steps must be confirmed from the cited original solicitation.</p>
