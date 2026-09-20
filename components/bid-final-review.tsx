@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 
@@ -52,6 +52,7 @@ function Evidence({ check, workspaceId }: {
 export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOriginalForms, approvalCurrent }: Props) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState<string[]>(confirmedOriginalForms);
+  useEffect(() => setConfirmed(confirmedOriginalForms), [confirmedOriginalForms]);
   const [humanReviewed, setHumanReviewed] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
