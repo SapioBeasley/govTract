@@ -279,3 +279,148 @@ test("private source file route rejects unknown and unavailable snapshot documen
     await cleanup(fixture);
   }
 });
+
+
+test("bid workspace routes distinguish valid UUIDs from malformed ids at the HTTP boundary", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    const { GET: getByOpportunity, POST: startBid } = await import(
+      "@/app/api/opportunities/[id]/bid-workspace/route"
+    );
+    const { GET: getByWorkspace } = await import("@/app/api/bids/[id]/route");
+    const opportunityRequest = new Request(
+      `http://localhost/api/opportunities/${fixture.opportunityId}/bid-workspace`,
+    );
+    const opportunityContext = { params: Promise.resolve({ id: fixture.opportunityId }) };
+
+    const beforeCreation = await getByOpportunity(opportunityRequest, opportunityContext);
+    assert.equal(beforeCreation.status, 200, "valid opportunity UUID must not be rejected");
+    assert.deepEqual(await beforeCreation.json(), { workspace: null });
+
+    const created = await startBid(opportunityRequest, opportunityContext);
+    assert.equal(created.status, 200);
+    const first = (await created.json()).workspace;
+    assert.equal(first.opportunityId, fixture.opportunityId);
+
+    const repeated = await startBid(opportunityRequest, opportunityContext);
+    assert.equal(repeated.status, 200);
+    assert.equal((await repeated.json()).workspace.id, first.id, "Start Bid must be idempotent");
+
+    const byOpportunity = await getByOpportunity(opportunityRequest, opportunityContext);
+    assert.equal(byOpportunity.status, 200);
+    assert.equal((await byOpportunity.json()).workspace.id, first.id);
+
+    const missingWorkspace = await getByWorkspace(
+      new Request(`http://localhost/api/bids/${fixture.opportunityId}`),
+      { params: Promise.resolve({ id: fixture.opportunityId }) },
+    );
+    assert.equal(missingWorkspace.status, 404, "a valid non-workspace UUID is not malformed");
+    assert.equal((await missingWorkspace.json()).error.code, "bid_workspace_not_found");
+
+    const byWorkspace = await getByWorkspace(
+      new Request(`http://localhost/api/bids/${first.id}`),
+      { params: Promise.resolve({ id: first.id }) },
+    );
+    assert.equal(byWorkspace.status, 200);
+    assert.equal((await byWorkspace.json()).workspace.id, first.id);
+
+    const malformedContext = { params: Promise.resolve({ id: "not-a-uuid" }) };
+    const invalidGet = await getByOpportunity(opportunityRequest, malformedContext);
+    assert.equal(invalidGet.status, 400);
+    assert.equal((await invalidGet.json()).error.code, "invalid_bid_workspace_request");
+    const invalidPost = await startBid(opportunityRequest, malformedContext);
+    assert.equal(invalidPost.status, 400);
+    const invalidWorkspace = await getByWorkspace(
+      new Request("http://localhost/api/bids/not-a-uuid"), malformedContext,
+    );
+    assert.equal(invalidWorkspace.status, 400);
+    assert.equal((await invalidWorkspace.json()).error.code, "invalid_bid_workspace");
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+
+test("downstream bid routes honor real workspace, section, request and document UUIDs", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  try {
+    const workspace = await ensureBidWorkspaceForOpportunity(fixture.opportunityId);
+    const sectionId = "c07306a2-51cb-4fc9-8906-3d10bff08ea3";
+    const context = { params: Promise.resolve({ id: workspace.id }) };
+    const sectionContext = { params: Promise.resolve({ id: workspace.id, sectionId }) };
+    const request = (suffix: string, body?: string) => new Request(
+      `http://localhost/api/bids/${workspace.id}/${suffix}`,
+      { method: "POST", ...(body === undefined ? {} : { body }) },
+    );
+
+    const { PATCH: patchWorkspace } = await import("@/app/api/bids/[id]/route");
+    const patched = await patchWorkspace(new Request(request("").url, { method: "PATCH" }), context);
+    assert.equal((await patched.json()).error.message, "Request body must be valid JSON.");
+
+    const { POST: compliance } = await import("@/app/api/bids/[id]/compliance/route");
+    const matrix = await compliance(request("compliance"), context);
+    assert.equal(matrix.status, 409);
+    assert.match((await matrix.json()).error.message, /Structured solicitation requirements/);
+
+    const { POST: outline } = await import("@/app/api/bids/[id]/outline/route");
+    const outlined = await outline(request("outline"), context);
+    assert.equal(outlined.status, 409);
+    assert.match((await outlined.json()).error.message, /Structured solicitation requirements/);
+
+    const { PUT: reorder } = await import("@/app/api/bids/[id]/outline/order/route");
+    const reorderResponse = await reorder(new Request(request("outline/order").url, {
+      method: "PUT", body: JSON.stringify({ sectionIds: [sectionId] }),
+    }), context);
+    assert.equal(reorderResponse.status, 409, "real section IDs must reach the ordering service");
+    assert.match((await reorderResponse.json()).error.message, /Each bid response section/);
+
+    const { PATCH: patchSection } = await import("@/app/api/bids/[id]/outline/[sectionId]/route");
+    const edited = await patchSection(new Request(request("outline/" + sectionId).url, {
+      method: "PATCH", body: JSON.stringify({ content: "test" }),
+    }), sectionContext);
+    assert.equal(edited.status, 409, "valid section IDs must reach the section service");
+    assert.equal((await edited.json()).error.message, "Bid response section was not found.");
+
+    const { PATCH: patchRequirement } = await import("@/app/api/bids/[id]/compliance/[requirementId]/route");
+    const requirement = await patchRequirement(new Request(request("compliance/" + sectionId).url, {
+      method: "PATCH", body: JSON.stringify({ responseNotes: "test" }),
+    }), { params: Promise.resolve({ id: workspace.id, requirementId: sectionId }) });
+    assert.equal(requirement.status, 404, "valid requirement IDs must reach the compliance service");
+
+    const { GET: sourceFile } = await import("@/app/api/bids/[id]/source-files/[documentId]/route");
+    const sourceResponse = await sourceFile(new Request(request("source-files/" + sectionId).url), {
+      params: Promise.resolve({ id: workspace.id, documentId: sectionId }),
+    });
+    assert.equal(sourceResponse.status, 404);
+    assert.match(await sourceResponse.text(), /Original source file is not available/);
+
+    const { POST: draft } = await import("@/app/api/bids/[id]/outline/[sectionId]/draft/route");
+    const draftResponse = await draft(request("outline/" + sectionId + "/draft", JSON.stringify({
+      requestId: "b07306a2-51cb-4fc9-8906-3d10bff08ea3", replace: false,
+    })), sectionContext);
+    assert.equal(draftResponse.status, 404, "a valid manual request id must reach the missing-section guard");
+    assert.match((await draftResponse.json()).error.message, /section was not found/);
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+
+test("bid routes reject malformed and legacy four-group ids without database access", async () => {
+  const { GET: getForOpportunity, POST: startBid } = await import(
+    "@/app/api/opportunities/[id]/bid-workspace/route"
+  );
+  const { GET: getForWorkspace } = await import("@/app/api/bids/[id]/route");
+  for (const id of ["not-a-uuid", "4d3953da-72ee-466b-e7e7c9766fa0"]) {
+    const context = { params: Promise.resolve({ id }) };
+    const opportunityRequest = new Request(`http://localhost/api/opportunities/${id}/bid-workspace`);
+    const opportunity = await getForOpportunity(opportunityRequest, context);
+    assert.equal(opportunity.status, 400);
+    assert.equal((await opportunity.json()).error.code, "invalid_bid_workspace_request");
+    const started = await startBid(opportunityRequest, context);
+    assert.equal(started.status, 400);
+    const workspace = await getForWorkspace(new Request(`http://localhost/api/bids/${id}`), context);
+    assert.equal(workspace.status, 400);
+    assert.equal((await workspace.json()).error.code, "invalid_bid_workspace");
+  }
+});
