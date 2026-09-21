@@ -95,6 +95,8 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
   // addition to the rated load. Parse each named model's own excerpt span:
   // never assign a test weight from an adjacent model or call it rated capacity.
   for (const [field, sourcePattern, outputPattern, label] of [
+    ["ratedLoad", /\b(?:rated (?:load|capacity)|working load|capacity)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
+      /\b(?:rated (?:load|capacity)|working load|capacity)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "rated load"],
     ["quantity", /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i,
       /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i, "quantity"],
     ["testWeight", /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
@@ -129,7 +131,7 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
         return offered !== undefined && Number(offered.replaceAll(",", "")) === expected;
       });
       if (!found) modelIssues.push("State the separate " + model + "-person model " + label + " (" + expected +
-        (field === "testWeight" ? " lb" : "") + ") from pinned source evidence; do not assign another model's value.");
+        (field === "testWeight" || field === "ratedLoad" ? " lb" : "") + ") from pinned source evidence; do not assign another model's value.");
     }
   }
   return { claims: [...new Set(claims)], modelIssues };
