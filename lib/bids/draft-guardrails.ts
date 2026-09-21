@@ -146,6 +146,9 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
 export function validateVendorFactApproval(content: string, sourceEvidence: string): string[] {
   const issues: string[] = [];
   if (!content.trim()) issues.push("A completed response is required before verification.");
+  if (/^UNVERIFIED AI WORKING DRAFT\b/i.test(content.trim())) {
+    issues.push("Remove the unverified AI working-draft banner after personally validating every commitment.");
+  }
   if (/\[(?:NEEDS\s+INPUT|TODO|TBD|INSERT|PLACEHOLDER)[^\]]*\]|\b(?:TODO|TBD)\s*[:\-]|\{\{[^}]+\}\}|<<[^>]+>>/i.test(content)) {
     issues.push("Resolve every missing-fact placeholder before verifying vendor commitments.");
   }
