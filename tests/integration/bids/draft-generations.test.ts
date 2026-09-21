@@ -28,7 +28,7 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     async generate() {
       modelCalls++;
       return {
-        output: { content: "Draft based on a verified solicitation excerpt.",
+        output: { content: "Our company proposes to deliver all requested items in full compliance and carries product liability insurance.",
           requirementKeys: ["price-1"], missingFacts: ["Confirm final pricing"] },
         modelVersion: "fixture-1",
         usage: { promptTokenCount: 120, candidatesTokenCount: 80, thoughtsTokenCount: 0, totalTokenCount: 200 },
@@ -122,6 +122,14 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.equal(first.applied, true);
     assert.equal(modelCalls, 1);
     assert.match(first.content ?? "", /\[NEEDS INPUT: Confirm final pricing\]/);
+    assert.doesNotMatch(first.content ?? "", /in full compliance|carries product liability insurance/i,
+      "unverified commitments must never appear as naked affirmations in the saved section");
+    assert.match(first.content ?? "", /\\[NEEDS INPUT: Verify compliance/i);
+    const [rawAudit] = await sql<{ generated_content: string }[]>`
+      SELECT generated_content FROM bid_draft_generations WHERE id = ${first.generationId}
+    `;
+    assert.match(rawAudit!.generated_content, /in full compliance/i,
+      "verbatim original output remains available in the generation audit");
     const original = await listBidDraftGenerations(workspace!.id);
     assert.equal(original.length, 1);
     assert.equal(original[0]?.modelName, "fixture-model");
