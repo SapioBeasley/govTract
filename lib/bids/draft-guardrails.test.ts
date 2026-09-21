@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { inspectBidDraft, reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
+import { inspectBidDraft, reviewDraftFingerprint, validateVendorFactApproval } from "@/lib/bids/draft-guardrails";
 
 const fixture = JSON.parse(readFileSync("tests/fixtures/bids/180-unverified-technical-draft.json", "utf8")) as {
   content: string;
@@ -41,4 +41,16 @@ test("human approval is bound to the exact reviewed text and authoritative docum
   const initial = reviewDraftFingerprint("Offered model confirmed.", "source-A");
   assert.notEqual(initial, reviewDraftFingerprint("Offered model changed.", "source-A"));
   assert.notEqual(initial, reviewDraftFingerprint("Offered model confirmed.", "source-B"));
+});
+
+
+test("verification requires removing placeholders and resolving ambiguous model commitments", () => {
+  const open = validateVendorFactApproval(fixture.content + "\n[NEEDS INPUT: manufacturer]", JSON.stringify(fixture.sourceEvidence));
+  assert.ok(open.some((reason) => /placeholder/i.test(reason)));
+  assert.ok(open.some((reason) => /model|rating/i.test(reason)));
+  const resolved = validateVendorFactApproval(
+    "The solicitation requires a one-person basket rated 375 lb and a two-person basket rated 750 lb. We will supply the separately identified approved equipment.",
+    JSON.stringify(fixture.sourceEvidence),
+  );
+  assert.deepEqual(resolved, [], "positive commitments may be approved only by an explicit user action, never the classifier");
 });
