@@ -180,7 +180,7 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
           },
         },
       }),
-      /maximum output tokens|output limit/i,
+      /maximum output tokens|output (?:token )?limit/i,
     );
     const failedRecords = await listBidDraftGenerations(workspace!.id);
     assert.equal(failedRecords.length, 4);
