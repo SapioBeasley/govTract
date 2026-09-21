@@ -7,7 +7,7 @@ import { closeDb } from "@/lib/db/client";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { generateBidSectionDraft, listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 import { updateBidOutlineSection } from "@/lib/bids/outline-persistence";
-import type { BidDraftModelProvider } from "@/lib/bids/draft-provider";
+import { BidDraftProviderFailure, type BidDraftModelProvider } from "@/lib/bids/draft-provider";
 import { ensureBidWorkspaceSnapshotPrepared } from "@/lib/procurement/pursuits/snapshot";
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -163,6 +163,43 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.equal(afterRace?.sections[0]?.content, "Human edit made while the AI request was still running.");
     assert.equal((await listBidDraftGenerations(workspace!.id)).length, 3);
 
+    const preFailureSection = (await getBidWorkspace(workspace!.id))?.sections[0]?.content;
+    const failedRequestId = randomUUID();
+    await assert.rejects(
+      () => generateBidSectionDraft({
+        workspaceId: workspace!.id, sectionId: section!.id,
+        requestId: failedRequestId, replace: true,
+        provider: {
+          ...provider,
+          async generate() {
+            throw new BidDraftProviderFailure("provider_no_content_max_tokens", {
+              usage: { promptTokenCount: 400, candidatesTokenCount: 2048,
+                thoughtsTokenCount: 100, totalTokenCount: 2548 },
+              modelVersion: "fixture-limit",
+            });
+          },
+        },
+      }),
+      /maximum output tokens|output (?:token )?limit/i,
+    );
+    const failedRecords = await listBidDraftGenerations(workspace!.id);
+    assert.equal(failedRecords.length, 4);
+    const failed = failedRecords.find((row) => row.requestId === failedRequestId);
+    assert.ok(failed);
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.failureCode, "provider_no_content_max_tokens");
+    assert.equal(failed.applied, false);
+    assert.equal(failed.outputTokenCount, 2048);
+    assert.equal(failed.modelVersion, "fixture-limit");
+    assert.equal(failed.actualCostMicrousd, null, "provider billing cannot be inferred as exact charge");
+    assert.equal((await getBidWorkspace(workspace!.id))?.sections[0]?.content, preFailureSection);
+    await assert.rejects(
+      () => generateBidSectionDraft({ workspaceId: workspace!.id, sectionId: section!.id,
+        requestId: failedRequestId, replace: true, provider }),
+      /already (?:processed|requested)/i,
+    );
+    assert.equal(modelCalls, 3, "failed manual request cannot invoke a silent retry");
+
     await sql`
       INSERT INTO opportunity_document_versions (
         opportunity_document_id, version_number, fingerprint, checksum_sha256, name, is_amendment
@@ -175,7 +212,7 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
         requestId: randomUUID(), replace: true, provider }), /changed|stale|snapshot|current/i,
     );
     assert.equal(modelCalls, 3, "amendment cannot invoke another model call");
-    assert.equal((await listBidDraftGenerations(workspace!.id)).length, 3);
+    assert.equal((await listBidDraftGenerations(workspace!.id)).length, 4);
   } finally {
     await closeDb();
     if (sourceId) await sql`DELETE FROM source_records WHERE id = ${sourceId}`;

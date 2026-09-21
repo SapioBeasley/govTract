@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { BID_DRAFT_PROMPT_VERSION, finalizeBidDraft, prepareBidDraftInput } from "@/lib/bids/draft-input";
 import {
+  BidDraftProviderFailure,
   createGeminiBidDraftProviderFromEnv,
   makeBidDraftPrompt,
   type BidDraftModelProvider,
@@ -138,7 +139,7 @@ export async function generateBidSectionDraft(input: {
   const env = input.env ?? process.env;
   const provider = input.provider ?? createGeminiBidDraftProviderFromEnv(env);
   const inputTokenEstimate = Buffer.byteLength(prompt, "utf8") + 4096;
-  const outputTokenLimit = Math.min(2048, provider.profile.outputTokenLimit);
+  const outputTokenLimit = Math.min(8192, provider.profile.outputTokenLimit);
   if (inputTokenEstimate > provider.profile.inputTokenLimit || outputTokenLimit <= 0) {
     throw new Error("Bid draft exceeds the configured AI model input or output budget.");
   }
@@ -179,14 +180,17 @@ export async function generateBidSectionDraft(input: {
   });
   if (!created) throw new Error("This manual draft request was already processed or requested.");
 
+  let phase: "provider" | "finalize" | "persistence" = "provider";
   try {
     const result = await provider.generate(prompt);
+    phase = "finalize";
     const final = finalizeBidDraft(packet, result.output);
     const actualCostMicrousd = estimatedCost(
       result.usage.promptTokenCount,
       result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount,
       provider,
     );
+    phase = "persistence";
     const current = await getBidWorkspace(input.workspaceId);
     const currentSection = current?.sections.find((row) => row.id === input.sectionId);
     const currentPrep = current && currentSection ? prepareBidDraftInput({
@@ -227,10 +231,34 @@ export async function generateBidSectionDraft(input: {
       return Boolean(updated);
     });
     return { state: "completed" as const, applied: output, content: final.content, generationId: created.id };
-  } catch {
+  } catch (error) {
+    const providerFailure = error instanceof BidDraftProviderFailure ? error : null;
+    const failureCode = providerFailure?.failureCode ??
+      (phase === "provider" ? "provider_unexpected_failure" :
+        phase === "finalize" ? "draft_output_validation_failed" : "draft_persistence_failure");
     await db.update(bidDraftGenerations).set({
-      status: "failed", failureCode: "model_or_persistence_failure", completedAt: new Date(),
+      status: "failed",
+      failureCode,
+      ...(providerFailure?.usage ? { usageMetadata: providerFailure.usage } : {}),
+      ...(providerFailure?.modelVersion ? { modelVersion: providerFailure.modelVersion } : {}),
+      completedAt: new Date(),
     }).where(and(eq(bidDraftGenerations.id, created.id), eq(bidDraftGenerations.status, "pending")));
-    throw new Error("AI bid drafting failed. No source or user edits were overwritten. Review the generation record before a new manual request.");
+    // Show safe classification only. Never return raw Gemini errors, source excerpts,
+    // request data, credentials, or unverified billing assertions to the browser.
+    const detail = failureCode === "provider_no_content_max_tokens" ||
+      failureCode === "provider_invalid_json_max_tokens"
+      ? "Gemini reached the output token limit without a complete JSON draft."
+      : /^provider_http_\\d{3}$/.test(failureCode)
+        ? `Gemini rejected the draft request (HTTP ${failureCode.slice(-3)}).`
+        : failureCode === "provider_no_content_safety"
+          ? "Gemini produced no draft after its safety checks."
+          : failureCode === "provider_invalid_output" ||
+            failureCode === "draft_output_validation_failed" ||
+            failureCode === "provider_invalid_json"
+            ? "Gemini did not return a usable structured draft."
+            : failureCode === "draft_persistence_failure"
+              ? "The draft could not be saved."
+              : "The draft provider could not complete the request.";
+    throw new Error(`${detail} No draft was saved. Review the generation record before another manual request.`);
   }
 }
