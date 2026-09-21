@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { inspectBidDraft, reviewDraftFingerprint, validateVendorFactApproval } from "@/lib/bids/draft-guardrails";
+import { inspectBidDraft, reviewDraftFingerprint, validateVendorFactApproval, redactUnverifiedClaims } from "@/lib/bids/draft-guardrails";
 
 const fixture = JSON.parse(readFileSync("tests/fixtures/bids/180-unverified-technical-draft.json", "utf8")) as {
   content: string;
@@ -80,4 +80,17 @@ test("unverified working-draft warning cannot remain in an approved outward-faci
     "UNVERIFIED AI WORKING DRAFT — check every offered claim. The solicitation requests one-person 375 lb and two-person 750 lb baskets.",
     source,
   ).some((reason) => /working draft|unverified/i.test(reason)));
+});
+
+
+test("unsafe saved-model prose becomes scoped placeholders, never a naked affirmative commitment", () => {
+  const redacted = redactUnverifiedClaims(fixture.content, JSON.stringify(fixture.sourceEvidence));
+  for (const unsupported of [
+    /in full compliance/i, /we will provide baskets/i, /each basket undergoes/i,
+    /three-year warranty/i, /product liability insurance coverage/i, /375 lb and\/or 750 lb/i,
+  ]) assert.doesNotMatch(redacted, unsupported);
+  assert.match(redacted, /\[NEEDS INPUT: Verify compliance/i);
+  assert.match(redacted, /\[NEEDS INPUT: Verify .*warranty/i);
+  assert.match(redacted, /separate.*model/i);
+  assert.equal(fixture.content.includes("in full compliance"), true, "unmodified source fixture remains available to audit");
 });
