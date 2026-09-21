@@ -1,0 +1,24 @@
+{
+  "provenance": "Reconstructed regression fixture from issue #180 production-generation description; not a verbatim database export.",
+  "sourceEvidence": {
+    "passages": [
+      {
+        "id": "p1",
+        "excerpt": "One-person man basket: rated load 375 lb. Two-person man basket: rated load 750 lb."
+      },
+      {
+        "id": "p2",
+        "excerpt": "One-person basket 375 lb capacity; two-person basket 750 lb capacity. Provide test weight and manufacturer certificates."
+      }
+    ]
+  },
+  "content": "Our company proposes to deliver the baskets in full compliance with all requirements. We will provide baskets meeting applicable safety standards. Each basket undergoes manufacturer weight testing. We will deliver the assembled units and provide a three-year warranty and product liability insurance coverage. The available equipment includes 375 lb and/or 750 lb options as specified per model requirements.",
+  "requirementKeys": [
+    "scope:one-person",
+    "scope:two-person"
+  ],
+  "missingFacts": [
+    "Confirm manufacturer selection",
+    "Confirm policy coverage"
+  ]
+}
