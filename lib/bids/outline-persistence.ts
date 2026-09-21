@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { getBidWorkspace } from "@/lib/bids/workspace";
+import { reviewDraftFingerprint, validateVendorFactApproval } from "@/lib/bids/draft-guardrails";
 import { planBidOutline } from "@/lib/bids/outline";
 import { bidSections } from "@/lib/db/canonical-schema";
 import { getDb } from "@/lib/db/client";
@@ -9,6 +10,7 @@ export type UpdateBidOutlineSectionInput = {
   title?: string;
   instructions?: string | null;
   content?: string | null;
+  verifiedVendorFacts?: boolean;
 };
 
 function wordCount(value: string | null | undefined) {
@@ -77,6 +79,29 @@ export async function updateBidOutlineSection(
     throw new Error("Response section content is too long.");
   }
 
+  const current = await getBidWorkspace(workspaceId);
+  const section = current?.sections.find((row) => row.id === sectionId);
+  if (!current || !section) throw new Error("Bid response section was not found.");
+  const nextContent = input.content === undefined ? section.content ?? "" : input.content ?? "";
+  const metadata = { ...section.metadata };
+  const contentChanged = input.content !== undefined && input.content !== section.content;
+  if (contentChanged) delete metadata.verifiedVendorFactsFingerprint;
+  if (input.verifiedVendorFacts === true) {
+    if (!metadata.aiDraftReview) throw new Error("Only an AI draft requires this explicit fact-verification action.");
+    if (current.sourceSnapshot.stale || current.sourceSnapshot.snapshotStatus !== "complete" ||
+        current.sourceRequirements?.isStale || current.sourceRequirements?.completenessStatus !== "complete") {
+      throw new Error("Review current authoritative source documents before verifying offered facts.");
+    }
+    const keys = new Set(Array.isArray(section.requirementLinks.sourceRequirementKeys)
+      ? section.requirementLinks.sourceRequirementKeys : []);
+    const sourceEvidence = JSON.stringify({ passages: current.sourceRequirements.requirements
+      .filter((requirement) => keys.has(requirement.requirementKey))
+      .flatMap((requirement) => requirement.evidence.map((evidence) => ({ excerpt: evidence.excerpt }))) });
+    const reasons = validateVendorFactApproval(nextContent, sourceEvidence);
+    if (reasons.length) throw new Error(reasons.join(" "));
+    metadata.verifiedVendorFactsFingerprint =
+      reviewDraftFingerprint(nextContent, current.sourceSnapshot.documentSetFingerprint);
+  }
   const db = getDb();
   const modified = await db.update(bidSections).set({
     ...(input.title === undefined ? {} : { title: input.title.trim() }),
@@ -85,10 +110,12 @@ export async function updateBidOutlineSection(
       content: input.content,
       wordCount: wordCount(input.content),
     }),
+    ...(contentChanged || input.verifiedVendorFacts === true ? { metadata } : {}),
     updatedAt: new Date(),
   }).where(and(
     eq(bidSections.bidWorkspaceId, workspaceId),
     eq(bidSections.id, sectionId),
+    ...(input.verifiedVendorFacts === true ? [sql`${bidSections.content} IS NOT DISTINCT FROM ${section.content}`] : []),
   )).returning({ id: bidSections.id });
   if (!modified.length) throw new Error("Bid response section was not found.");
   return getBidWorkspace(workspaceId);
