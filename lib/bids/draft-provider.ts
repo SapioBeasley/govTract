@@ -14,7 +14,9 @@ export class BidDraftProviderFailure extends Error {
     readonly failureCode: string,
     details: { usage?: UnderstandingProviderUsage | null; modelVersion?: string | null } = {},
   ) {
-    super(`Gemini bid drafting failed (${failureCode}).`);
+    super(failureCode === "provider_invalid_output"
+      ? "Gemini returned an invalid bid draft structure."
+      : `Gemini bid drafting failed (${failureCode}).`);
     this.name = "BidDraftProviderFailure";
     this.usage = details.usage ?? null;
     this.modelVersion = details.modelVersion ?? null;
