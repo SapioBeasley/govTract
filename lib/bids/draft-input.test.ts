@@ -94,3 +94,111 @@ test("model output never adds unsupported requirement citations and missing fact
   assert.throws(() => finalizeBidDraft(prep.packet, { content: "Approved.", requirementKeys: ["unrelated"], missingFacts: [] }),
     /unsupported requirement/i);
 });
+
+function fixtureRequirement(
+  key: string,
+  type: string,
+  excerpt: string | null,
+  segmentId: string,
+  details: Record<string, unknown> = {},
+) {
+  return {
+    id: key, requirementKey: key, type, level: "required", text: "Provide assembled basket and tested weight.",
+    sourceSection: "scope", sourceFindingKey: key, details,
+    evidence: excerpt === null ? [] : [{
+      opportunityDocumentVersionId: versionId, documentExtractionSegmentId: segmentId,
+      locator: { page: 2 }, excerpt,
+    }],
+  };
+}
+
+test("technical draft excludes unrelated pricing/forms and represents shared source passages once without losing requirement links", () => {
+  const s = section();
+  s.title = "Technical response";
+  const linkedKeys = Array.from({ length: 12 }, (_, i) => `scope:technical-${i}`);
+  s.requirementLinks.sourceRequirementKeys = linkedKeys;
+  const proof = "The basket shall be furnished assembled and include an approved test weight. ".repeat(5).trim();
+  s.instructions = linkedKeys.map(() => "Provide assembled basket and tested weight.").join("\n") +
+    "\nPage limit: 5 pages.";
+  const requirements: SolicitationRequirementSet = {
+    ...source(),
+    requirements: [
+      ...linkedKeys.map((key, i) => fixtureRequirement(
+        key, "scope", proof, `segment-${i % 2}`,
+      )),
+      fixtureRequirement("pricing:unrelated", "pricing", "Unit pricing is submitted in separate worksheet.", "price-segment"),
+      fixtureRequirement("submission:unrelated", "form", "Sign the separate official signature page.", "form-segment"),
+      fixtureRequirement("disqualifier:unrelated", "disqualifier", "Multiple bids for a line item are disallowed.", "rule-segment"),
+      fixtureRequirement("insurance:unrelated", "insurance", "Attach separate insurance certificate.", "insurance-segment"),
+      fixtureRequirement("certification:unrelated", "certification", null, "missing-segment"),
+    ],
+  };
+  const result = prepareBidDraftInput({ snapshot: snapshot(), section: s, requirements, company: null });
+  assert.equal(result.state, "ready");
+  if (result.state !== "ready") return;
+  const body = result.packet.sourceEvidence;
+  const sourceData = JSON.parse(body) as {
+    documents: Array<{ versionId: string; checksumSha256: string; filename: string }>;
+    passages: Array<{ id: string; documentVersionId: string; segmentId: string; excerpt: string; locator: { page: number } }>;
+    requirements: Array<{ key: string; evidenceIds: string[]; text: string }>;
+  };
+  assert.deepEqual(sourceData.requirements.map((r) => r.key), linkedKeys);
+  assert.equal(sourceData.passages.length, 2, "shared verbatim passage is sent once per pinned document/segment");
+  assert.ok(sourceData.passages.every((passage) => passage.excerpt === proof));
+  assert.ok(sourceData.passages.every((passage) =>
+    passage.documentVersionId === versionId && passage.locator.page === 2 && passage.segmentId));
+  assert.ok(sourceData.documents.some((document) =>
+    document.versionId === versionId && document.checksumSha256 === "a".repeat(64)));
+  assert.ok(sourceData.requirements.every((r) => r.evidenceIds.length === 1 &&
+    sourceData.passages.some((passage) => passage.id === r.evidenceIds[0])));
+  assert.deepEqual(result.packet.requirementKeys, linkedKeys);
+  assert.doesNotMatch(body, /pricing:unrelated|submission:unrelated|disqualifier:unrelated|insurance:unrelated|certification:unrelated/);
+  assert.doesNotMatch(result.packet.sectionInstructions, /Provide assembled basket and tested weight/);
+  assert.match(result.packet.sectionInstructions, /Page limit: 5 pages/);
+  const oldReferences = requirements.requirements.filter((r) =>
+    linkedKeys.includes(r.requirementKey)).map((r) => ({
+    key: r.requirementKey, text: r.text, references: r.evidence.map((e) => ({
+      documentVersionId: e.opportunityDocumentVersionId,
+      snapshotDocumentId: snapshot().documents[0]!.id,
+      filename: snapshot().documents[0]!.filename,
+      checksumSha256: snapshot().documents[0]!.checksumSha256,
+      locator: e.locator, segmentId: e.documentExtractionSegmentId, excerpt: e.excerpt,
+    })),
+  }));
+  const oldChars = JSON.stringify(oldReferences).length;
+  assert.ok(body.length < oldChars * 0.7,
+    `expected >30% smaller evidence packet than repeated verified refs; old=${oldChars}, new=${body.length}`);
+  assert.equal(result.packet.inputFingerprint.length, 64);
+  assert.deepEqual(prepareBidDraftInput({ snapshot: snapshot(), section: s, requirements, company: null }), result);
+});
+
+test("explicit cross-section applicability requires pinned evidence and remains separate from citation-eligible section keys", () => {
+  const requirements: SolicitationRequirementSet = {
+    ...source(), requirements: [
+      ...source().requirements,
+      fixtureRequirement("rule:all", "disqualifier", "Do not include alternate contract terms.", "terms-segment", {
+        appliesToAllResponseSections: true,
+      }),
+      fixtureRequirement("rule:other", "disqualifier", "Other section only.", "other-segment", {
+        appliesToResponseSections: ["Technical response"],
+      }),
+      fixtureRequirement("rule:unrelated", "disqualifier", "Sign the original form.", "signature-segment"),
+    ],
+  };
+  const result = prepareBidDraftInput({ snapshot: snapshot(), section: section(), requirements, company: null });
+  assert.equal(result.state, "ready");
+  if (result.state !== "ready") return;
+  assert.match(result.packet.sourceEvidence, /rule:all/);
+  assert.doesNotMatch(result.packet.sourceEvidence, /rule:other|rule:unrelated/);
+  assert.deepEqual(result.packet.requirementKeys, ["pricing:1"],
+    "cross-cutting source rules must not become unsupported section-citation keys");
+});
+
+test("missing or changed pinned evidence in linked section remains blocked rather than silently narrowed", () => {
+  const s = section();
+  const r = source();
+  r.requirements[0]!.evidence[0]!.excerpt = "   ";
+  const result = prepareBidDraftInput({ snapshot: snapshot(), section: s, requirements: r, company: null });
+  assert.equal(result.state, "blocked");
+  if (result.state === "blocked") assert.match(result.reasons.join(" "), /readable source excerpt/i);
+});
