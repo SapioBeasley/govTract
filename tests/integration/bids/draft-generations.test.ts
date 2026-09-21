@@ -137,6 +137,11 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.equal((unverified?.sections[0]?.metadata.aiDraftReview as { generationId?: string } | undefined)?.generationId,
       first.generationId);
     assert.ok(unverified?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+    await sql`UPDATE bid_sections SET metadata = metadata - 'aiDraftReview' WHERE id = ${section!.id}`;
+    const legacy = await getBidWorkspace(workspace!.id);
+    assert.equal((legacy?.sections[0]?.metadata.aiDraftReview as { generationId?: string } | undefined)?.generationId,
+      first.generationId, "previously saved generated prose cannot escape fact review merely because its marker predates rollout");
+    assert.ok(legacy?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
     await assert.rejects(
       () => updateBidOutlineSection(workspace!.id, section!.id, { verifiedVendorFacts: true }),
       /placeholder/i,
