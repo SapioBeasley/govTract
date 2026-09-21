@@ -230,7 +230,8 @@ export async function generateBidSectionDraft(input: {
       await tx.update(bidDraftGenerations).set({
         status: "completed",
         applied: Boolean(updated),
-        generatedContent: final.content,
+        // Retain verbatim provider output for audit; the response section stores redacted review-only prose.
+        generatedContent: result.output.content,
         missingFacts: final.missingFacts,
         requirementKeys: final.requirementKeys,
         usageMetadata: result.usage,
