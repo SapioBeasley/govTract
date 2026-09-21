@@ -93,3 +93,19 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
   }
   return { claims: [...new Set(claims)], modelIssues };
 }
+
+
+/**
+ * Explicit approval is a user assertion, not an automated finding. Reject unresolved
+ * prompts and ambiguous model ratings; other flagged vendor claims remain actionable
+ * human-review questions and are never machine-certified by this function.
+ */
+export function validateVendorFactApproval(content: string, sourceEvidence: string): string[] {
+  const issues: string[] = [];
+  if (!content.trim()) issues.push("A completed response is required before verification.");
+  if (/\[(?:NEEDS\s+INPUT|TODO|TBD|INSERT|PLACEHOLDER)[^\]]*\]|\b(?:TODO|TBD)\s*[:\-]|\{\{[^}]+\}\}|<<[^>]+>>/i.test(content)) {
+    issues.push("Resolve every missing-fact placeholder before verifying vendor commitments.");
+  }
+  issues.push(...inspectBidDraft(content, sourceEvidence).modelIssues);
+  return issues;
+}
