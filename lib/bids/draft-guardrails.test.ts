@@ -54,3 +54,21 @@ test("verification requires removing placeholders and resolving ambiguous model 
   );
   assert.deepEqual(resolved, [], "positive commitments may be approved only by an explicit user action, never the classifier");
 });
+
+
+test("distinct model quantities, rated loads and proof-test weights are not interchangeable", () => {
+  const evidence = { passages: [
+    { excerpt: "One-person basket: quantity 2; rated load 375 lb; test weight 1,500 lb." },
+    { excerpt: "Two-person basket: quantity 1; rated load 750 lb; test weight 3,000 lb." },
+  ] };
+  const mixed = inspectBidDraft(
+    "The one-person basket has rated load 375 lb, test weight 3,000 lb, quantity 2; the two-person basket has rated load 750 lb, test weight 1,500 lb, quantity 1.",
+    JSON.stringify(evidence),
+  );
+  assert.ok(mixed.modelIssues.some((issue) => /test weight/i.test(issue)));
+  const precise = inspectBidDraft(
+    "The requested one-person basket has quantity 2, rated load 375 lb and test weight 1,500 lb. The requested two-person basket has quantity 1, rated load 750 lb and test weight 3,000 lb.",
+    JSON.stringify(evidence),
+  );
+  assert.deepEqual(precise.modelIssues, []);
+});
