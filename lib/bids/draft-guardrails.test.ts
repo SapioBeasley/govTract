@@ -72,3 +72,12 @@ test("distinct model quantities, rated loads and proof-test weights are not inte
   );
   assert.deepEqual(precise.modelIssues, []);
 });
+
+
+test("unverified working-draft warning cannot remain in an approved outward-facing response", () => {
+  const source = JSON.stringify(fixture.sourceEvidence);
+  assert.ok(validateVendorFactApproval(
+    "UNVERIFIED AI WORKING DRAFT — check every offered claim. The solicitation requests one-person 375 lb and two-person 750 lb baskets.",
+    source,
+  ).some((reason) => /working draft|unverified/i.test(reason)));
+});
