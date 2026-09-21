@@ -91,6 +91,47 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
       modelIssues.push("Ambiguous and/or model or weight option; identify each distinct model and rating.");
     }
   }
+  // Pinned excerpts can carry a distinct quantity and proof-test weight in
+  // addition to the rated load. Parse each named model's own excerpt span:
+  // never assign a test weight from an adjacent model or call it rated capacity.
+  for (const [field, sourcePattern, outputPattern, label] of [
+    ["quantity", /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i,
+      /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i, "quantity"],
+    ["testWeight", /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
+      /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "test weight"],
+  ] as const) {
+    const requested = new Map<number, Set<number>>();
+    for (const excerpt of sourcePassages(sourceEvidence)) {
+      const labels = [...excerpt.matchAll(modelLabel)];
+      for (const [index, match] of labels.entries()) {
+        const next = labels[index + 1]?.index ?? excerpt.length;
+        const fragment = excerpt.slice(match.index! + match[0].length, Math.min(next, match.index! + 350));
+        const value = fragment.match(sourcePattern)?.[1];
+        if (!value) continue;
+        const model = modelNumber(match[0]);
+        if (!requested.has(model)) requested.set(model, new Set());
+        requested.get(model)!.add(Number(value.replaceAll(",", "")));
+      }
+    }
+    for (const [model, values] of requested) {
+      if (values.size > 1) modelIssues.push("Conflicting pinned " + label + " for " + model + "-person model; clarify the authoritative source variant.");
+    }
+    if (!requested.has(1) || !requested.has(2) ||
+        requested.get(1)!.size !== 1 || requested.get(2)!.size !== 1) continue;
+    const references = [...content.matchAll(modelLabel)];
+    for (const model of [1, 2]) {
+      const expected = [...requested.get(model)!][0]!;
+      const found = references.some((match, index) => {
+        if (modelNumber(match[0]) !== model) return false;
+        const next = references[index + 1]?.index ?? content.length;
+        const fragment = content.slice(match.index! + match[0].length, Math.min(next, match.index! + 350));
+        const offered = fragment.match(outputPattern)?.[1];
+        return offered !== undefined && Number(offered.replaceAll(",", "")) === expected;
+      });
+      if (!found) modelIssues.push("State the separate " + model + "-person model " + label + " (" + expected +
+        (field === "testWeight" ? " lb" : "") + ") from pinned source evidence; do not assign another model's value.");
+    }
+  }
   return { claims: [...new Set(claims)], modelIssues };
 }
 
