@@ -89,7 +89,7 @@ export async function updateBidOutlineSection(
   if (input.verifiedVendorFacts === true) {
     if (!metadata.aiDraftReview) throw new Error("Only an AI draft requires this explicit fact-verification action.");
     if (current.sourceSnapshot.stale || current.sourceSnapshot.snapshotStatus !== "complete" ||
-        current.sourceRequirements?.isStale || current.sourceRequirements?.completenessStatus !== "complete") {
+        !current.sourceRequirements || current.sourceRequirements.isStale || current.sourceRequirements.completenessStatus !== "complete") {
       throw new Error("Review current authoritative source documents before verifying offered facts.");
     }
     const keys = new Set(Array.isArray(section.requirementLinks.sourceRequirementKeys)
