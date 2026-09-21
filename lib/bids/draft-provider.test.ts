@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGeminiBidDraftProvider, makeBidDraftPrompt } from "@/lib/bids/draft-provider";
+import { BidDraftProviderFailure, createGeminiBidDraftProvider, makeBidDraftPrompt } from "@/lib/bids/draft-provider";
 import type { BidDraftPacket } from "@/lib/bids/draft-input";
 
 const packet: BidDraftPacket = {
@@ -72,4 +72,68 @@ test("provider rejects malformed model output instead of silently persisting it"
     }), { status: 200 }),
   });
   await assert.rejects(() => provider.generate("prompt"), /invalid bid draft/i);
+});
+
+test("Gemini draft HTTP failures have safe status-only diagnostics and do not expose provider messages", async () => {
+  const provider = createGeminiBidDraftProvider({
+    apiKey: "fixture-secret", model: "fixture-model", modelVersion: null,
+    billingMode: "billable", pricingProfileVersion: "fixture",
+    inputTokenLimit: 100_000, outputTokenLimit: 8192,
+    inputCostMicrousdPerMillionTokens: 300_000, outputCostMicrousdPerMillionTokens: 2_500_000,
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: { message: "Secret provider payload fixture-secret" },
+    }), { status: 429 }),
+  });
+  await assert.rejects(() => provider.generate("prompt"), (error: unknown) => {
+    assert.ok(error instanceof BidDraftProviderFailure);
+    assert.equal(error.failureCode, "provider_http_429");
+    assert.doesNotMatch(error.message, /fixture-secret|Secret provider payload/);
+    return true;
+  });
+});
+
+test("Gemini draft empty output preserves safe finish reason and usage for cost reconciliation", async () => {
+  const provider = createGeminiBidDraftProvider({
+    apiKey: "fixture-secret", model: "fixture-model", modelVersion: null,
+    billingMode: "billable", pricingProfileVersion: "fixture",
+    inputTokenLimit: 100_000, outputTokenLimit: 8192,
+    inputCostMicrousdPerMillionTokens: 300_000, outputCostMicrousdPerMillionTokens: 2_500_000,
+    fetchImpl: async () => new Response(JSON.stringify({
+      candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [] } }],
+      usageMetadata: { promptTokenCount: 400, candidatesTokenCount: 2048, thoughtsTokenCount: 100, totalTokenCount: 2548 },
+      modelVersion: "fixture-v2",
+    }), { status: 200 }),
+  });
+  await assert.rejects(() => provider.generate("prompt"), (error: unknown) => {
+    assert.ok(error instanceof BidDraftProviderFailure);
+    assert.equal(error.failureCode, "provider_no_content_max_tokens");
+    assert.deepEqual(error.usage, {
+      promptTokenCount: 400, candidatesTokenCount: 2048, thoughtsTokenCount: 100, totalTokenCount: 2548,
+    });
+    assert.equal(error.modelVersion, "fixture-v2");
+    return true;
+  });
+});
+
+test("Gemini draft output allowance permits substantive sections while honoring configured smaller limits", async () => {
+  const limits: number[] = [];
+  for (const configuredLimit of [8192, 4096]) {
+    const provider = createGeminiBidDraftProvider({
+      apiKey: "fixture-secret", model: "fixture-model", modelVersion: null,
+      billingMode: "non_billable", pricingProfileVersion: "fixture",
+      inputTokenLimit: 100_000, outputTokenLimit: configuredLimit,
+      inputCostMicrousdPerMillionTokens: 0, outputCostMicrousdPerMillionTokens: 0,
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          generationConfig: { maxOutputTokens: number };
+        };
+        limits.push(body.generationConfig.maxOutputTokens);
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{
+          text: JSON.stringify({ content: "Draft.", requirementKeys: ["req-1"], missingFacts: [] }),
+        }] } }] }), { status: 200 });
+      },
+    });
+    await provider.generate("prompt");
+  }
+  assert.deepEqual(limits, [8192, 4096]);
 });
