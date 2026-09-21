@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { inspectBidDraft, reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
+
+const fixture = JSON.parse(readFileSync("tests/fixtures/bids/180-unverified-technical-draft.json", "utf8")) as {
+  content: string;
+  sourceEvidence: { passages: Array<{ id: string; excerpt: string }> };
+};
+
+test("captured model-output regression flags distinct unverified vendor commitments and mixed models", () => {
+  const assessment = inspectBidDraft(fixture.content, JSON.stringify(fixture.sourceEvidence));
+  assert.ok(assessment.claims.length >= 4, "a trailing missing-fact question must not qualify earlier commitments");
+  assert.ok(assessment.claims.some((claim) => /compliance/i.test(claim)));
+  assert.ok(assessment.claims.some((claim) => /testing/i.test(claim)));
+  assert.ok(assessment.claims.some((claim) => /warranty/i.test(claim)));
+  assert.ok(assessment.claims.some((claim) => /insurance/i.test(claim)));
+  assert.ok(assessment.modelIssues.some((issue) => /one.person|1.person/i.test(issue)));
+  assert.ok(assessment.modelIssues.some((issue) => /two.person|2.person/i.test(issue)));
+  assert.ok(assessment.modelIssues.some((issue) => /and\/or|ambiguous/i.test(issue)));
+});
+
+test("buyer requirements are not treated as verified company claims and correct source model pairs remain distinct", () => {
+  const output = "The solicitation calls for a one-person basket rated for 375 lb and a two-person basket rated for 750 lb. [NEEDS INPUT: identify and verify offered basket models and their capacity.]";
+  const assessment = inspectBidDraft(output, JSON.stringify(fixture.sourceEvidence));
+  assert.deepEqual(assessment.claims, []);
+  assert.deepEqual(assessment.modelIssues, []);
+});
+
+test("conflicting source model ratings across pinned documents require explicit clarification", () => {
+  const evidence = { passages: [
+    { excerpt: "One-person basket rated load 375 lb; two-person basket rated load 750 lb." },
+    { excerpt: "One-person basket rated load 400 lb; two-person basket rated load 750 lb." },
+  ] };
+  const assessment = inspectBidDraft("The solicitation requests the one-person and two-person baskets.", JSON.stringify(evidence));
+  assert.ok(assessment.modelIssues.some((issue) => /conflict|clarif/i.test(issue)));
+});
+
+test("human approval is bound to the exact reviewed text and authoritative document set", () => {
+  const initial = reviewDraftFingerprint("Offered model confirmed.", "source-A");
+  assert.notEqual(initial, reviewDraftFingerprint("Offered model changed.", "source-A"));
+  assert.notEqual(initial, reviewDraftFingerprint("Offered model confirmed.", "source-B"));
+});
