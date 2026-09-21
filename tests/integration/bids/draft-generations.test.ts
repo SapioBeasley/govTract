@@ -133,6 +133,23 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
         requestId, replace: true, provider }), /already (?:processed|requested)/i,
     );
     assert.equal(modelCalls, 1);
+    const unverified = await getBidWorkspace(workspace!.id);
+    assert.equal((unverified?.sections[0]?.metadata.aiDraftReview as { generationId?: string } | undefined)?.generationId,
+      first.generationId);
+    assert.ok(unverified?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+    await assert.rejects(
+      () => updateBidOutlineSection(workspace!.id, section!.id, { verifiedVendorFacts: true }),
+      /placeholder/i,
+    );
+    await updateBidOutlineSection(workspace!.id, section!.id, {
+      content: "My own revised bid.", verifiedVendorFacts: true,
+    });
+    const verified = await getBidWorkspace(workspace!.id);
+    assert.equal(typeof verified?.sections[0]?.metadata.verifiedVendorFactsFingerprint, "string");
+    assert.equal(verified?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"), false);
+    await updateBidOutlineSection(workspace!.id, section!.id, { content: "Human changed the approved text." });
+    assert.ok((await getBidWorkspace(workspace!.id))?.finalReview.blockingIssues
+      .some((issue) => issue.code === "ai_vendor_facts_unverified"));
     await updateBidOutlineSection(workspace!.id, section!.id, { content: "My own revised bid." });
     await assert.rejects(
       () => generateBidSectionDraft({ workspaceId: workspace!.id, sectionId: section!.id,
