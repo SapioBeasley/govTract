@@ -124,7 +124,7 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.match(first.content ?? "", /\[NEEDS INPUT: Confirm final pricing\]/);
     assert.doesNotMatch(first.content ?? "", /in full compliance|carries product liability insurance/i,
       "unverified commitments must never appear as naked affirmations in the saved section");
-    assert.match(first.content ?? "", /\\[NEEDS INPUT: Verify compliance/i);
+    assert.match(first.content ?? "", /\[NEEDS INPUT: Verify compliance/i);
     const [rawAudit] = await sql<{ generated_content: string }[]>`
       SELECT generated_content FROM bid_draft_generations WHERE id = ${first.generationId}
     `;
