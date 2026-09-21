@@ -139,6 +139,33 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
 
 
 /**
+ * Never save a naked affirmative vendor assertion from the model in a user-facing
+ * bid response. Preserve source-descriptive prose and punctuation while replacing
+ * unverified offer sentences with category-specific, in-place questions. The raw
+ * provider output is retained separately in the generation audit record.
+ */
+export function redactUnverifiedClaims(content: string, sourceEvidence: string): string {
+  return content.split(/([.!?;\n]+)/).map((chunk, index) => {
+    if (index % 2 === 1 || !chunk.trim()) return chunk;
+    const claims = inspectBidDraft(chunk, sourceEvidence).claims;
+    const ambiguousModel = /\band\/or\b/i.test(chunk) && /\b(?:lb|lbs|pounds|model|basket)\b/i.test(chunk);
+    if (!claims.length && !ambiguousModel) return chunk;
+    const leading = chunk.match(/^\s*/)?.[0] ?? "";
+    const trailing = chunk.match(/\s*$/)?.[0] ?? "";
+    if (ambiguousModel) {
+      return leading +
+        "[NEEDS INPUT: State each separate requested model, its rated load and test weight, and verify the exact offered configuration; do not use and/or for model-specific ratings]" +
+        trailing;
+    }
+    const categories = [...new Set(claims.map((claim) =>
+      claim.split(" before making this vendor commitment:")[0]!.replace(/^Verify /, "")))];
+    return leading + "[NEEDS INPUT: Verify " + categories.join(", ") +
+      " for the actual offered product and company with supporting evidence; replace with an accurate, explicitly approved commitment or remove the claim]" + trailing;
+  }).join("");
+}
+
+
+/**
  * Explicit approval is a user assertion, not an automated finding. Reject unresolved
  * prompts and ambiguous model ratings; other flagged vendor claims remain actionable
  * human-review questions and are never machine-certified by this function.
