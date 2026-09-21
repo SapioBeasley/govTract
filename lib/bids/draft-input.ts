@@ -4,7 +4,7 @@ import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 
-export const BID_DRAFT_PROMPT_VERSION = "1";
+export const BID_DRAFT_PROMPT_VERSION = "2";
 const MAX_SOURCE_CHARS = 48_000;
 
 export type DraftSourceVersion = {
@@ -64,10 +64,28 @@ function questionFor(requirement: PersistedSolicitationRequirement): string | nu
   return null;
 }
 
-const governingTypes = new Set([
-  "pricing", "form", "certification", "insurance", "insurance_bonding", "bonding",
-  "submission_instruction", "disqualifier",
-]);
+/**
+ * Unlinked rules are not implicitly relevant to every section merely because they
+ * concern pricing, forms, qualifications or submission. Only explicit applicability
+ * metadata can add a separately evidenced, cross-section rule.
+ */
+function explicitlyGovernsSection(requirement: PersistedSolicitationRequirement, title: string) {
+  const details = requirement.details;
+  if (details.appliesToAllResponseSections === true) return true;
+  const sections = details.appliesToResponseSections;
+  return Array.isArray(sections) && sections.some((value) =>
+    typeof value === "string" && value.trim().toLocaleLowerCase("en-US") === title.trim().toLocaleLowerCase("en-US"));
+}
+
+function uniqueSectionInstructions(instructions: string | null, linkedRequirements: PersistedSolicitationRequirement[]) {
+  const repeatedRequirementText = new Set(linkedRequirements.map((requirement) => requirement.text.trim()));
+  const emitted = new Set<string>();
+  return (instructions ?? "").split(/\r?\n/).map((line) => line.trim()).filter((line) => {
+    if (!line || repeatedRequirementText.has(line) || emitted.has(line)) return false;
+    emitted.add(line);
+    return true;
+  }).join("\n");
+}
 
 /**
  * Called only from a user-triggered draft action. Refuses to send stale, incomplete or
@@ -115,16 +133,31 @@ export function prepareBidDraftInput(input: {
     reasons.push("One or more linked solicitation requirements no longer exist in the current understanding.");
   }
   const snapshotDocuments = new Map(snapshot.documents.map((document) => [document.opportunityDocumentVersionId, document]));
+  const selectedLinked = linked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement));
   const governing = requirements?.requirements.filter((requirement) =>
-    governingTypes.has(requirement.type) && !keys.includes(requirement.requirementKey)) ?? [];
-  const selected = [...linked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement)), ...governing];
-  const evidenceLines: string[] = [];
+    !keys.includes(requirement.requirementKey) &&
+    explicitlyGovernsSection(requirement, section.title)) ?? [];
+  const selected = [...selectedLinked, ...governing];
+
+  // Version metadata is recorded once per referenced source file. A requirement
+  // refers to a shared, verbatim passage by ID instead of resending document IDs,
+  // checksums and extracted content for every duplicate understanding finding.
+  const selectedDocumentVersions = new Set<string>();
+  const passageIds = new Map<string, string>();
+  const passages: Array<{
+    id: string; documentVersionId: string; segmentId: string | null;
+    locator: Record<string, unknown>; excerpt: string;
+  }> = [];
+  const selectedRequirements: Array<{
+    key: string; type: string; text: string; level: string;
+    evidenceIds: string[]; relevance: "section" | "cross_section_rule";
+  }> = [];
   for (const requirement of selected) {
     if (!requirement.evidence.length) {
       reasons.push(`Solicitation requirement ${requirement.requirementKey} lacks source-document evidence.`);
       continue;
     }
-    const references: string[] = [];
+    const evidenceIds = new Set<string>();
     for (const evidence of requirement.evidence) {
       const document = snapshotDocuments.get(evidence.opportunityDocumentVersionId);
       if (!document || document.status !== "stored" || !document.checksumSha256 ||
@@ -132,23 +165,37 @@ export function prepareBidDraftInput(input: {
         reasons.push(`Solicitation requirement ${requirement.requirementKey} lacks a readable source excerpt pinned to the bid snapshot.`);
         continue;
       }
-      references.push(JSON.stringify({
-        documentVersionId: evidence.opportunityDocumentVersionId,
-        snapshotDocumentId: document.id,
-        document: document.filename,
-        checksumSha256: document.checksumSha256,
-        segmentId: evidence.documentExtractionSegmentId,
-        locator: evidence.locator,
-        excerpt: evidence.excerpt,
-      }));
+      selectedDocumentVersions.add(evidence.opportunityDocumentVersionId);
+      // Include the locator in the dedupe identity: one segment may identify
+      // different cells/pages or quoted passages with distinct locators.
+      const passageKey = JSON.stringify([
+        evidence.opportunityDocumentVersionId,
+        evidence.documentExtractionSegmentId,
+        evidence.locator,
+        evidence.excerpt,
+      ]);
+      let passageId = passageIds.get(passageKey);
+      if (!passageId) {
+        passageId = `p${passages.length + 1}`;
+        passageIds.set(passageKey, passageId);
+        passages.push({
+          id: passageId,
+          documentVersionId: evidence.opportunityDocumentVersionId,
+          segmentId: evidence.documentExtractionSegmentId,
+          locator: evidence.locator,
+          excerpt: evidence.excerpt,
+        });
+      }
+      evidenceIds.add(passageId);
     }
-    if (references.length) {
-      evidenceLines.push(JSON.stringify({
-        key: requirement.requirementKey, type: requirement.type,
-        requirement: requirement.text, level: requirement.level, references,
-        relevance: keys.includes(requirement.requirementKey) ? "section" : "governing_submission_instruction",
-      }));
-    }
+    if (evidenceIds.size) selectedRequirements.push({
+      key: requirement.requirementKey,
+      type: requirement.type,
+      text: requirement.text,
+      level: requirement.level,
+      evidenceIds: [...evidenceIds],
+      relevance: keys.includes(requirement.requirementKey) ? "section" : "cross_section_rule",
+    });
   }
   const sourceDocuments = [...snapshot.documents]
     .sort((a, b) => a.opportunityDocumentVersionId.localeCompare(b.opportunityDocumentVersionId))
@@ -159,11 +206,14 @@ export function prepareBidDraftInput(input: {
       checksumSha256: document.checksumSha256 ?? "",
     }));
   const sourceEvidence = JSON.stringify({
-    documentRoster: sourceDocuments,
-    evidence: evidenceLines,
-    caveat: "Document roster is NOT the full document content. Only quoted evidence excerpts are available to this draft; independently inspect original forms, drawings and pricing sheets.",
+    documents: sourceDocuments.filter((document) => selectedDocumentVersions.has(document.versionId)),
+    passages,
+    requirements: selectedRequirements,
+    caveat: "Only the cited excerpts from the listed snapshot documents are supplied, not the full solicitation. Independently inspect the original documents and mandatory forms.",
   });
-  if (sourceEvidence.length > MAX_SOURCE_CHARS) reasons.push("Source evidence exceeds the bounded AI input limit; narrow the section before drafting.");
+  if (sourceEvidence.length > MAX_SOURCE_CHARS) {
+    reasons.push("Section-relevant verified source evidence exceeds the AI input limit. Review and split the response section before drafting; no source requirements were silently removed.");
+  }
   if (reasons.length) return { state: "blocked", reasons: [...new Set(reasons)] };
 
   const companyContext = input.company
@@ -180,7 +230,7 @@ export function prepareBidDraftInput(input: {
   ])];
   const packetWithoutFingerprint = {
     sectionTitle: section.title,
-    sectionInstructions: section.instructions ?? "",
+    sectionInstructions: uniqueSectionInstructions(section.instructions, selectedLinked),
     snapshotId: snapshot.pursuitSnapshotId!,
     understandingId: requirements!.understandingId,
     documentSetFingerprint: snapshot.documentSetFingerprint!,
