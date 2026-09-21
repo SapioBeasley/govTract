@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
+import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 
 import {
   bidRequirements,
@@ -242,7 +243,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
   }
 
   const db = getDb();
-  const [requirements, sections, sourceRequirements, sourceSnapshot] = await Promise.all([
+  const [requirements, sections, sourceRequirements, sourceSnapshot, appliedGenerations] = await Promise.all([
     db
       .select({
         id: bidRequirements.id,
@@ -275,6 +276,10 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
       .orderBy(asc(bidSections.sortOrder), asc(bidSections.id)),
     loadLatestSolicitationRequirements(row.opportunityId),
     loadSourceSnapshot(row.opportunityId, row.sourceSnapshot ?? {}),
+    db.select({ id: bidDraftGenerations.id, bidSectionId: bidDraftGenerations.bidSectionId })
+      .from(bidDraftGenerations)
+      .where(and(eq(bidDraftGenerations.bidWorkspaceId, workspaceId), eq(bidDraftGenerations.applied, true)))
+      .orderBy(desc(bidDraftGenerations.createdAt), desc(bidDraftGenerations.id)),
   ]);
 
   const state = metadataState(row.metadata ?? {});
@@ -305,7 +310,17 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
         ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId) === "complete"
         : false,
     })),
-    sections,
+    // Historical generated drafts predate the explicit review marker. Preserve
+    // their text and provenance, but never let removing old placeholders alone
+    // upgrade that generated content to a verified vendor commitment.
+    sections: sections.map((section) => {
+      const prior = appliedGenerations.find((generation) => generation.bidSectionId === section.id);
+      return prior && !section.metadata.aiDraftReview
+        ? { ...section, metadata: { ...section.metadata,
+            aiDraftReview: { generationId: prior.id, legacy: true },
+          } }
+        : section;
+    }),
   };
   const finalReview = evaluateBidFinalReview({
     workspace,
