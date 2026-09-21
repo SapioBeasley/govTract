@@ -95,8 +95,8 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
   // addition to the rated load. Parse each named model's own excerpt span:
   // never assign a test weight from an adjacent model or call it rated capacity.
   for (const [field, sourcePattern, outputPattern, label] of [
-    ["ratedLoad", /\b(?:rated (?:load|capacity)|working load|capacity)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
-      /\b(?:rated (?:load|capacity)|working load|capacity)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "rated load"],
+    ["ratedLoad", /\b(?:rated(?:\s+(?:load|capacity|for|at))?|working load|capacity|rating)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
+      /\b(?:rated(?:\s+(?:load|capacity|for|at))?|working load|capacity|rating)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "rated load"],
     ["quantity", /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i,
       /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i, "quantity"],
     ["testWeight", /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
