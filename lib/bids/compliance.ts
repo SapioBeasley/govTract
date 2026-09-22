@@ -164,3 +164,22 @@ export function resolveComplianceStatus(
 
   return savedStatus;
 }
+
+
+/** Never rebind a completed/approved response or a historical snapshot. */
+export function shouldRefreshUnverifiedComplianceEvidence(input: {
+  savedStatus:string;
+  savedSnapshotId:string | null;
+  currentSnapshotId:string | null;
+  savedIssues:string[];
+  plannedIssues:string[];
+}) {
+  return input.savedStatus === "needs_review" &&
+    Boolean(input.currentSnapshotId) &&
+    input.savedSnapshotId === input.currentSnapshotId &&
+    input.savedIssues.some((issue)=>[
+      "requirement_set_incomplete","requirement_evidence_missing",
+      "snapshot_incomplete","evidence_document_unavailable",
+    ].includes(issue)) &&
+    input.plannedIssues.every((issue)=>issue === "requirement_requiredness_unknown");
+}
