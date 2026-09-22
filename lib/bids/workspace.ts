@@ -304,10 +304,13 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
             requirement.evidence,
             sourceSnapshot,
             sourceRequirements.understandingId,
+            sourceRequirements.requirements.find((source) =>
+              source.id === requirement.evidence.sourceRequirementId)?.listingEvidence ?? null,
           )
         : "needs_review" as const,
       canMarkComplete: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
-        ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId) === "complete"
+        ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId,
+            sourceRequirements.requirements.find((source) => source.id === requirement.evidence.sourceRequirementId)?.listingEvidence ?? null) === "complete"
         : false,
     })),
     // Historical generated drafts predate the explicit review marker. Preserve

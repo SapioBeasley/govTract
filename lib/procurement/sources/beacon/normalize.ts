@@ -130,6 +130,34 @@ function normalizeDocuments(value: unknown): PersistableDocument[] {
   });
 }
 
+/**
+ * Beacon can supply mandatory response templates inside eBid questionnaire
+ * attachments rather than in solicitation.documents. They are original source
+ * files, not model-generated forms, and must be present in the snapshot.
+ */
+function normalizeEbidFormAttachments(ebid: unknown): PersistableDocument[] {
+  const eforms = asObject(ebid)?.eforms;
+  if (!Array.isArray(eforms)) return [];
+  return eforms.flatMap((entry) => {
+    const form = asObject(entry);
+    if (!form || !Array.isArray(form.questions)) return [];
+    return form.questions.flatMap((questionEntry: unknown) => {
+      const question = asObject(questionEntry);
+      if (!question || !Array.isArray(question.attachments)) return [];
+      return normalizeDocuments(question.attachments).map((document) => ({
+        ...document,
+        sourceMetadata: {
+          ...document.sourceMetadata,
+          requiredOriginalForm: question.required === true,
+          formName: firstString(form,["name","title"]) ?? "Source response form",
+          formQuestion: firstString(question,["prompt","text"]) ?? null,
+          sourceLocation: "ebid.eforms.questions.attachments",
+        },
+      }));
+    });
+  });
+}
+
 function normalizeClassifications(value: unknown): PersistableClassification[] {
   if (!Array.isArray(value)) return [];
 
@@ -218,7 +246,9 @@ function buildNormalizedBeaconSolicitation(input: {
       input.agencySlug === "city-of-houston"
         ? { locality: "Houston", region: "TX", country: "US" }
         : {},
-    documents: normalizeDocuments(row.documents),
+    documents: [...new Map([...normalizeDocuments(row.documents),
+      ...normalizeEbidFormAttachments(row.ebid)]
+      .map((document) => [document.sourceDocumentKey,document])).values()],
   };
 }
 

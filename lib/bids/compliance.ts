@@ -1,5 +1,6 @@
 import type { BidWorkspaceSourceSnapshot } from "./workspace";
 import type { PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
+import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
 
 export const COMPLIANCE_STATUSES = [
   "missing",
@@ -32,6 +33,7 @@ export type ComplianceEvidence = {
   requirementLevel: "required" | "optional" | "unknown";
   pursuitSnapshotId: string | null;
   references: ComplianceEvidenceReference[];
+  listingEvidence?: ListingEvidence | null;
   issues: string[];
 };
 
@@ -84,7 +86,7 @@ export function planComplianceMatrix(input: {
     if (snapshot.stale || snapshot.documentSetFingerprint !== snapshot.currentDocumentSetFingerprint) {
       issues.add("authoritative_document_set_changed");
     }
-    if (requirement.evidence.length === 0) issues.add("requirement_evidence_missing");
+    if (requirement.evidence.length === 0 && !requirement.listingEvidence) issues.add("requirement_evidence_missing");
     if (requirement.level === "unknown") issues.add("requirement_requiredness_unknown");
 
     const references = requirement.evidence.map((evidence) => {
@@ -116,6 +118,7 @@ export function planComplianceMatrix(input: {
         requirementLevel: requirement.level as ComplianceEvidence["requirementLevel"],
         pursuitSnapshotId: snapshot.pursuitSnapshotId,
         references,
+        listingEvidence: requirement.listingEvidence ?? null,
         issues: [...issues],
       },
       sortOrder,
@@ -132,6 +135,7 @@ export function resolveComplianceStatus(
   evidence: ComplianceEvidence,
   snapshot: BidWorkspaceSourceSnapshot,
   currentUnderstandingId: string | null,
+  currentListingEvidence: ListingEvidence | null = null,
 ): ComplianceStatus {
   if (
     !isComplianceStatus(savedStatus) ||
@@ -142,7 +146,9 @@ export function resolveComplianceStatus(
     evidence.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
     evidence.understandingId !== currentUnderstandingId ||
     evidence.issues.some((issue) => issue !== "snapshot_incomplete" && issue !== "evidence_document_unavailable") ||
-    evidence.references.length === 0
+    (evidence.references.length === 0 && !evidence.listingEvidence) ||
+    (evidence.listingEvidence && (currentListingEvidence === null ||
+      JSON.stringify(evidence.listingEvidence) !== JSON.stringify(currentListingEvidence)))
   ) return "needs_review";
 
   const snapshotDocuments = new Map(snapshot.documents.map((document) => [document.id, document]));
@@ -157,4 +163,23 @@ export function resolveComplianceStatus(
   })) return "needs_review";
 
   return savedStatus;
+}
+
+
+/** Never rebind a completed/approved response or a historical snapshot. */
+export function shouldRefreshUnverifiedComplianceEvidence(input: {
+  savedStatus:string;
+  savedSnapshotId:string | null;
+  currentSnapshotId:string | null;
+  savedIssues:string[];
+  plannedIssues:string[];
+}) {
+  return input.savedStatus === "needs_review" &&
+    Boolean(input.currentSnapshotId) &&
+    input.savedSnapshotId === input.currentSnapshotId &&
+    input.savedIssues.some((issue)=>[
+      "requirement_set_incomplete","requirement_evidence_missing",
+      "snapshot_incomplete","evidence_document_unavailable",
+    ].includes(issue)) &&
+    input.plannedIssues.every((issue)=>issue === "requirement_requiredness_unknown");
 }

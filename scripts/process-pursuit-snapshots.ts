@@ -1,15 +1,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, asc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { closeDb, getDb } from "../lib/db/client";
 import { savedOpportunities } from "../lib/db/saved-opportunities-schema";
+import { bidWorkspaces } from "../lib/db/canonical-schema";
 import { opportunities } from "../lib/db/schema";
 import { createVercelBlobSnapshotArtifactStore } from "../lib/procurement/pursuits/artifact-store";
 import { createBeaconPursuitDocumentRetriever } from "../lib/procurement/pursuits/beacon-retriever";
+import { listPursuitSnapshotWork } from "../lib/procurement/pursuits/work-queue";
 import {
   ensurePursuitSnapshotPrepared,
+  ensureBidWorkspaceSnapshotPrepared,
+  getPursuitSnapshot,
   processPursuitSnapshot,
 } from "../lib/procurement/pursuits/snapshot";
 
@@ -32,7 +36,10 @@ async function main() {
   }
 
   const db = getDb();
-  const pursuits = await db
+  // Process pending workspace-owned snapshots first. Saved-only sweeps previously
+  // kept selecting the same oldest complete pursuits and starved new bid requests.
+  const queued = await listPursuitSnapshotWork(SOURCE,LIMIT);
+  const pursuits = queued.length < LIMIT ? await db
     .select({ opportunityId: savedOpportunities.opportunityId })
     .from(savedOpportunities)
     .innerJoin(opportunities, eq(opportunities.id, savedOpportunities.opportunityId))
@@ -42,8 +49,8 @@ async function main() {
         eq(opportunities.source, SOURCE),
       ),
     )
-    .orderBy(asc(savedOpportunities.updatedAt))
-    .limit(LIMIT);
+    .orderBy(desc(savedOpportunities.updatedAt))
+    .limit(LIMIT - queued.length) : [];
 
   const retriever = createBeaconPursuitDocumentRetriever();
   const artifactStore = createVercelBlobSnapshotArtifactStore();
@@ -53,10 +60,28 @@ async function main() {
   let incomplete = 0;
   let errors = 0;
 
+  const selected = [...queued.map((row) => ({ opportunityId: row.opportunityId!, snapshotId: row.snapshotId })),
+    ...pursuits.filter((row) => !queued.some((item) => item.opportunityId === row.opportunityId))
+      .map((row) => ({ opportunityId: row.opportunityId, snapshotId: null }))].slice(0,LIMIT);
   try {
-    for (const pursuit of pursuits) {
+    for (const pursuit of selected) {
       try {
-        const snapshot = await ensurePursuitSnapshotPrepared(pursuit.opportunityId);
+        const previous = pursuit.snapshotId
+          ? await getPursuitSnapshot(pursuit.snapshotId)
+          : await ensurePursuitSnapshotPrepared(pursuit.opportunityId);
+        if (!previous) throw new Error("Pending pursuit snapshot was not found");
+        // An authoritative eBid form or addendum can appear after the original
+        // workspace was created. Prepare its own *new* immutable snapshot with
+        // the current source inventory, without modifying old evidence or AI.
+        const [workspace] = await db.select({id:bidWorkspaces.id})
+          .from(bidWorkspaces)
+          .where(and(
+            eq(bidWorkspaces.opportunityId,pursuit.opportunityId),
+            isNull(bidWorkspaces.companyProfileId),
+          )).limit(1);
+        const snapshot = workspace
+          ? await ensureBidWorkspaceSnapshotPrepared(workspace.id)
+          : previous;
         const result = await processPursuitSnapshot(snapshot.id, {
           retriever,
           artifactStore,
@@ -83,7 +108,7 @@ async function main() {
   }
 
   console.log(
-    `PURSUIT_SNAPSHOT_SUMMARY source=${SOURCE} selected=${pursuits.length} complete=${complete} blocked=${blocked} incomplete=${incomplete} errors=${errors}`,
+    `PURSUIT_SNAPSHOT_SUMMARY source=${SOURCE} selected=${selected.length} complete=${complete} blocked=${blocked} incomplete=${incomplete} errors=${errors}`,
   );
   if (errors > 0) process.exitCode = 1;
 }

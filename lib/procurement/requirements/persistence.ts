@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { documentExtractions, documentExtractionSegments, opportunityDocumentVersionExtractions } from "@/lib/db/document-extractions-schema";
-import { opportunityDocumentVersions } from "@/lib/db/schema";
+import { opportunities, opportunityDocuments, opportunityDocumentVersions, sourceRecords } from "@/lib/db/schema";
+import { findVerbatimRequirementPassage, resolveAuthoritativeListingEvidence, type AuthoritativeListingContext, type ListingEvidence } from "./listing-evidence";
+import { deriveBeaconSourceLineItems } from "./source-line-items";
 import { solicitationRequirements } from "@/lib/db/solicitation-requirements-schema";
 import {
   solicitationUnderstandingEvidence,
@@ -28,6 +30,8 @@ export type PersistedSolicitationRequirement = {
   sourceFindingKey: string;
   details: Record<string, unknown>;
   evidence: SolicitationRequirementEvidence[];
+  /** Authoritative source-listing evidence, never represented as a document citation. */
+  listingEvidence?: ListingEvidence | null;
 };
 
 export type SolicitationRequirementSet = {
@@ -218,9 +222,82 @@ export async function loadLatestSolicitationRequirements(
     evidenceByFinding.set(evidence.findingKey, list);
   }
 
-  const requirements = rows.map((row) => ({
-    ...row,
-    evidence: (evidenceByFinding.get(row.sourceFindingKey) ?? []).map((evidence) => ({
+  // The original source record and canonical field provenance establish whether
+  // the current authoritative listing really supports a previously unlinked
+  // META-derived finding. Comparing raw field values avoids trusting AI wording.
+  const [sourceContextRow] = await db.select({
+    id: sourceRecords.id,
+    source: opportunities.source,
+    sourceOpportunityId: opportunities.sourceOpportunityId,
+    sourceRecordSource: sourceRecords.source,
+    payloadHash: sourceRecords.payloadHash,
+    sourceRevisionId: sourceRecords.sourceRevisionId,
+    rawPayload: sourceRecords.rawPayload,
+    sourceRecordId: opportunities.sourceRecordId,
+    title: opportunities.title,
+    description: opportunities.description,
+    dueAt: opportunities.dueAt,
+    agencyName: opportunities.agencyName,
+    location: opportunities.location,
+    fieldProvenance: opportunities.fieldProvenance,
+  }).from(opportunities)
+    .innerJoin(sourceRecords, eq(sourceRecords.id, opportunities.sourceRecordId))
+    .where(eq(opportunities.id, opportunityId)).limit(1);
+  const sourceContext: AuthoritativeListingContext | null = sourceContextRow ? {
+    record: {
+      id: sourceContextRow.id, payloadHash: sourceContextRow.payloadHash,
+      sourceRevisionId: sourceContextRow.sourceRevisionId,
+      rawPayload: sourceContextRow.rawPayload,
+    },
+    listing: {
+      sourceRecordId: sourceContextRow.sourceRecordId,
+      title: sourceContextRow.title, description: sourceContextRow.description,
+      dueAt: sourceContextRow.dueAt, agencyName: sourceContextRow.agencyName,
+      location: sourceContextRow.location, fieldProvenance: sourceContextRow.fieldProvenance,
+    },
+  } : null;
+
+  // In case a META finding quotes an *existing* source document rather than a
+  // listing field, recover only a substantial verbatim clause from a checksum-
+  // matched current extraction. This never invents an extraction segment.
+  // Select extraction candidates only if a requirement lacks an existing
+  // citation and cannot be supported by an authoritative listing field.
+  const needDocumentRecovery = rows.some((row) =>
+    (evidenceByFinding.get(row.sourceFindingKey) ?? []).length === 0 &&
+    (!sourceContext || !resolveAuthoritativeListingEvidence({
+      source: sourceContext,section:row.sourceSection,text:row.text,
+    })));
+  const recoverySegments = needDocumentRecovery ? await db.select({
+    segmentId: documentExtractionSegments.id,
+    content: documentExtractionSegments.content,
+    locator: documentExtractionSegments.locator,
+    versionId: opportunityDocumentVersions.id,
+    documentId: opportunityDocumentVersions.opportunityDocumentId,
+    versionNumber: opportunityDocumentVersions.versionNumber,
+  }).from(documentExtractionSegments)
+    .innerJoin(documentExtractions, eq(documentExtractions.id,documentExtractionSegments.documentExtractionId))
+    .innerJoin(opportunityDocumentVersionExtractions,
+      eq(opportunityDocumentVersionExtractions.documentExtractionId,documentExtractions.id))
+    .innerJoin(opportunityDocumentVersions,
+      eq(opportunityDocumentVersions.id,opportunityDocumentVersionExtractions.opportunityDocumentVersionId))
+    .innerJoin(opportunityDocuments,
+      eq(opportunityDocuments.id,opportunityDocumentVersions.opportunityDocumentId))
+    .where(and(
+      eq(opportunityDocuments.opportunityId,opportunityId),
+      eq(opportunityDocuments.isActive,true),
+      eq(documentExtractions.checksumSha256,opportunityDocumentVersions.checksumSha256),
+      sql`length(${documentExtractionSegments.content}) <= 250000`,
+    ))
+    .orderBy(desc(opportunityDocumentVersions.versionNumber))
+    .limit(500) : [];
+  const latestVersionByDocument = new Map<string,number>();
+  for (const segment of recoverySegments) {
+    if (!latestVersionByDocument.has(segment.documentId))
+      latestVersionByDocument.set(segment.documentId,segment.versionNumber);
+  }
+
+  const requirements = rows.map((row): PersistedSolicitationRequirement => {
+    const existing = (evidenceByFinding.get(row.sourceFindingKey) ?? []).map((evidence) => ({
       ...evidence,
       excerpt: evidence.excerpt?.trim()
         ? evidence.excerpt
@@ -232,11 +309,38 @@ export async function loadLatestSolicitationRequirements(
               row.text,
             )
           : null,
-    })),
-  }));
+    }));
+    const listingEvidence = existing.length === 0 && sourceContext
+      ? resolveAuthoritativeListingEvidence({
+        source: sourceContext,section: row.sourceSection,text: row.text,
+      }) : null;
+    const documentRecovery = existing.length === 0 && !listingEvidence
+      ? recoverySegments.flatMap((segment) => {
+        if (latestVersionByDocument.get(segment.documentId) !== segment.versionNumber) return [];
+        const excerpt = findVerbatimRequirementPassage(segment.content,row.text);
+        return excerpt ? [{
+          opportunityDocumentVersionId:segment.versionId,
+          documentExtractionSegmentId:segment.segmentId,
+          locator:segment.locator,
+          excerpt,
+        }] : [];
+      }).slice(0,1)
+      : [];
+    return {...row,evidence:existing.length ? existing : documentRecovery,listingEvidence};
+  });
+  const lineItemRequirements = sourceContextRow &&
+    sourceContextRow.source === sourceContextRow.sourceRecordSource
+    ? deriveBeaconSourceLineItems({
+      understandingId:understanding.id,sourceRecordId:sourceContextRow.id,
+      payloadHash:sourceContextRow.payloadHash,sourceRevisionId:sourceContextRow.sourceRevisionId,
+      source:sourceContextRow.source,sourceOpportunityId:sourceContextRow.sourceOpportunityId,
+      rawPayload:sourceContextRow.rawPayload,
+    }) : [];
   const incompleteReasons = new Set<string>();
   if (understanding.incompleteReason) incompleteReasons.add(understanding.incompleteReason);
-  if (requirements.some((requirement) => requirement.evidence.length === 0)) {
+  if (requirements.some((requirement) =>
+    !requirement.listingEvidence &&
+    (requirement.evidence.length === 0 || requirement.evidence.some((item) => !item.excerpt?.trim())))) {
     incompleteReasons.add("requirement_evidence_missing");
   }
 
@@ -248,6 +352,6 @@ export async function loadLatestSolicitationRequirements(
         : "complete",
     incompleteReasons: [...incompleteReasons],
     isStale: understanding.isStale,
-    requirements,
+    requirements:[...requirements,...lineItemRequirements],
   };
 }

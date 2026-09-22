@@ -25,3 +25,16 @@ test("Path 1 exposes a real bid workspace and opportunity handoff", () => {
     "opening or creating a Bid Workspace must not invoke AI generation",
   );
 });
+
+
+test("disabled AI drafting names the missing source evidence and snapshot recovery instead of a generic dead end", () => {
+  const detail=source("app/bids/[id]/page.tsx");
+  const draft=source("components/bid-draft-action.tsx");
+  const outline=source("components/bid-outline-control.tsx");
+  assert.match(detail,/sourceBlockers/);
+  assert.match(detail,/requirement_evidence_missing|missingEvidence/);
+  assert.match(detail,/pending|snapshotStatus/);
+  assert.match(outline,/sourceBlockers/);
+  assert.match(draft,/sourceBlockers/);
+  assert.doesNotMatch(draft,/Drafting is unavailable until the source snapshot and understanding are complete and current\./);
+});

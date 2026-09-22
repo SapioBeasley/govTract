@@ -134,3 +134,29 @@ test("Beacon exposes the shared source-adapter identity, authority, and normaliz
     }),
   );
 });
+
+
+test("Beacon original form attachments in eBid questions join the source package with stable keys, not just top-level documents", () => {
+  const fixture = {
+    id:"beacon-ebid-fixture",title:"Source listing with mandatory original form",
+    documents:[{key:"agency/solicitation/terms.docx",name:"Terms.docx",bytes:1024}],
+    ebid:{eforms:[{
+      name:"Submission Requirements",type:"questionnaire_form",
+      questions:[{required:true,type:"document-upload",prompt:"Upload completed Signature Page",
+        attachments:[{key:"agency/form-attachment/signature.docx",
+          name:"Informal Signature Page.docx",type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          bytes:18000,bucket:"documents.beaconbid.com"}]}],
+    }]},
+  };
+  const input={row:fixture,agencySlug:"city-of-houston",canonicalStatus:"open",
+    canonicalUrl:"https://www.beaconbid.com/solicitations/city-of-houston/beacon-ebid-fixture/source"};
+  const normalized=normalizeBeaconSolicitation(input);
+  assert.deepEqual(normalized.documents?.map((document)=>document.sourceDocumentKey),
+    ["agency/solicitation/terms.docx","agency/form-attachment/signature.docx"]);
+  const form=normalized.documents?.[1];
+  assert.equal(form?.name,"Informal Signature Page.docx");
+  assert.equal(form?.url,null);
+  assert.equal(form?.sourceMetadata.requiredOriginalForm,true);
+  assert.equal(form?.sourceMetadata.formName,"Submission Requirements");
+  assert.deepEqual(normalizeBeaconSolicitation(input).documents,normalized.documents);
+});
