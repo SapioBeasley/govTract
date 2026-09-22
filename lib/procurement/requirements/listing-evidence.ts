@@ -3,7 +3,7 @@ export type ListingEvidence = {
   sourceRecordId: string;
   payloadHash: string;
   sourceRevisionId: string | null;
-  field: "description" | "title" | "dueAt" | "location" | "agencyName";
+  field: "description" | "title" | "dueAt" | "location" | "agencyName" | "ebid.lineItems";
   excerpt: string;
 };
 export type AuthoritativeListingContext = {
