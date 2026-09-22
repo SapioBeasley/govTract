@@ -1,16 +1,18 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { closeDb, getDb } from "../lib/db/client";
 import { savedOpportunities } from "../lib/db/saved-opportunities-schema";
+import { bidWorkspaces } from "../lib/db/canonical-schema";
 import { opportunities } from "../lib/db/schema";
 import { createVercelBlobSnapshotArtifactStore } from "../lib/procurement/pursuits/artifact-store";
 import { createBeaconPursuitDocumentRetriever } from "../lib/procurement/pursuits/beacon-retriever";
 import { listPursuitSnapshotWork } from "../lib/procurement/pursuits/work-queue";
 import {
   ensurePursuitSnapshotPrepared,
+  ensureBidWorkspaceSnapshotPrepared,
   getPursuitSnapshot,
   processPursuitSnapshot,
 } from "../lib/procurement/pursuits/snapshot";
@@ -64,10 +66,22 @@ async function main() {
   try {
     for (const pursuit of selected) {
       try {
-        const snapshot = pursuit.snapshotId
+        const previous = pursuit.snapshotId
           ? await getPursuitSnapshot(pursuit.snapshotId)
           : await ensurePursuitSnapshotPrepared(pursuit.opportunityId);
-        if (!snapshot) throw new Error("Pending pursuit snapshot was not found");
+        if (!previous) throw new Error("Pending pursuit snapshot was not found");
+        // An authoritative eBid form or addendum can appear after the original
+        // workspace was created. Prepare its own *new* immutable snapshot with
+        // the current source inventory, without modifying old evidence or AI.
+        const [workspace] = await db.select({id:bidWorkspaces.id})
+          .from(bidWorkspaces)
+          .where(and(
+            eq(bidWorkspaces.opportunityId,pursuit.opportunityId),
+            isNull(bidWorkspaces.companyProfileId),
+          )).limit(1);
+        const snapshot = workspace
+          ? await ensureBidWorkspaceSnapshotPrepared(workspace.id)
+          : previous;
         const result = await processPursuitSnapshot(snapshot.id, {
           retriever,
           artifactStore,
