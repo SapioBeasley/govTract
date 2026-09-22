@@ -99,6 +99,7 @@ test("UTC due-date statements match the exact authoritative instant across ISO a
     "Submit bids no later than September 24, 2026, at 20:00:00.000Z.",
     "Submit bids no later than September 23, 2026.",
     "Submit bids no later than September 23, 2026, at 20:00:00.000 Central Time.",
+    "Deliver products no later than September 23, 2026, at 20:00:00.000Z.",
   ]) assert.equal(resolveAuthoritativeListingEvidence({source:s,section:"schedule",text:finding}),null,finding);
   const tampered = structuredClone(s);
   tampered.listing.fieldProvenance.dueAt = {authority:"unknown"};
