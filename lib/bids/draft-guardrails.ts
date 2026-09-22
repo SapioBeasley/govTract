@@ -61,7 +61,7 @@ export function redactUnverifiedClaims(content: string, sourceEvidence: string):
     const trailing = chunk.match(/\s*$/)?.[0] ?? "";
     if (ambiguousModel || wrongModel) {
       return leading +
-        "[NEEDS INPUT: Recheck every named model against pinned source evidence: state the working-load limit, separate test weight, product weight and quantity only where explicitly identified; resolve contradictory or ambiguous values and verify the exact offered configuration]" +
+        "[NEEDS INPUT: Recheck each separate requested model against pinned source evidence: state the working-load limit, separate test weight, product weight and quantity only where explicitly identified; resolve contradictory or ambiguous values and verify the exact offered configuration]" +
         trailing;
     }
     const categories = [...new Set(claims.map((claim) =>
