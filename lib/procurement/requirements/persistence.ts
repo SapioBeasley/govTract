@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { documentExtractions, documentExtractionSegments, opportunityDocumentVersionExtractions } from "@/lib/db/document-extractions-schema";
 import { opportunities, opportunityDocuments, opportunityDocumentVersions, sourceRecords } from "@/lib/db/schema";
 import { findVerbatimRequirementPassage, resolveAuthoritativeListingEvidence, type AuthoritativeListingContext, type ListingEvidence } from "./listing-evidence";
+import { deriveBeaconSourceLineItems } from "./source-line-items";
 import { solicitationRequirements } from "@/lib/db/solicitation-requirements-schema";
 import {
   solicitationUnderstandingEvidence,
@@ -226,6 +227,9 @@ export async function loadLatestSolicitationRequirements(
   // META-derived finding. Comparing raw field values avoids trusting AI wording.
   const [sourceContextRow] = await db.select({
     id: sourceRecords.id,
+    source: opportunities.source,
+    sourceOpportunityId: opportunities.sourceOpportunityId,
+    sourceRecordSource: sourceRecords.source,
     payloadHash: sourceRecords.payloadHash,
     sourceRevisionId: sourceRecords.sourceRevisionId,
     rawPayload: sourceRecords.rawPayload,
@@ -324,6 +328,14 @@ export async function loadLatestSolicitationRequirements(
       : [];
     return {...row,evidence:existing.length ? existing : documentRecovery,listingEvidence};
   });
+  const lineItemRequirements = sourceContextRow &&
+    sourceContextRow.source === sourceContextRow.sourceRecordSource
+    ? deriveBeaconSourceLineItems({
+      understandingId:understanding.id,sourceRecordId:sourceContextRow.id,
+      payloadHash:sourceContextRow.payloadHash,sourceRevisionId:sourceContextRow.sourceRevisionId,
+      source:sourceContextRow.source,sourceOpportunityId:sourceContextRow.sourceOpportunityId,
+      rawPayload:sourceContextRow.rawPayload,
+    }) : [];
   const incompleteReasons = new Set<string>();
   if (understanding.incompleteReason) incompleteReasons.add(understanding.incompleteReason);
   if (requirements.some((requirement) =>
@@ -340,6 +352,6 @@ export async function loadLatestSolicitationRequirements(
         : "complete",
     incompleteReasons: [...incompleteReasons],
     isStale: understanding.isStale,
-    requirements,
+    requirements:[...requirements,...lineItemRequirements],
   };
 }
