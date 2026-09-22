@@ -106,7 +106,7 @@ export default async function ComplianceEvidencePage({ params }: Props) {
           <p className="mt-4 rounded-xl border border-dashed p-4 text-sm">
             No verifiable document-level evidence was extracted for this requirement.
           </p>
-        )
+        )}
       </div>
     </main>
   );
