@@ -26,7 +26,13 @@ function Evidence({ check, workspaceId }: {
           {" · SHA-256 "}{reference.checksumSha256 ?? "Unverified"}
           {typeof reference.locator.page === "number" ? ` · Page ${reference.locator.page}` : ""}
         </div>
-      )) : <p>Authoritative source evidence is missing; do not rely on this requirement as verified.</p>}
+      )) : check.listingEvidence ? (
+        <p className="break-words">Authoritative opportunity listing · {check.listingEvidence.field}
+          {" · Source record "}{check.listingEvidence.sourceRecordId}
+          {" · Payload SHA-256 "}{check.listingEvidence.payloadHash}
+          {" · "}{check.listingEvidence.excerpt}
+        </p>
+      ) : <p>Authoritative source evidence is missing; do not rely on this requirement as verified.</p>}
       {check.originalRequired ? (
         check.originalDocuments.length ? (
           <div className="grid min-w-0 gap-1">
