@@ -106,7 +106,7 @@ export function resolveAuthoritativeListingEvidence(input: {
   const {source,section,text} = input;
   const fields: ListingEvidence["field"][] =
     section === "location" ? ["location"] :
-    section === "schedule" && /\b(?:due|deadline|closing)\b/i.test(text) ? ["dueAt"] :
+    section === "schedule" && /\b(?:due|deadline|closing|submit bids|bids no later than)\b/i.test(text) ? ["dueAt"] :
     section === "scope" ? ["description","title"] : ["description"];
   for (const field of fields) {
     if (!authoritative(source,field)) continue;
