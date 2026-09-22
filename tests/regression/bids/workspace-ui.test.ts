@@ -38,3 +38,15 @@ test("disabled AI drafting names the missing source evidence and snapshot recove
   assert.match(draft,/sourceBlockers/);
   assert.doesNotMatch(draft,/Drafting is unavailable until the source snapshot and understanding are complete and current\./);
 });
+
+test("pending original files have an explicit bounded source-retrieval action without auto-running on page load", () => {
+  const detail=source("app/bids/[id]/page.tsx");
+  const action=source("components/bid-source-refresh-action.tsx");
+  const route=source("app/api/bids/[id]/source-snapshot/route.ts");
+  assert.match(detail,/<BidSourceRefreshAction/);
+  assert.match(action,/Retrieve source files/);
+  assert.match(action,/method: "POST"/);
+  assert.doesNotMatch(action,/useEffect|generateBidSectionDraft|generateSolicitationUnderstanding/);
+  assert.match(route,/export async function POST/);
+  assert.doesNotMatch(route,/generateBidSectionDraft|generateSolicitationUnderstanding/);
+});
