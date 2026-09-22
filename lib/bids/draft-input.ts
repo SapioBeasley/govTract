@@ -6,7 +6,7 @@ import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 
-export const BID_DRAFT_PROMPT_VERSION = "4";
+export const BID_DRAFT_PROMPT_VERSION = "5";
 const MAX_SOURCE_CHARS = 48_000;
 
 export type DraftSourceVersion = {
