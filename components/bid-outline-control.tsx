@@ -16,6 +16,7 @@ function SectionEditor({
   first,
   last,
   sourceReady,
+  sourceBlockers,
   generations,
 }: {
   workspaceId: string;
@@ -25,6 +26,7 @@ function SectionEditor({
   first: boolean;
   last: boolean;
   sourceReady: boolean;
+  sourceBlockers: string[];
   generations: BidDraftGenerationSummary[];
 }) {
   const router = useRouter();
@@ -167,6 +169,7 @@ function SectionEditor({
         currentContent={section.content}
         unsavedChanges={changed}
         sourceReady={sourceReady}
+        sourceBlockers={sourceBlockers}
         generations={generations}
       />
       <div className="flex flex-wrap items-center gap-3">
@@ -189,6 +192,7 @@ export function BidOutlineControl({
   requirements,
   sourceAvailable,
   sourceReady,
+  sourceBlockers,
   generations,
 }: {
   workspaceId: string;
@@ -196,6 +200,7 @@ export function BidOutlineControl({
   requirements: BidWorkspaceRequirement[];
   sourceAvailable: boolean;
   sourceReady: boolean;
+  sourceBlockers: string[];
   generations: BidDraftGenerationSummary[];
 }) {
   const router = useRouter();
@@ -278,7 +283,7 @@ export function BidOutlineControl({
             <SectionEditor key={section.id} workspaceId={workspaceId} section={section}
               requirements={requirements} onMove={move} first={index === 0 || pending}
               last={index === sections.length - 1 || pending} sourceReady={sourceReady}
-              generations={generations} />
+              sourceBlockers={sourceBlockers} generations={generations} />
           ))}
         </>
       )}
