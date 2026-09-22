@@ -80,6 +80,35 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const snapshot = workspace.sourceSnapshot;
+  const missingEvidence = sourceRequirements.filter((requirement) =>
+    !requirement.listingEvidence &&
+    (!requirement.evidence.length || requirement.evidence.some((proof) => !proof.excerpt?.trim())));
+  const pendingFiles = snapshot.documents.filter((document) => document.status === "pending");
+  const unavailableFiles = snapshot.documents.filter((document) =>
+    document.status !== "stored" && document.status !== "pending");
+  const sourceBlockers = [
+    pendingFiles.length
+      ? `${pendingFiles.length} original source file(s) are queued but not stored: ${pendingFiles.map((file) => file.filename).join(", ")}. Retry the bounded pursuit-snapshot job from Beacon opportunity pull in GitHub Actions and refresh this workspace.`
+      : null,
+    unavailableFiles.length
+      ? `Source retrieval failed or was blocked for: ${unavailableFiles.map((file) => `${file.filename} (${file.failureCode ?? file.status})`).join(", ")}. Check source access and rerun the pursuit-snapshot job; do not draft without these files.`
+      : null,
+    snapshot.snapshotStatus !== "complete" && !pendingFiles.length && !unavailableFiles.length
+      ? "The original solicitation package has not been fully retained. Check the pursuit-snapshot job before drafting."
+      : null,
+    snapshot.stale || snapshot.documentSetFingerprint !== snapshot.currentDocumentSetFingerprint
+      ? "An authoritative source document or amendment has changed. Refresh and review the preserved snapshot and response outline."
+      : null,
+    missingEvidence.length
+      ? `${missingEvidence.length} requirement(s) lack verifiable source evidence: ${missingEvidence.slice(0,3).map((requirement) => requirement.requirementKey).join(", ")}. Restore authoritative document or listing provenance; checking off the compliance matrix cannot bypass this block.`
+      : null,
+    workspace.sourceRequirements?.completenessStatus !== "complete" && !missingEvidence.length
+      ? `Solicitation understanding is incomplete (${workspace.sourceRequirements?.incompleteReasons.join(", ") || "not available"}). Review missing source inputs before drafting.`
+      : null,
+    workspace.sourceRequirements?.isStale
+      ? "Saved solicitation understanding is stale; explicitly review current sources before any new model regeneration."
+      : null,
+  ].filter((reason): reason is string => Boolean(reason));
 
   return (
     <main className="min-w-0 overflow-x-clip px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
@@ -262,6 +291,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               initialSections={workspace.sections}
               requirements={workspace.requirements}
               generations={generations}
+              sourceBlockers={sourceBlockers}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
               sourceReady={
                 snapshot.snapshotStatus === "complete" &&
