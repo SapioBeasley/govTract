@@ -10,6 +10,7 @@ export function BidDraftAction({
   sectionId,
   currentContent,
   sourceReady,
+  sourceBlockers,
   unsavedChanges,
   generations,
 }: {
@@ -17,6 +18,7 @@ export function BidDraftAction({
   sectionId: string;
   currentContent: string | null;
   sourceReady: boolean;
+  sourceBlockers: string[];
   unsavedChanges: boolean;
   generations: BidDraftGenerationSummary[];
 }) {
@@ -75,9 +77,12 @@ export function BidDraftAction({
         </span>
       </div>
       {!sourceReady ? (
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Drafting is unavailable until the source snapshot and understanding are complete and current.
-        </p>
+        <div role="status" className="grid gap-1 text-xs leading-5 text-[var(--muted-foreground)]">
+          <p>Draft with AI is blocked by source verification:</p>
+          {sourceBlockers.length ? sourceBlockers.map((reason,index) => (
+            <p key={index} className="break-words">{reason}</p>
+          )) : <p>Review the complete current source package and section evidence before drafting.</p>}
+        </div>
       ) : unsavedChanges ? (
         <p className="text-xs text-[var(--muted-foreground)]">
           Save your manual section changes before requesting an AI draft.
