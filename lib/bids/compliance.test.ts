@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { planComplianceMatrix, resolveComplianceStatus } from "./compliance";
+import { planComplianceMatrix, resolveComplianceStatus, shouldRefreshUnverifiedComplianceEvidence } from "./compliance";
 import type { PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 import type { BidWorkspaceSourceSnapshot } from "./workspace";
 
@@ -161,4 +161,19 @@ test("source-listing evidence remains distinguishable from document versions and
     {...listingEvidence,payloadHash:"b".repeat(64)}),"needs_review");
   assert.equal(resolveComplianceStatus("complete",row!.evidence,
     snapshot({snapshotStatus:"incomplete"}),"u",listingEvidence),"needs_review");
+});
+
+
+test("previous incomplete matrix evidence is repairable only on the identical snapshot with no completed user response", () => {
+  const input = {
+    savedStatus:"needs_review",savedSnapshotId:"snapshot-v1",
+    currentSnapshotId:"snapshot-v1",savedIssues:["requirement_evidence_missing"],
+    plannedIssues:[] as string[],
+  };
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence(input),true);
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence({...input,savedStatus:"complete"}),false);
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence({...input,savedStatus:"not_applicable"}),false);
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence({...input,currentSnapshotId:"snapshot-v2"}),false);
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence({...input,savedIssues:[]}),false);
+  assert.equal(shouldRefreshUnverifiedComplianceEvidence({...input,plannedIssues:["requirement_evidence_missing"]}),false);
 });
