@@ -80,3 +80,29 @@ test("document fallback requires substantial exact phrase in real extraction, no
   assert.equal(findVerbatimRequirementPassage("Bids must be received by Tuesday, April 3.",
     "Bids must be received by Thursday, April 3."),null);
 });
+
+test("UTC due-date statements match the exact authoritative instant across ISO and English dates, never a nearby hour", () => {
+  const s = structuredClone(source);
+  s.listing.dueAt = new Date("2026-09-23T20:00:00.000Z");
+  s.record.rawPayload.dueDate = { utcDate: "2026-09-23T20:00:00.000Z" };
+  const valid = [
+    "Submit bids no later than September 23, 2026, at 20:00:00.000Z.",
+    "Bids are due by 2026-09-23T20:00:00.000Z.",
+  ];
+  for (const finding of valid) {
+    const proof = resolveAuthoritativeListingEvidence({source:s,section:"schedule",text:finding});
+    assert.equal(proof?.field,"dueAt",finding);
+    assert.equal(proof?.excerpt,"2026-09-23T20:00:00.000Z");
+  }
+  for (const finding of [
+    "Submit bids no later than September 23, 2026, at 21:00:00.000Z.",
+    "Submit bids no later than September 24, 2026, at 20:00:00.000Z.",
+    "Submit bids no later than September 23, 2026.",
+    "Submit bids no later than September 23, 2026, at 20:00:00.000 Central Time.",
+  ]) assert.equal(resolveAuthoritativeListingEvidence({source:s,section:"schedule",text:finding}),null,finding);
+  const tampered = structuredClone(s);
+  tampered.listing.fieldProvenance.dueAt = {authority:"unknown"};
+  assert.equal(resolveAuthoritativeListingEvidence({
+    source:tampered,section:"schedule",text:valid[0]!,
+  }),null);
+});
