@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  evaluateUnderstandingCase, validateUnderstandingEvaluationCase,
+  assertExplicitManualUnderstandingEvaluation, evaluateUnderstandingCase, validateUnderstandingEvaluationCase,
   planUnderstandingEvaluation, executeUnderstandingEvaluation,
   type UnderstandingEvaluationCase,
 } from "@/lib/procurement/understanding/evaluation";
@@ -122,4 +122,27 @@ test("insufficient billable preflight budget blocks model use even after case se
   const planned = planUnderstandingEvaluation([fixtures[0]!], {maxCases:1,maxCostMicrousd:1_000});
   await assert.rejects(executeUnderstandingEvaluation(planned,provider),/budget|cap/i);
   assert.equal(calls,0);
+});
+
+test("keyword gold matching uses complete token sequences, never a substring of another requirement", () => {
+  const example = fixtures[1]!;
+  const content = completeContent(example);
+  content.submissionComponents.find((f) => f.key.includes("service-form"))!.text = "form and materials";
+  content.insuranceBonding.find((f) => f.key.includes("service-bond"))!.text = "bid bonding capacity";
+  const score = evaluateUnderstandingCase(example, content);
+  assert.deepEqual(score.missing, ["service-bond", "service-form"]);
+});
+
+test("paid evaluation entrypoint cannot be reached by PR CI, push, scheduled jobs or an unlabeled call", () => {
+  for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
+    assert.throws(() => assertExplicitManualUnderstandingEvaluation({
+      GITHUB_EVENT_NAME:event,GOVTRACT_EVAL_EXPLICIT_MANUAL:event === "workflow_dispatch" ? "false" : "true",
+    }), /manual workflow_dispatch/i);
+  }
+  assert.doesNotThrow(() => assertExplicitManualUnderstandingEvaluation({
+    GITHUB_EVENT_NAME:"workflow_dispatch",GOVTRACT_EVAL_EXPLICIT_MANUAL:"true",
+  }));
+  const workflow = readFileSync(".github/workflows/understanding-evaluation.yml", "utf8");
+  assert.match(workflow,/^on:\n  workflow_dispatch:/m);
+  assert.doesNotMatch(workflow,/^  (?:pull_request|push|schedule):/m);
 });
