@@ -1,0 +1,292 @@
+[
+  {
+    "id": "houston-fasteners-source-2026-09",
+    "kind": "supply",
+    "provenance": "Sanitized excerpts from City of Houston 1-10002035.docx and listing metadata, source version 5f673c6c-feab-4e2f-9cb8-453ecec029fc; used as a general supply-procurement regression, not an offered-product claim.",
+    "context": {
+      "title": "Hex Head Cap Screws and Hex Nuts",
+      "description": "City of Houston informal bid for hex head cap screws and hex nuts",
+      "agencyName": "City of Houston",
+      "solicitationNumber": "INF-2026-0393",
+      "opportunityType": "informal_bid",
+      "dueAt": "2026-09-24T17:00:00.000Z",
+      "location": {}
+    },
+    "documentVersionId": "5f673c6c-feab-4e2f-9cb8-453ecec029fc",
+    "sourceSegmentId": "9300c9bf-ecb4-49fd-9f69-c01624c7126e",
+    "sourceText": "CITY OF HOUSTON\nPART I – TECHNICAL SPECIFICATIONS\nSCREW, CAP HEX HEAD 3/8” X 1-1/2” 8C38\nPROJECT SCOPE\nThe vendor shall be required to furnish, deliver, and transport the equipment necessary to deliver the product per the City of Houston (City) specifications included herein.\nThe vendor shall be required to deliver the specific products to the City locations specified in the purchase order (PO) no later than (10) calendar days after receipt of the City’s purchase order.\nQUALITY ASSURANCE - All products from well-known manufacturers must be new, unused, and of first quality. Inferior products will not be allowed.\nAs interpreted by Houston Public Works, bids will be accepted for consideration on any make or model equal to or superior to the equipment specified. There needs to be more than a blanket statement that the product proposed will meet all requirements to establish equivalence; an explanation for each deviation or substitution will be required. The decision of equivalency will be at the sole discretion of the City.\nSHIPPING TERMS - Prices shall be FOB Destination, Freight Pre-Paid to the delivery location designated herein or on a purchase order.",
+    "required": [
+      {
+        "id": "supply-scope",
+        "section": "scope",
+        "sourceQuote": "SCREW, CAP HEX HEAD 3/8” X 1-1/2” 8C38",
+        "acceptablePhrases": [
+          "hex head",
+          "cap screw"
+        ]
+      },
+      {
+        "id": "supply-delivery",
+        "section": "schedule",
+        "sourceQuote": "no later than (10) calendar days after receipt of the City’s purchase order",
+        "acceptablePhrases": [
+          "10 calendar days",
+          "ten (10) calendar days"
+        ]
+      },
+      {
+        "id": "supply-quality",
+        "section": "qualifications",
+        "sourceQuote": "new, unused, and of first quality",
+        "acceptablePhrases": [
+          "new, unused",
+          "new and unused"
+        ]
+      },
+      {
+        "id": "supply-pricing",
+        "section": "pricingInstructions",
+        "sourceQuote": "FOB Destination, Freight Pre-Paid",
+        "acceptablePhrases": [
+          "fob destination"
+        ]
+      },
+      {
+        "id": "supply-substitutions",
+        "section": "evaluationCriteria",
+        "sourceQuote": "The decision of equivalency will be at the sole discretion of the City",
+        "acceptablePhrases": [
+          "equivalency",
+          "equivalent"
+        ]
+      },
+      {
+        "id": "supply-deadline",
+        "section": "schedule",
+        "sourceQuote": "2026-09-24T17:00:00.000Z",
+        "origin": "metadata",
+        "acceptablePhrases": [
+          "September 24, 2026",
+          "2026-09-24"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fictional-guard-services",
+    "kind": "services",
+    "provenance": "Synthetic multi-category regression solicitation, NOT a real government solicitation. No live opportunity or personal data.",
+    "context": {
+      "title": "Illustrative Security Guard Services",
+      "description": "Illustrative requirement evaluation fixture",
+      "agencyName": "Fictional Testing Agency",
+      "solicitationNumber": "TEST-GUARD-01",
+      "opportunityType": "rfp",
+      "dueAt": "2026-10-15T21:00:00.000Z",
+      "location": {}
+    },
+    "documentVersionId": "fixture-service-v1",
+    "sourceSegmentId": "fixture-service-seg1",
+    "sourceText": "SCOPE: Supply two guards on each shift for 24/7 lobby and patrol coverage.\nDEADLINE: Proposals must be received October 15, 2026, by 4:00 PM Central Time.\nMANDATORY EVENT: A mandatory site visit occurs October 1, 2026 at 10:00 AM; failure to attend disqualifies the bid.\nINSURANCE: Provide proof of $2,000,000 general liability insurance.\nBONDING: Include a bid bond of five percent (5%) of the offer.\nCERTIFICATION: Each guard must hold an active state guard license.\nFORMS: Complete and sign Form A, the supplier attestation.\nPRICING: Quote an hourly rate per guard and a separately stated overtime rate.\nEVALUATION: Technical approach carries 60 points and price carries 40 points.\nSUBMISSION: Upload one PDF proposal to the official procurement portal before the deadline.\nDISQUALIFIER: Late bids or submissions missing signed Form A will be rejected.",
+    "required": [
+      {
+        "id": "service-scope",
+        "section": "scope",
+        "sourceQuote": "Supply two guards on each shift for 24/7 lobby and patrol coverage",
+        "acceptablePhrases": [
+          "two guards",
+          "2 guards"
+        ]
+      },
+      {
+        "id": "service-deadline",
+        "section": "schedule",
+        "sourceQuote": "October 15, 2026, by 4:00 PM Central Time",
+        "acceptablePhrases": [
+          "October 15, 2026",
+          "2026-10-15"
+        ]
+      },
+      {
+        "id": "service-event",
+        "section": "mandatoryEvents",
+        "sourceQuote": "mandatory site visit occurs October 1, 2026 at 10:00 AM",
+        "acceptablePhrases": [
+          "mandatory site visit",
+          "required site visit"
+        ]
+      },
+      {
+        "id": "service-insurance",
+        "section": "insuranceBonding",
+        "sourceQuote": "$2,000,000 general liability insurance",
+        "acceptablePhrases": [
+          "2,000,000",
+          "2 million"
+        ]
+      },
+      {
+        "id": "service-bond",
+        "section": "insuranceBonding",
+        "sourceQuote": "bid bond of five percent (5%)",
+        "acceptablePhrases": [
+          "bid bond",
+          "bid security"
+        ]
+      },
+      {
+        "id": "service-license",
+        "section": "qualifications",
+        "sourceQuote": "active state guard license",
+        "acceptablePhrases": [
+          "guard license"
+        ]
+      },
+      {
+        "id": "service-form",
+        "section": "submissionComponents",
+        "sourceQuote": "Complete and sign Form A",
+        "acceptablePhrases": [
+          "form a"
+        ]
+      },
+      {
+        "id": "service-pricing",
+        "section": "pricingInstructions",
+        "sourceQuote": "hourly rate per guard and a separately stated overtime rate",
+        "acceptablePhrases": [
+          "hourly rate"
+        ]
+      },
+      {
+        "id": "service-evaluation",
+        "section": "evaluationCriteria",
+        "sourceQuote": "Technical approach carries 60 points and price carries 40 points",
+        "acceptablePhrases": [
+          "60 points",
+          "60%"
+        ]
+      },
+      {
+        "id": "service-submission",
+        "section": "submissionComponents",
+        "sourceQuote": "Upload one PDF proposal to the official procurement portal",
+        "acceptablePhrases": [
+          "pdf proposal",
+          "pdf"
+        ]
+      },
+      {
+        "id": "service-disqualifier",
+        "section": "disqualifiers",
+        "sourceQuote": "Late bids or submissions missing signed Form A will be rejected",
+        "acceptablePhrases": [
+          "late bids",
+          "late proposals"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fictional-construction",
+    "kind": "construction",
+    "provenance": "Synthetic cross-industry regression solicitation, NOT a real government solicitation.",
+    "context": {
+      "title": "Illustrative Sewer Rehabilitation",
+      "description": "Illustrative civil-works testing fixture",
+      "agencyName": "Fictional Testing Agency",
+      "solicitationNumber": "TEST-CONSTRUCTION-01",
+      "opportunityType": "ifb",
+      "dueAt": "2026-11-02T20:00:00.000Z",
+      "location": {}
+    },
+    "documentVersionId": "fixture-construction-v1",
+    "sourceSegmentId": "fixture-construction-seg1",
+    "sourceText": "WORK: Replace 400 linear feet of 12-inch sanitary sewer pipe and restore the roadway surface.\nSCHEDULE: Complete work within 90 calendar days of notice to proceed.\nMANDATORY MEETING: A mandatory pre-bid meeting will be held October 12, 2026 at 9:00 AM.\nBONDING: Submit a 100% performance bond before contract execution.\nCERTIFICATION: Provide a current utility contractor license.\nFORMS: Include a signed addenda acknowledgment.\nPRICING: Complete the owner's itemized unit-price schedule; lump-sum-only pricing is nonresponsive.\nEVALUATION: Award is to the lowest responsive, responsible bidder.\nSUBMISSION: Upload the signed bid form and unit-price schedule through the owner portal.\nDISQUALIFIER: An unsigned bid form is nonresponsive.",
+    "required": [
+      {
+        "id": "construction-work",
+        "section": "scope",
+        "sourceQuote": "Replace 400 linear feet of 12-inch sanitary sewer pipe",
+        "acceptablePhrases": [
+          "400 linear feet"
+        ]
+      },
+      {
+        "id": "construction-timeline",
+        "section": "schedule",
+        "sourceQuote": "within 90 calendar days of notice to proceed",
+        "acceptablePhrases": [
+          "90 calendar days"
+        ]
+      },
+      {
+        "id": "construction-event",
+        "section": "mandatoryEvents",
+        "sourceQuote": "mandatory pre-bid meeting will be held October 12, 2026",
+        "acceptablePhrases": [
+          "mandatory pre-bid",
+          "required pre-bid"
+        ]
+      },
+      {
+        "id": "construction-bond",
+        "section": "insuranceBonding",
+        "sourceQuote": "100% performance bond",
+        "acceptablePhrases": [
+          "performance bond"
+        ]
+      },
+      {
+        "id": "construction-license",
+        "section": "qualifications",
+        "sourceQuote": "utility contractor license",
+        "acceptablePhrases": [
+          "contractor license"
+        ]
+      },
+      {
+        "id": "construction-forms",
+        "section": "submissionComponents",
+        "sourceQuote": "signed addenda acknowledgment",
+        "acceptablePhrases": [
+          "addenda acknowledgment",
+          "addendum acknowledgment"
+        ]
+      },
+      {
+        "id": "construction-price",
+        "section": "pricingInstructions",
+        "sourceQuote": "itemized unit-price schedule",
+        "acceptablePhrases": [
+          "unit-price schedule",
+          "unit price schedule"
+        ]
+      },
+      {
+        "id": "construction-evaluation",
+        "section": "evaluationCriteria",
+        "sourceQuote": "lowest responsive, responsible bidder",
+        "acceptablePhrases": [
+          "lowest responsive"
+        ]
+      },
+      {
+        "id": "construction-submission",
+        "section": "submissionComponents",
+        "sourceQuote": "signed bid form and unit-price schedule through the owner portal",
+        "acceptablePhrases": [
+          "signed bid form"
+        ]
+      },
+      {
+        "id": "construction-disqualifier",
+        "section": "disqualifiers",
+        "sourceQuote": "An unsigned bid form is nonresponsive",
+        "acceptablePhrases": [
+          "unsigned bid form"
+        ]
+      }
+    ]
+  }
+]

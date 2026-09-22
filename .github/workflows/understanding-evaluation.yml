@@ -1,0 +1,65 @@
+name: Manual solicitation-understanding evaluation
+
+# This workflow makes paid Gemini calls against static, sanitized evaluation fixtures.
+# Do NOT add push/pull_request/schedule triggers or wire to the production regeneration path.
+on:
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: "Number of fixture cases (1–3)"
+        required: true
+        type: choice
+        default: "3"
+        options:
+          - "1"
+          - "2"
+          - "3"
+      max_cost_usd:
+        description: "Maximum priced-model estimate for this run (USD, at most $0.12)"
+        required: true
+        default: "0.12"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-understanding-evaluation
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Capped manual Gemini fixture evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GITHUB_EVENT_NAME: workflow_dispatch
+      GOVTRACT_EVAL_EXPLICIT_MANUAL: "true"
+      EVAL_MAX_CASES: ${{ inputs.max_cases }}
+      EVAL_MAX_COST_USD: ${{ inputs.max_cost_usd }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      GEMINI_BILLING_MODE: billable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run explicitly selected bounded evaluation
+        run: npx tsx scripts/evaluate-understanding.ts
+
+      - name: Save non-sensitive case-level report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: understanding-evaluation-report
+          path: .artifacts/understanding-evaluation.json
+          if-no-files-found: warn
+          retention-days: 30
