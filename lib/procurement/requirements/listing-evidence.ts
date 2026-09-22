@@ -61,6 +61,20 @@ function supportsClaim(text: string, source: string) {
   const matched = meaningful.filter((t) => available.has(t)).length;
   return matched >= 2 && matched / meaningful.length >= 0.6;
 }
+/** Compare absolute UTC instants, never just the same calendar date or an assumed local time zone. */
+function sameAuthoritativeUtcDeadline(text:string, expectedIso:string) {
+  if (text.includes(expectedIso)) return true;
+  const match = /\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{1,2}),?\\s+(\\d{4}),?\\s+(?:at\\s+)?(\\d{1,2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,3}))?Z\\b/i.exec(text);
+  if (!match) return false;
+  const month = ["january","february","march","april","may","june","july","august","september","october","november","december"].indexOf(match[1]!.toLowerCase());
+  const year=Number(match[3]),day=Number(match[2]),hour=Number(match[4]),
+    minute=Number(match[5]),second=Number(match[6]),millisecond=Number((match[7]??"0").padEnd(3,"0"));
+  const candidate=new Date(Date.UTC(year,month,day,hour,minute,second,millisecond));
+  return candidate.getUTCFullYear()===year && candidate.getUTCMonth()===month &&
+    candidate.getUTCDate()===day && candidate.getUTCHours()===hour &&
+    candidate.getUTCMinutes()===minute && candidate.getUTCSeconds()===second &&
+    candidate.toISOString()===expectedIso;
+}
 function fieldSource(source: AuthoritativeListingContext, field: ListingEvidence["field"]): string | null {
   const raw = rawStrings(source.record.rawPayload);
   const {listing} = source;
@@ -99,7 +113,7 @@ export function resolveAuthoritativeListingEvidence(input: {
     const sourceText = fieldSource(source,field);
     if (!sourceText) continue;
     const supported = field === "dueAt"
-      ? text.includes(sourceText)
+      ? sameAuthoritativeUtcDeadline(text,sourceText)
       : field === "location"
         ? Boolean(source.listing.location.locality && source.listing.location.region &&
           normalize(text).includes(normalize(String(source.listing.location.locality))) &&
