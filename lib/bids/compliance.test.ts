@@ -136,3 +136,29 @@ test("requirements are deterministic and repeat planning does not alter keys or 
   assert.deepEqual(planComplianceMatrix(input), planComplianceMatrix(input));
   assert.equal(planComplianceMatrix(input)[0]?.sourceRequirementKey, "u:form");
 });
+
+
+test("source-listing evidence remains distinguishable from document versions and becomes stale if source payload changes", () => {
+  const listingEvidence = {
+    sourceRecordId:"source-record-1",payloadHash:"a".repeat(64),sourceRevisionId:"rev-1" as string | null,
+    field:"description" as const,excerpt:"10 polling licenses, priced as one lump sum.",
+  };
+  const metadata: PersistedSolicitationRequirement = {
+    ...requirement("licenses","quantity","v-main"),sourceSection:"quantities",sourceFindingKey:"metadata-only",
+    evidence:[],listingEvidence,
+  };
+  const [row] = planComplianceMatrix({
+    understandingId:"u",requirements:[metadata],completenessStatus:"complete",
+    understandingStale:false,snapshot:snapshot(),
+  });
+  assert.equal(row!.status,"missing");
+  assert.equal(row!.evidence.references.length,0);
+  assert.equal(row!.evidence.listingEvidence?.sourceRecordId,"source-record-1");
+  assert.deepEqual(row!.evidence.issues,[]);
+  assert.equal(resolveComplianceStatus("complete",row!.evidence,snapshot(),"u",listingEvidence),"complete");
+  assert.equal(resolveComplianceStatus("complete",row!.evidence,snapshot(),"u",null),"needs_review");
+  assert.equal(resolveComplianceStatus("complete",row!.evidence,snapshot(),"u",
+    {...listingEvidence,payloadHash:"b".repeat(64)}),"needs_review");
+  assert.equal(resolveComplianceStatus("complete",row!.evidence,
+    snapshot({snapshotStatus:"incomplete"}),"u",listingEvidence),"needs_review");
+});
