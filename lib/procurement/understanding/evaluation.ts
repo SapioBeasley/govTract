@@ -141,6 +141,14 @@ export function evaluateUnderstandingCase(
   };
 }
 
+/** Paid fixture evaluation is permitted only on an explicitly dispatched workflow, never PR CI or scheduled ingestion. */
+export function assertExplicitManualUnderstandingEvaluation(env: Record<string,string|undefined>) {
+  if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
+    env.GOVTRACT_EVAL_EXPLICIT_MANUAL !== "true") {
+    throw new Error("Paid solicitation evaluation requires an explicit manual workflow_dispatch action.");
+  }
+}
+
 export function planUnderstandingEvaluation(
   cases: UnderstandingEvaluationCase[],
   limits: { maxCases: number; maxCostMicrousd: number },
