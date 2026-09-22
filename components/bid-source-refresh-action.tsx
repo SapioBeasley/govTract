@@ -19,7 +19,7 @@ export function BidSourceRefreshAction({workspaceId,unavailableCount}:{
     setMessage(null);
     try {
       const response=await fetch(`/api/bids/${workspaceId}/source-snapshot`,{
-        method:"POST",
+        method: "POST",
       });
       const result=await response.json() as {
         error?:{message:string};
