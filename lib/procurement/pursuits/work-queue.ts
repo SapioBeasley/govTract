@@ -6,6 +6,7 @@ import { opportunities } from "@/lib/db/schema";
 
 export type PendingPursuitSnapshot = {
   snapshotId: string;
+  opportunityId?: string;
   bidWorkspaceId: string | null;
   status: string;
   updatedAt: number;
@@ -36,6 +37,7 @@ export async function listPursuitSnapshotWork(source: string, limit: number) {
   }
   const rows = await getDb().select({
     snapshotId:pursuitDocumentSnapshots.id,
+    opportunityId:pursuitDocumentSnapshots.opportunityId,
     bidWorkspaceId:pursuitDocumentSnapshots.bidWorkspaceId,
     status:pursuitDocumentSnapshots.status,
     updatedAt:pursuitDocumentSnapshots.updatedAt,
