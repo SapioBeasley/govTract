@@ -28,7 +28,7 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     async generate() {
       modelCalls++;
       return {
-        output: { content: "Draft based on a verified solicitation excerpt.",
+        output: { content: "Our company proposes to deliver all requested items in full compliance and carries product liability insurance.",
           requirementKeys: ["price-1"], missingFacts: ["Confirm final pricing"] },
         modelVersion: "fixture-1",
         usage: { promptTokenCount: 120, candidatesTokenCount: 80, thoughtsTokenCount: 0, totalTokenCount: 200 },
@@ -122,6 +122,14 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
     assert.equal(first.applied, true);
     assert.equal(modelCalls, 1);
     assert.match(first.content ?? "", /\[NEEDS INPUT: Confirm final pricing\]/);
+    assert.doesNotMatch(first.content ?? "", /in full compliance|carries product liability insurance/i,
+      "unverified commitments must never appear as naked affirmations in the saved section");
+    assert.match(first.content ?? "", /\[NEEDS INPUT: Verify compliance/i);
+    const [rawAudit] = await sql<{ generated_content: string }[]>`
+      SELECT generated_content FROM bid_draft_generations WHERE id = ${first.generationId}
+    `;
+    assert.match(rawAudit!.generated_content, /in full compliance/i,
+      "verbatim original output remains available in the generation audit");
     const original = await listBidDraftGenerations(workspace!.id);
     assert.equal(original.length, 1);
     assert.equal(original[0]?.modelName, "fixture-model");
@@ -133,6 +141,28 @@ test("manual draft requests are audited, duplicate clicks do not bill twice, edi
         requestId, replace: true, provider }), /already (?:processed|requested)/i,
     );
     assert.equal(modelCalls, 1);
+    const unverified = await getBidWorkspace(workspace!.id);
+    assert.equal((unverified?.sections[0]?.metadata.aiDraftReview as { generationId?: string } | undefined)?.generationId,
+      first.generationId);
+    assert.ok(unverified?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+    await sql`UPDATE bid_sections SET metadata = metadata - 'aiDraftReview' WHERE id = ${section!.id}`;
+    const legacy = await getBidWorkspace(workspace!.id);
+    assert.equal((legacy?.sections[0]?.metadata.aiDraftReview as { generationId?: string } | undefined)?.generationId,
+      first.generationId, "previously saved generated prose cannot escape fact review merely because its marker predates rollout");
+    assert.ok(legacy?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+    await assert.rejects(
+      () => updateBidOutlineSection(workspace!.id, section!.id, { verifiedVendorFacts: true }),
+      /placeholder/i,
+    );
+    await updateBidOutlineSection(workspace!.id, section!.id, {
+      content: "My own revised bid.", verifiedVendorFacts: true,
+    });
+    const verified = await getBidWorkspace(workspace!.id);
+    assert.equal(typeof verified?.sections[0]?.metadata.verifiedVendorFactsFingerprint, "string");
+    assert.equal(verified?.finalReview.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"), false);
+    await updateBidOutlineSection(workspace!.id, section!.id, { content: "Human changed the approved text." });
+    assert.ok((await getBidWorkspace(workspace!.id))?.finalReview.blockingIssues
+      .some((issue) => issue.code === "ai_vendor_facts_unverified"));
     await updateBidOutlineSection(workspace!.id, section!.id, { content: "My own revised bid." });
     await assert.rejects(
       () => generateBidSectionDraft({ workspaceId: workspace!.id, sectionId: section!.id,

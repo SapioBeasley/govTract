@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
+
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 
 export type FinalReviewIssue = {
@@ -212,6 +214,14 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     issue("response_sections_missing", "Generate and review the required response sections.");
   }
   for (const section of workspace.sections) {
+    if (section.metadata.aiDraftReview &&
+        section.metadata.verifiedVendorFactsFingerprint !== reviewDraftFingerprint(
+          section.content ?? "", snapshot.documentSetFingerprint,
+        )) {
+      issue("ai_vendor_facts_unverified",
+        "AI draft " + section.title + ": verify offered make/model, model-specific loads and test weights, certifications, testing, warranty, delivery, pricing, insurance and company capacity; resolve placeholders and explicitly confirm the exact saved text before final review.",
+        { sectionId: section.id });
+    }
     if (!section.content?.trim()) {
       issue("section_incomplete", `Response section ${section.title} is empty.`, { sectionId: section.id });
     } else if (hasUnresolvedPlaceholder(section.content)) {

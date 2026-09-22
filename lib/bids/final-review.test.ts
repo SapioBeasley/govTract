@@ -142,3 +142,20 @@ test("review fingerprint changes when a draft, mandatory response, form acknowle
   input.workspace.sourceSnapshot.currentDocumentSetFingerprint = "amended";
   assert.notEqual(evaluateBidFinalReview(input).reviewFingerprint, initial);
 });
+
+
+test("saved AI sections require content-bound verified vendor approval even when missing-fact questions are absent", () => {
+  const input = fixture();
+  const section = input.workspace.sections[0]!;
+  section.content = "We will provide a certified basket and insurance coverage.";
+  section.metadata = { aiDraftReview: { generationId: "generation-180" } };
+  const pending = evaluateBidFinalReview(input);
+  assert.ok(pending.blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+  assert.equal(pending.readyForHumanReview, false);
+
+  section.metadata = {
+    aiDraftReview: { generationId: "generation-180" },
+    verifiedVendorFactsFingerprint: "approval-for-different-text",
+  };
+  assert.ok(evaluateBidFinalReview(input).blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
+});

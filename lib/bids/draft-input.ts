@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 
+import { inspectBidDraft, redactUnverifiedClaims } from "@/lib/bids/draft-guardrails";
+
 import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 
-export const BID_DRAFT_PROMPT_VERSION = "2";
+export const BID_DRAFT_PROMPT_VERSION = "3";
 const MAX_SOURCE_CHARS = 48_000;
 
 export type DraftSourceVersion = {
@@ -264,14 +266,20 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
   if (value.requirementKeys.some((key) => !packet.requirementKeys.includes(key))) {
     throw new Error("The model cited an unsupported requirement.");
   }
-  const questions = [...new Set([...packet.requiredQuestions, ...value.missingFacts].map((question) =>
+  const inspection = inspectBidDraft(value.content, packet.sourceEvidence);
+  const questions = [...new Set([...packet.requiredQuestions, ...value.missingFacts,
+    "Verify all offered product specifications, company capabilities and commitments against actual vendor and manufacturer evidence",
+    ...inspection.modelIssues,
+    ...inspection.claims.map((claim) => claim.split(" before making this vendor commitment:")[0] + " against actual vendor evidence and approve exact wording"),
+  ].map((question) =>
     question.trim().replace(/[\r\n\[\]]/g, " ").trim()).filter(Boolean))];
   return {
-    content: value.content.trim() + (questions.length
+    content: "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.\n\n" + redactUnverifiedClaims(value.content, packet.sourceEvidence).trim() + (questions.length
       ? "\n\nOpen factual questions — verify before submission:\n" +
         questions.map((question) => "- [NEEDS INPUT: " + question + "]").join("\n")
       : ""),
     requirementKeys: [...new Set(value.requirementKeys)],
     missingFacts: questions,
+    inspection,
   };
 }

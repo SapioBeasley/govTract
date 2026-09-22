@@ -33,7 +33,9 @@ function SectionEditor({
   const [content, setContent] = useState(section.content ?? "");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [verifyVendorFacts, setVerifyVendorFacts] = useState(false);
   useEffect(() => {
+    setVerifyVendorFacts(false);
     setTitle(section.title);
     setInstructions(section.instructions ?? "");
     setContent(section.content ?? "");
@@ -43,6 +45,10 @@ function SectionEditor({
     title !== section.title ||
     instructions !== (section.instructions ?? "") ||
     content !== (section.content ?? "");
+  const aiReview = section.metadata.aiDraftReview && typeof section.metadata.aiDraftReview === "object"
+    ? section.metadata.aiDraftReview as { claims?: unknown; modelIssues?: unknown } : null;
+  const aiWarnings = [aiReview?.claims, aiReview?.modelIssues].flatMap((items) =>
+    Array.isArray(items) ? items.filter((item): item is string => typeof item === "string") : []);
   const sourceKeys = Array.isArray(section.requirementLinks.sourceRequirementKeys)
     ? section.requirementLinks.sourceRequirementKeys.filter((key): key is string => typeof key === "string")
     : [];
@@ -60,7 +66,8 @@ function SectionEditor({
       const response = await fetch(`/api/bids/${workspaceId}/outline/${section.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, instructions: instructions.trim() || null, content }),
+        body: JSON.stringify({ title, instructions: instructions.trim() || null, content,
+          ...(verifyVendorFacts ? { verifiedVendorFacts: true } : {}) }),
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
@@ -129,6 +136,31 @@ function SectionEditor({
           );
         }) : <span>No requirement links; review before drafting.</span>}
       </div>
+      {aiReview ? (
+        <div role="alert" className="grid min-w-0 gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+          <p className="font-semibold">Unverified AI bid draft — not approved for final review.</p>
+          <p>Compare every offered make/model, rating, test weight, product certification, manufacturer test result,
+            delivery plan, warranty, pricing, staffing and insurance statement with actual company/manufacturer evidence.
+            The solicitation tells you what the buyer requested; it does not establish what your company can supply.
+            Correct unverified statements and remove all NEEDS INPUT placeholders before verifying this exact response.</p>
+          {aiWarnings.length ? (
+            <ul className="list-disc space-y-1 pl-5">
+              {aiWarnings.map((warning, index) => <li key={index} className="break-words">{warning}</li>)}
+            </ul>
+          ) : null}
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-1" checked={verifyVendorFacts}
+              onChange={(event) => setVerifyVendorFacts(event.target.checked)}
+              disabled={pending || !sourceReady} />
+            I checked the offered models and their distinct capacities/test weights and verified all company,
+            manufacturer, testing, certification, delivery, warranty, pricing and insurance commitments
+            in this saved text against actual evidence. I resolved every missing-fact question.
+          </label>
+          {typeof section.metadata.verifiedVendorFactsFingerprint === "string"
+            ? <p>Fact verification was recorded for a saved draft. Final review rechecks the exact text and source package.</p>
+            : <p>Final review remains blocked until you explicitly verify and save the corrected draft.</p>}
+        </div>
+      ) : null}
       <BidDraftAction
         workspaceId={workspaceId}
         sectionId={section.id}
@@ -138,7 +170,7 @@ function SectionEditor({
         generations={generations}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={!changed || pending || !title.trim()}
+        <button type="button" onClick={save} disabled={(!changed && !verifyVendorFacts) || pending || !title.trim()}
           className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
           {pending ? "Saving…" : "Save section"}
         </button>

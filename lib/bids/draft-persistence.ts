@@ -208,6 +208,17 @@ export async function generateBidSectionDraft(input: {
         content: final.content,
         wordCount: wordCount(final.content),
         status: "draft",
+        metadata: {
+          ...section.metadata,
+          aiDraftReview: {
+            generationId: created.id,
+            sourceSnapshotId: packet.snapshotId,
+            documentSetFingerprint: packet.documentSetFingerprint,
+            claims: final.inspection.claims,
+            modelIssues: final.inspection.modelIssues,
+          },
+          verifiedVendorFactsFingerprint: null,
+        },
         updatedAt: new Date(),
       }).where(and(
         eq(bidSections.id, input.sectionId),
@@ -219,7 +230,8 @@ export async function generateBidSectionDraft(input: {
       await tx.update(bidDraftGenerations).set({
         status: "completed",
         applied: Boolean(updated),
-        generatedContent: final.content,
+        // Retain verbatim provider output for audit; the response section stores redacted review-only prose.
+        generatedContent: result.output.content,
         missingFacts: final.missingFacts,
         requirementKeys: final.requirementKeys,
         usageMetadata: result.usage,

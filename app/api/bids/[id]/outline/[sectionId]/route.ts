@@ -21,11 +21,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: { message: "Request body must be a JSON object." } }, { status: 400 });
   }
   const body = parsed as Record<string, unknown>;
-  const allowed = ["title", "instructions", "content"];
+  const allowed = ["title", "instructions", "content", "verifiedVendorFacts"];
   if (!Object.keys(body).length || Object.keys(body).some((key) => !allowed.includes(key)) ||
       (body.title !== undefined && typeof body.title !== "string") ||
       (body.instructions !== undefined && body.instructions !== null && typeof body.instructions !== "string") ||
-      (body.content !== undefined && body.content !== null && typeof body.content !== "string")) {
+      (body.content !== undefined && body.content !== null && typeof body.content !== "string") ||
+      (body.verifiedVendorFacts !== undefined && body.verifiedVendorFacts !== true)) {
     return NextResponse.json({ error: { message: "Invalid response section changes." } }, { status: 400 });
   }
   try {
