@@ -64,7 +64,7 @@ function supportsClaim(text: string, source: string) {
 /** Compare absolute UTC instants, never just the same calendar date or an assumed local time zone. */
 function sameAuthoritativeUtcDeadline(text:string, expectedIso:string) {
   if (text.includes(expectedIso)) return true;
-  const match = /\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{1,2}),?\\s+(\\d{4}),?\\s+(?:at\\s+)?(\\d{1,2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,3}))?Z\\b/i.exec(text);
+  const match = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4}),?\s+(?:at\s+)?(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z\b/i.exec(text);
   if (!match) return false;
   const month = ["january","february","march","april","may","june","july","august","september","october","november","december"].indexOf(match[1]!.toLowerCase());
   const year=Number(match[3]),day=Number(match[2]),hour=Number(match[4]),
