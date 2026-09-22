@@ -14,15 +14,15 @@ const labels: Record<Field, string> = {
 const patterns: Record<Field, RegExp[]> = {
   ratedLoadLb: [
     /\b(?:working[\s-]+load(?:[\s-]+limit)?|rated(?:[\s-]+(?:working[\s-]+)?(?:load|capacity|for|at))?|capacity)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/gi,
-    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)\s*(?:working[\s-]+load(?:[\s-]+limit)?|rated(?:[\s-]+(?:working[\s-]+)?(?:load|capacity))?|capacity)\b/gi,
+    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)[ \t]*(?:working[\s-]+load(?:[\s-]+limit)?|rated(?:[\s-]+(?:working[\s-]+)?(?:load|capacity))?|capacity)\b/gi,
   ],
   testWeightLb: [
-    /\b(?:test(?:ing)?|proof)[\s-]+(?:weight|load)(?:[\s-]+weighing)?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/gi,
-    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)\s*(?:test(?:ing)?|proof)[\s-]+(?:weight|load)\b/gi,
+    /\b(?:test(?:ing)?|proof)[\s-]+(?:weight|load)(?:[ \t-]+weighing)?[ \t]*:?[ \t]*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/gi,
+    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)[ \t]*(?:test(?:ing)?|proof)[\s-]+(?:weight|load)\b/gi,
   ],
   productWeightLb: [
     /\b(?:product|basket|unit)[\s-]+weight\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/gi,
-    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)\s*(?:product|basket|unit)[\s-]+weight\b/gi,
+    /\b(\d[\d,]*)\s*(?:lb|lbs|pounds)[ \t]*(?:product|basket|unit)[\s-]+weight\b/gi,
   ],
   quantity: [/\b(?:quantity|qty)\s*[:#]?\s*(\d+)\b/gi],
 };
