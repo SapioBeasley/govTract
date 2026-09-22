@@ -202,3 +202,40 @@ test("missing or changed pinned evidence in linked section remains blocked rathe
   assert.equal(result.state, "blocked");
   if (result.state === "blocked") assert.match(result.reasons.join(" "), /readable source excerpt/i);
 });
+
+
+test("mixed listing and document-backed sections use distinct source citations without fabricating a document version", () => {
+  const s=section(), r=source();
+  r.requirements.push({
+    id:"r2",requirementKey:"quantity:listing",type:"quantity",level:"required",
+    text:"Provide 10 annual licenses.",sourceSection:"quantities",sourceFindingKey:"listing-quantity",
+    details:{sourceSegmentIds:[]},evidence:[],
+    listingEvidence:{
+      sourceRecordId:"source-record-id",payloadHash:"b".repeat(64),sourceRevisionId:"rev-1",
+      field:"description",excerpt:"City of Houston requires 10 annual licenses.",
+    },
+  });
+  s.requirementLinks.sourceRequirementKeys.push("quantity:listing");
+  const result=prepareBidDraftInput({snapshot:snapshot(),section:s,requirements:r,company:null});
+  assert.equal(result.state,"ready");
+  if(result.state!=="ready")return;
+  const body=JSON.parse(result.packet.sourceEvidence) as {
+    passages:Array<{documentVersionId:string}>,
+    listingPassages:Array<{sourceRecordId:string;payloadHash:string;field:string;excerpt:string}>,
+    requirements:Array<{key:string;evidenceIds:string[]}>,
+  };
+  assert.equal(body.listingPassages.length,1);
+  assert.equal(body.listingPassages[0]?.sourceRecordId,"source-record-id");
+  assert.equal(body.listingPassages[0]?.payloadHash,"b".repeat(64));
+  assert.equal(body.listingPassages[0]?.field,"description");
+  assert.equal(body.passages.length,1);
+  assert.deepEqual(body.requirements.map((x)=>x.key),["pricing:1","quantity:listing"]);
+  assert.equal(body.requirements[1]?.evidenceIds.length,1);
+  assert.notEqual(body.requirements[0]?.evidenceIds[0],body.requirements[1]?.evidenceIds[0]);
+  const changed=structuredClone(r);
+  changed.requirements[1]!.listingEvidence=null;
+  assert.equal(prepareBidDraftInput({snapshot:snapshot(),section:s,requirements:changed,company:null}).state,"blocked");
+  const incomplete=structuredClone(r);
+  incomplete.completenessStatus="partial";
+  assert.equal(prepareBidDraftInput({snapshot:snapshot(),section:s,requirements:incomplete,company:null}).state,"blocked");
+});
