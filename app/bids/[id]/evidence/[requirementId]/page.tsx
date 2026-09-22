@@ -27,6 +27,9 @@ export default async function ComplianceEvidencePage({ params }: Props) {
           (source) => source.id === evidence.sourceRequirementId,
         )
       : null;
+  const listingEvidence = evidence.listingEvidence && currentSourceRequirement?.listingEvidence &&
+    JSON.stringify(evidence.listingEvidence) === JSON.stringify(currentSourceRequirement.listingEvidence)
+      ? evidence.listingEvidence : null;
   const historicalSnapshot = evidence.pursuitSnapshotId
     ? await getPursuitSnapshot(evidence.pursuitSnapshotId)
     : null;
@@ -53,6 +56,17 @@ export default async function ComplianceEvidencePage({ params }: Props) {
           <p className="mt-4 rounded-xl border p-4 text-sm">
             Evidence warnings recorded at generation: {evidence.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.
           </p>
+        ) : null}
+        {listingEvidence ? (
+          <section className="mt-4 rounded-xl border bg-white p-4 text-sm leading-6">
+            <h2 className="font-semibold">Authoritative opportunity listing (not a document citation)</h2>
+            <p className="mt-1 break-words">Field: {listingEvidence.field}</p>
+            <p className="break-all">Source record: {listingEvidence.sourceRecordId} · Revision: {listingEvidence.sourceRevisionId ?? "Unavailable"}</p>
+            <p className="break-all">Raw payload SHA-256: {listingEvidence.payloadHash}</p>
+            <p className="mt-2 break-words whitespace-pre-wrap">{listingEvidence.excerpt}</p>
+          </section>
+        ) : evidence.listingEvidence ? (
+          <p role="alert" className="mt-4 rounded-xl border p-4 text-sm">The source listing has changed or cannot be verified. Rebuild and review this compliance row before marking it complete.</p>
         ) : null}
         {evidence.references.length ? (
           <div className="mt-4 grid min-w-0 gap-4">
@@ -88,11 +102,11 @@ export default async function ComplianceEvidencePage({ params }: Props) {
               );
             })}
           </div>
-        ) : (
+        ) : listingEvidence ? null : (
           <p className="mt-4 rounded-xl border border-dashed p-4 text-sm">
             No verifiable document-level evidence was extracted for this requirement.
           </p>
-        )}
+        )
       </div>
     </main>
   );
