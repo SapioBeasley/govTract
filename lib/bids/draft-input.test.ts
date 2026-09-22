@@ -215,7 +215,9 @@ test("mixed listing and document-backed sections use distinct source citations w
       field:"description",excerpt:"City of Houston requires 10 annual licenses.",
     },
   });
-  s.requirementLinks.sourceRequirementKeys.push("quantity:listing");
+  s.requirementLinks.sourceRequirementKeys = [
+    ...(s.requirementLinks.sourceRequirementKeys as string[]), "quantity:listing",
+  ];
   const result=prepareBidDraftInput({snapshot:snapshot(),section:s,requirements:r,company:null});
   assert.equal(result.state,"ready");
   if(result.state!=="ready")return;
