@@ -110,6 +110,12 @@ export function validateUnderstandingEvaluationCase(sample: UnderstandingEvaluat
   }
 }
 
+function containsCompletePhrase(text: string, phrase: string) {
+  const normalizedText = normalized(text);
+  const normalizedPhrase = normalized(phrase);
+  return Boolean(normalizedPhrase) && (" " + normalizedText + " ").includes(" " + normalizedPhrase + " ");
+}
+
 function sourceCitationPresent(key: string, segmentId: string) {
   const cited = key.match(/SOURCE\[([^\]]+)\]::/i);
   return Boolean(cited?.[1]?.split(",").map((part) => part.trim()).includes(segmentId));
@@ -125,7 +131,7 @@ export function evaluateUnderstandingCase(
   for (const gold of sample.required) {
     const candidates = content[gold.section].filter((finding) =>
       gold.acceptablePhrases.some((phrase) =>
-        normalized(finding.text).includes(normalized(phrase))));
+        containsCompletePhrase(finding.text, phrase)));
     if (!candidates.length) {
       missing.push(gold.id);
     } else if (!candidates.some((finding) => gold.origin === "metadata"
