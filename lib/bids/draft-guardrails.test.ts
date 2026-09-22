@@ -22,7 +22,7 @@ test("captured model-output regression flags distinct unverified vendor commitme
 });
 
 test("buyer requirements are not treated as verified company claims and correct source model pairs remain distinct", () => {
-  const output = "The solicitation calls for a one-person basket rated for 375 lb and a two-person basket rated for 750 lb. [NEEDS INPUT: identify and verify offered basket models and their capacity.]";
+  const output = "The solicitation calls for a one-person basket with a 300 lb working load limit and a separate 375 lb test weight, and a two-person basket with a 600 lb working load limit and a separate 750 lb test weight. [NEEDS INPUT: identify and verify the actual offered models and their rated capacity.]";
   const assessment = inspectBidDraft(output, JSON.stringify(fixture.sourceEvidence));
   assert.deepEqual(assessment.claims, []);
   assert.deepEqual(assessment.modelIssues, []);
@@ -30,8 +30,8 @@ test("buyer requirements are not treated as verified company claims and correct 
 
 test("conflicting source model ratings across pinned documents require explicit clarification", () => {
   const evidence = { passages: [
-    { excerpt: "One-person basket rated load 375 lb; two-person basket rated load 750 lb." },
-    { excerpt: "One-person basket rated load 400 lb; two-person basket rated load 750 lb." },
+    { excerpt: "One-person basket working load limit 300 lb; two-person basket working load limit 600 lb." },
+    { excerpt: "One-person basket working load limit 400 lb; two-person basket working load limit 600 lb." },
   ] };
   const assessment = inspectBidDraft("The solicitation requests the one-person and two-person baskets.", JSON.stringify(evidence));
   assert.ok(assessment.modelIssues.some((issue) => /conflict|clarif/i.test(issue)));
@@ -49,7 +49,7 @@ test("verification requires removing placeholders and resolving ambiguous model 
   assert.ok(open.some((reason) => /placeholder/i.test(reason)));
   assert.ok(open.some((reason) => /model|rating/i.test(reason)));
   const resolved = validateVendorFactApproval(
-    "The solicitation requires a one-person basket rated 375 lb and a two-person basket rated 750 lb. We will supply the separately identified approved equipment.",
+    "The solicitation requires a one-person basket with working load limit 300 lb and separate test weight 375 lb; the two-person basket has working load limit 600 lb and separate test weight 750 lb. We will supply the separately identified approved equipment.",
     JSON.stringify(fixture.sourceEvidence),
   );
   assert.deepEqual(resolved, [], "positive commitments may be approved only by an explicit user action, never the classifier");
@@ -77,7 +77,7 @@ test("distinct model quantities, rated loads and proof-test weights are not inte
 test("unverified working-draft warning cannot remain in an approved outward-facing response", () => {
   const source = JSON.stringify(fixture.sourceEvidence);
   assert.ok(validateVendorFactApproval(
-    "UNVERIFIED AI WORKING DRAFT — check every offered claim. The solicitation requests one-person 375 lb and two-person 750 lb baskets.",
+    "UNVERIFIED AI WORKING DRAFT — check every offered claim. The solicitation requests one-person 300 lb working load and two-person 600 lb working load baskets, with separate 375 lb and 750 lb test weights.",
     source,
   ).some((reason) => /working draft|unverified/i.test(reason)));
 });
