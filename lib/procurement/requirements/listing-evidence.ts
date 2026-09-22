@@ -100,7 +100,13 @@ export function resolveAuthoritativeListingEvidence(input: {
     if (!sourceText) continue;
     const supported = field === "dueAt"
       ? text.includes(sourceText)
-      : supportsClaim(text,sourceText);
+      : field === "location"
+        ? Boolean(source.listing.location.locality && source.listing.location.region &&
+          normalize(text).includes(normalize(String(source.listing.location.locality))) &&
+          (normalize(text).includes(normalize(String(source.listing.location.region))) ||
+            normalize(text).includes(" texas")) &&
+          !/[0-9]/.test(text) && !/\b(?:fob|destination|purchase orders?|shipping|freight)\b/i.test(text))
+        : supportsClaim(text,sourceText);
     if (!supported) continue;
     return {
       sourceRecordId:source.record.id,payloadHash:source.record.payloadHash,
