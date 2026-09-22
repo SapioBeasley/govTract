@@ -1,0 +1,69 @@
+{
+  "provenance": "Sanitized excerpts from City of Houston Crane Hoistable Man Basket pinned document extractions (2026-09-21), independently cross-checked with structured source findings. Excerpt fragments on page 2 are verbatim; no company product or certification is verified.",
+  "sourceEvidence": {
+    "documents": [
+      {
+        "versionId": "abb1c57e-6936-47ac-96d2-8f7f503b7ac0",
+        "filename": "Specification one Basket.pdf"
+      },
+      {
+        "versionId": "9bf8e931-8661-4edf-87fb-880d39329747",
+        "filename": "Specification Two basket.pdf"
+      }
+    ],
+    "passages": [
+      {
+        "id": "one-spec",
+        "documentVersionId": "abb1c57e-6936-47ac-96d2-8f7f503b7ac0",
+        "segmentId": "24c07a13-bcda-4444-88de-90bc72d73237",
+        "locator": {
+          "page": 2
+        },
+        "excerpt": "Model # MBR301LS\nCapacity: 1 person\nWorking Load Limit: 300 lbs\nTest Weight: 375 lbs"
+      },
+      {
+        "id": "one-weight",
+        "documentVersionId": "abb1c57e-6936-47ac-96d2-8f7f503b7ac0",
+        "segmentId": "24c07a13-bcda-4444-88de-90bc72d73237",
+        "locator": {
+          "page": 2
+        },
+        "excerpt": "1.19 Product weight 290 lbs."
+      },
+      {
+        "id": "two-spec",
+        "documentVersionId": "9bf8e931-8661-4edf-87fb-880d39329747",
+        "segmentId": "ec10fe81-1808-468a-85dc-bd3e5cd60a58",
+        "locator": {
+          "page": 2
+        },
+        "excerpt": "Model # MBM332LS\nCapacity: 2 people\nWorking Load Limit: 600 lbs\nTest Weight: 750 lbs"
+      },
+      {
+        "id": "two-weight",
+        "documentVersionId": "9bf8e931-8661-4edf-87fb-880d39329747",
+        "segmentId": "ec10fe81-1808-468a-85dc-bd3e5cd60a58",
+        "locator": {
+          "page": 2
+        },
+        "excerpt": "1.21 Product weight 345 lbs."
+      }
+    ]
+  },
+  "expected": {
+    "one": {
+      "model": "MBR301LS",
+      "ratedLoadLb": 300,
+      "testWeightLb": 375,
+      "productWeightLb": 290
+    },
+    "two": {
+      "model": "MBM332LS",
+      "ratedLoadLb": 600,
+      "testWeightLb": 750,
+      "productWeightLb": 345
+    }
+  },
+  "correctBuyerText": "The solicitation requests one-person model MBR301LS with working load limit 300 lb, test weight 375 lb and product weight 290 lb. The solicitation requests two-person model MBM332LS with working load limit 600 lb, test weight 750 lb and product weight 345 lb. [NEEDS INPUT: verify actual offered models and manufacturer documentation.]",
+  "wrongBuyerText": "The solicitation requests one-person MBR301LS with rated load 375 lb and test weight 300 lb. The solicitation requests two-person MBM332LS with rated load 750 lb and test weight 600 lb."
+}
