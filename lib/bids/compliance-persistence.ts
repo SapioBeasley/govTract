@@ -6,6 +6,7 @@ import {
   isComplianceStatus,
   planComplianceMatrix,
   resolveComplianceStatus,
+  shouldRefreshUnverifiedComplianceEvidence,
   type ComplianceStatus,
 } from "@/lib/bids/compliance";
 import { bidRequirements } from "@/lib/db/canonical-schema";
@@ -45,6 +46,30 @@ export async function generateBidComplianceMatrix(workspaceId: string) {
     })))
     .onConflictDoNothing();
 
+  // Existing workspaces generated a matrix while citations were missing.
+  // Repair ONLY needs_review rows on the very same immutable snapshot after
+  // actual source provenance becomes verifiable. Preserve response notes,
+  // user-approved statuses and historical citations across amendments.
+  const plannedByKey = new Map(planned.map((row) => [row.sourceRequirementKey,row]));
+  for (const saved of workspace.requirements) {
+    const next = plannedByKey.get(saved.sourceRequirementKey ?? "");
+    if (!next || !isComplianceEvidence(saved.evidence)) continue;
+    if (!shouldRefreshUnverifiedComplianceEvidence({
+      savedStatus:saved.status,
+      savedSnapshotId:saved.evidence.pursuitSnapshotId,
+      currentSnapshotId:workspace.sourceSnapshot.pursuitSnapshotId,
+      savedIssues:saved.evidence.issues,
+      plannedIssues:next.evidence.issues,
+    })) continue;
+    await db.update(bidRequirements).set({
+      evidence:next.evidence,
+      updatedAt:new Date(),
+    }).where(and(
+      eq(bidRequirements.id,saved.id),
+      eq(bidRequirements.bidWorkspaceId,workspaceId),
+      eq(bidRequirements.status,"needs_review"),
+    ));
+  }
   return getBidWorkspace(workspaceId);
 }
 
@@ -82,6 +107,8 @@ export async function updateBidComplianceRequirement(
         requirement.evidence,
         workspace.sourceSnapshot,
         workspace.sourceRequirements.understandingId,
+        workspace.sourceRequirements.requirements.find((source) =>
+          source.id === requirement.evidence.sourceRequirementId)?.listingEvidence ?? null,
       ) !== "complete"
     ) {
       throw new Error("Review the current solicitation and source evidence before marking this requirement complete");
