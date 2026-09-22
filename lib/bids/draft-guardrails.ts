@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 
+import { hasUnsafeModelAssertion, inspectModelContent } from "@/lib/bids/model-specifications";
+export { derivePinnedModelFacts } from "@/lib/bids/model-specifications";
+
 /**
  * Deterministic, fail-closed checks for AI-authored bid prose. A sentence classifier
  * provides actionable review hints, NOT evidence that omitted claims are verified.
@@ -22,27 +25,6 @@ const claimKinds: Array<[string, RegExp]> = [
 
 const vendorSubject = /\b(?:we|our(?: company| team| proposed| offered| products?| equipment)?|each (?:basket|unit|product)|(?:the|our) (?:offered |proposed )?(?:basket|unit|product|equipment|model)|manufacturer)\b/i;
 const commitment = /\b(?:will|shall|can|are|is|has|have|undergo(?:es)?|meet(?:s)?|comply|complies|provide(?:s)?|supply|deliver(?:s)?|carry|carries|include(?:s)?|offer(?:s|ed)?|propose(?:s|d)?|certif(?:ied|y)|test(?:ed|ing)?|insur(?:ed|ance)|warrant(?:y|ies)?)\b/i;
-const modelLabel = /\b(?:1|one|single|2|two)[- ](?:person|man)\b/gi;
-const modelWithRating = /\b(1|one|single|2|two)[- ](?:person|man)\b[^.;\r\n]{0,110}?\b(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/gi;
-
-function modelNumber(label: string) {
-  return /^(?:1|one|single)/i.test(label) ? 1 : 2;
-}
-
-function sourcePassages(sourceEvidence: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(sourceEvidence);
-    if (!parsed || typeof parsed !== "object" || !("passages" in parsed)) return [];
-    const passages = (parsed as { passages?: unknown }).passages;
-    if (!Array.isArray(passages)) return [];
-    return passages.flatMap((entry) =>
-      entry && typeof entry === "object" && "excerpt" in entry &&
-      typeof entry.excerpt === "string" ? [entry.excerpt] : []);
-  } catch {
-    return [];
-  }
-}
-
 export type DraftInspection = { claims: string[]; modelIssues: string[] };
 
 /** Inspects offered-vendor assertions separately from buyer requirements and source-model mapping. */
@@ -57,83 +39,7 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
     }
   }
 
-  const ratings = new Map<number, Set<number>>();
-  for (const excerpt of sourcePassages(sourceEvidence)) {
-    for (const match of excerpt.matchAll(modelWithRating)) {
-      const key = modelNumber(match[1]!);
-      const value = Number(match[2]!.replaceAll(",", ""));
-      if (!ratings.has(key)) ratings.set(key, new Set());
-      ratings.get(key)!.add(value);
-    }
-  }
-  const modelIssues: string[] = [];
-  for (const [model, values] of ratings) {
-    if (values.size > 1) {
-      modelIssues.push("Conflicting pinned source ratings for " + model + "-person model (" + [...values].join(" / ") + " lb); clarify which document and rating applies.");
-    }
-  }
-  if (ratings.has(1) && ratings.has(2) && ratings.get(1)!.size === 1 && ratings.get(2)!.size === 1 &&
-      ratings.get(1)!.values().next().value !== ratings.get(2)!.values().next().value) {
-    const references = [...content.matchAll(modelLabel)].map((match) => ({
-      model: modelNumber(match[0]), start: match.index!, end: match.index! + match[0].length,
-    }));
-    for (const model of [1, 2]) {
-      const expected = [...ratings.get(model)!][0]!;
-      const corresponding = references.some((reference, index) => {
-        if (reference.model !== model) return false;
-        const next = references[index + 1]?.start ?? content.length;
-        const fragment = content.slice(reference.end, Math.min(next, reference.end + 110));
-        return new RegExp("\\b" + expected + "\\s*(?:lb|lbs|pounds)\\b", "i").test(fragment);
-      });
-      if (!corresponding) modelIssues.push("State the " + model + "-person model's separate " + expected + " lb requested rating and verify the offered model; do not combine ratings.");
-    }
-    if (/\band\/or\b/i.test(content) && /\b(?:lb|lbs|pounds|model|basket)\b/i.test(content)) {
-      modelIssues.push("Ambiguous and/or model or weight option; identify each distinct model and rating.");
-    }
-  }
-  // Pinned excerpts can carry a distinct quantity and proof-test weight in
-  // addition to the rated load. Parse each named model's own excerpt span:
-  // never assign a test weight from an adjacent model or call it rated capacity.
-  for (const [field, sourcePattern, outputPattern, label] of [
-    ["ratedLoad", /\b(?:rated(?:\s+(?:load|capacity|for|at))?|working load|capacity|rating)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
-      /\b(?:rated(?:\s+(?:load|capacity|for|at))?|working load|capacity|rating)\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "rated load"],
-    ["quantity", /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i,
-      /\b(?:quantity|qty)\s*[:#]?\s*(\d+)/i, "quantity"],
-    ["testWeight", /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i,
-      /\b(?:test(?:ing)?|proof)(?:[\s-]+(?:weight|load))?\s*:?\s*(\d[\d,]*)\s*(?:lb|lbs|pounds)\b/i, "test weight"],
-  ] as const) {
-    const requested = new Map<number, Set<number>>();
-    for (const excerpt of sourcePassages(sourceEvidence)) {
-      const labels = [...excerpt.matchAll(modelLabel)];
-      for (const [index, match] of labels.entries()) {
-        const next = labels[index + 1]?.index ?? excerpt.length;
-        const fragment = excerpt.slice(match.index! + match[0].length, Math.min(next, match.index! + 350));
-        const value = fragment.match(sourcePattern)?.[1];
-        if (!value) continue;
-        const model = modelNumber(match[0]);
-        if (!requested.has(model)) requested.set(model, new Set());
-        requested.get(model)!.add(Number(value.replaceAll(",", "")));
-      }
-    }
-    for (const [model, values] of requested) {
-      if (values.size > 1) modelIssues.push("Conflicting pinned " + label + " for " + model + "-person model; clarify the authoritative source variant.");
-    }
-    if (!requested.has(1) || !requested.has(2) ||
-        requested.get(1)!.size !== 1 || requested.get(2)!.size !== 1) continue;
-    const references = [...content.matchAll(modelLabel)];
-    for (const model of [1, 2]) {
-      const expected = [...requested.get(model)!][0]!;
-      const found = references.some((match, index) => {
-        if (modelNumber(match[0]) !== model) return false;
-        const next = references[index + 1]?.index ?? content.length;
-        const fragment = content.slice(match.index! + match[0].length, Math.min(next, match.index! + 350));
-        const offered = fragment.match(outputPattern)?.[1];
-        return offered !== undefined && Number(offered.replaceAll(",", "")) === expected;
-      });
-      if (!found) modelIssues.push("State the separate " + model + "-person model " + label + " (" + expected +
-        (field === "testWeight" || field === "ratedLoad" ? " lb" : "") + ") from pinned source evidence; do not assign another model's value.");
-    }
-  }
+  const modelIssues = inspectModelContent(content, sourceEvidence);
   return { claims: [...new Set(claims)], modelIssues };
 }
 
@@ -149,12 +55,13 @@ export function redactUnverifiedClaims(content: string, sourceEvidence: string):
     if (index % 2 === 1 || !chunk.trim()) return chunk;
     const claims = inspectBidDraft(chunk, sourceEvidence).claims;
     const ambiguousModel = /\band\/or\b/i.test(chunk) && /\b(?:lb|lbs|pounds|model|basket)\b/i.test(chunk);
-    if (!claims.length && !ambiguousModel) return chunk;
+    const wrongModel = hasUnsafeModelAssertion(chunk, sourceEvidence);
+    if (!claims.length && !ambiguousModel && !wrongModel) return chunk;
     const leading = chunk.match(/^\s*/)?.[0] ?? "";
     const trailing = chunk.match(/\s*$/)?.[0] ?? "";
-    if (ambiguousModel) {
+    if (ambiguousModel || wrongModel) {
       return leading +
-        "[NEEDS INPUT: State each separate requested model, its rated load and test weight, and verify the exact offered configuration; do not use and/or for model-specific ratings]" +
+        "[NEEDS INPUT: Recheck each separate requested model against pinned source evidence: state the working-load limit, separate test weight, product weight and quantity only where explicitly identified; resolve contradictory or ambiguous values and verify the exact offered configuration]" +
         trailing;
     }
     const categories = [...new Set(claims.map((claim) =>
