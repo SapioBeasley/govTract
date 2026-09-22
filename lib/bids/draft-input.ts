@@ -150,16 +150,33 @@ export function prepareBidDraftInput(input: {
     id: string; documentVersionId: string; segmentId: string | null;
     locator: Record<string, unknown>; excerpt: string;
   }> = [];
+  const listingPassageIds = new Map<string, string>();
+  const listingPassages: Array<{ id: string; sourceRecordId: string; payloadHash: string; sourceRevisionId: string | null; field: string; excerpt: string }> = [];
   const selectedRequirements: Array<{
     key: string; type: string; text: string; level: string;
     evidenceIds: string[]; relevance: "section" | "cross_section_rule";
   }> = [];
   for (const requirement of selected) {
-    if (!requirement.evidence.length) {
-      reasons.push(`Solicitation requirement ${requirement.requirementKey} lacks source-document evidence.`);
+    if (!requirement.evidence.length && !requirement.listingEvidence) {
+      reasons.push(`Solicitation requirement ${requirement.requirementKey} lacks verified source-document or authoritative listing evidence.`);
       continue;
     }
     const evidenceIds = new Set<string>();
+    if (requirement.listingEvidence && !requirement.evidence.length) {
+      const proof = requirement.listingEvidence;
+      if (!proof.sourceRecordId || !/^[0-9a-f]{64}$/i.test(proof.payloadHash) || !proof.excerpt.trim()) {
+        reasons.push(`Solicitation requirement ${requirement.requirementKey} has invalid authoritative listing provenance.`);
+      } else {
+        const identity = JSON.stringify([proof.sourceRecordId,proof.payloadHash,proof.field,proof.excerpt]);
+        let id = listingPassageIds.get(identity);
+        if (!id) {
+          id = `m${listingPassages.length + 1}`;
+          listingPassageIds.set(identity,id);
+          listingPassages.push({id,...proof});
+        }
+        evidenceIds.add(id);
+      }
+    }
     for (const evidence of requirement.evidence) {
       const document = snapshotDocuments.get(evidence.opportunityDocumentVersionId);
       if (!document || document.status !== "stored" || !document.checksumSha256 ||
@@ -210,6 +227,7 @@ export function prepareBidDraftInput(input: {
   const sourceEvidence = JSON.stringify({
     documents: sourceDocuments.filter((document) => selectedDocumentVersions.has(document.versionId)),
     passages,
+    listingPassages,
     requirements: selectedRequirements,
     caveat: "Only the cited excerpts from the listed snapshot documents are supplied, not the full solicitation. Independently inspect the original documents and mandatory forms.",
   });
