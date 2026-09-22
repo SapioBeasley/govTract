@@ -1,14 +1,14 @@
 {
-  "provenance": "Reconstructed regression fixture from issue #180 production-generation description; not a verbatim database export.",
+  "provenance": "Reconstructed regression fixture from issue #180's unsafe model output; source specifications corrected in #182 using pinned Houston one-/two-person basket evidence. Content is intentionally unsafe and not an offered-product fact.",
   "sourceEvidence": {
     "passages": [
       {
         "id": "p1",
-        "excerpt": "One-person man basket: rated load 375 lb. Two-person man basket: rated load 750 lb."
+        "excerpt": "One-person basket: working load limit 300 lb; separate test weight 375 lb. Two-person basket: working load limit 600 lb; separate test weight 750 lb."
       },
       {
         "id": "p2",
-        "excerpt": "One-person basket 375 lb capacity; two-person basket 750 lb capacity. Provide test weight and manufacturer certificates."
+        "excerpt": "One-person basket 300 lb working load limit and 375 lb test weight; two-person basket 600 lb working load limit and 750 lb test weight. Manufacturer certificates are requested."
       }
     ]
   },
