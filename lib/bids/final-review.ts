@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
+import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
 
 export type FinalReviewIssue = {
   code: string;
@@ -37,6 +38,7 @@ export type FinalReviewSourceCheck = {
     status: string;
   }>;
   references: FinalReviewSourceReference[];
+  listingEvidence?: ListingEvidence | null;
 };
 
 type ReviewWorkspace = Pick<
@@ -160,7 +162,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         { requirementId: requirement.id });
     }
     if ((mandatory || submissionTypes.has(requirement.type)) &&
-        (!references.length || references.some((reference) =>
+        ((!references.length && !requirement.listingEvidence) || references.some((reference) =>
           !reference.snapshotDocumentId || !reference.checksumSha256 ||
           byVersion.get(reference.opportunityDocumentVersionId)?.status !== "stored"))) {
       issue("source_evidence_unverified", `Source evidence cannot be verified against the retained version: ${requirement.text}`,
@@ -204,6 +206,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
       references,
+      listingEvidence: requirement.listingEvidence ?? null,
     });
   }
   if (!submissionInstructions.length) {
@@ -246,7 +249,9 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     understandingId: source?.understandingId ?? null,
     understandingStale: source?.isStale ?? null,
     sourceRequirements: source?.requirements.map((req) => [req.id, req.level, req.type, req.text,
-      req.evidence.map((evidence) => evidence.opportunityDocumentVersionId)]) ?? [],
+      req.evidence.map((evidence) => evidence.opportunityDocumentVersionId),
+      req.listingEvidence ? [req.listingEvidence.sourceRecordId,req.listingEvidence.payloadHash,
+        req.listingEvidence.field,req.listingEvidence.excerpt] : null]) ?? [],
     requirements: workspace.requirements.map((req) => [req.id, req.status, req.effectiveStatus, req.responseNotes, req.evidence]),
     sections: workspace.sections.map((section) => [section.id, section.title, section.instructions,
       section.content, section.requirementLinks, section.metadata]),
