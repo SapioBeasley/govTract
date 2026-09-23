@@ -107,3 +107,22 @@ test("UTC due-date statements match the exact authoritative instant across ISO a
     source:tampered,section:"schedule",text:valid[0]!,
   }),null);
 });
+
+test("FOB destination instructions are grounded only in a substantial verbatim original-source passage",()=>{
+  const finding="City of Houston, Texas (FOB destination point as listed on individual Purchase Orders).";
+  const original="All supplied goods shall be delivered F.O.B. destination point as listed on individual Purchase Orders, in accordance with the City's specifications.";
+  const excerpt=findVerbatimRequirementPassage(original,finding);
+  assert.match(excerpt??"",/F\.O\.B\. destination point as listed on individual Purchase Orders/i);
+  assert.equal(findVerbatimRequirementPassage(
+    "The City may direct shipping to other locations under separate purchase orders.",finding),null);
+  assert.equal(findVerbatimRequirementPassage(
+    "All goods are FOB shipping point and risk transfers at dispatch.",finding),null);
+});
+
+test("captured Houston general-terms FOB clause includes an optional definite article without fabricating a citation",()=>{
+  const finding="City of Houston, Texas (FOB destination point as listed on individual Purchase Orders).";
+  const original="The Bidder agrees to furnish and deliver bid items, FOB destination point as listed on the individual Purchase Orders, in accordance with the Net Prices and other conditions shown herein.";
+  assert.match(findVerbatimRequirementPassage(original,finding)??"",/FOB destination point as listed on the individual Purchase Orders/i);
+  assert.equal(findVerbatimRequirementPassage(
+    "The Bidder agrees to furnish and deliver bid items, FOB shipping point as listed on the individual Purchase Orders.",finding),null);
+});

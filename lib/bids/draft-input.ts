@@ -124,6 +124,10 @@ export function prepareBidDraftInput(input: {
     reasons.push("The bid outline is not linked to the current preserved document snapshot.");
   }
 
+  if (section.metadata.sourceReviewRequired === true) {
+    reasons.push("Review and save the preserved response and instructions against the current original documents before requesting another AI draft.");
+  }
+
   const rawKeys = section.requirementLinks.sourceRequirementKeys;
   const keys = Array.isArray(rawKeys) && rawKeys.every((value) => typeof value === "string") ?
     [...new Set(rawKeys as string[])] : [];

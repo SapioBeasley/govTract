@@ -36,12 +36,14 @@ function SectionEditor({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [verifyVendorFacts, setVerifyVendorFacts] = useState(false);
+  const [reviewedCurrentSource, setReviewedCurrentSource] = useState(false);
   useEffect(() => {
     setVerifyVendorFacts(false);
+    setReviewedCurrentSource(false);
     setTitle(section.title);
     setInstructions(section.instructions ?? "");
     setContent(section.content ?? "");
-  }, [section.title, section.instructions, section.content]);
+  }, [section.title, section.instructions, section.content, section.metadata.sourceReviewRequired]);
 
   const changed =
     title !== section.title ||
@@ -56,6 +58,7 @@ function SectionEditor({
     : [];
   const warnings = [
     section.metadata.snapshotStale === true ? "Source documents changed since creation." : null,
+    section.metadata.sourceReviewRequired === true ? "Preserved section text or instructions require explicit review against the current original files." : null,
     section.metadata.understandingStale === true ? "Source understanding was stale at creation." : null,
     section.metadata.completenessStatus === "partial" ? "Source requirements were incomplete at creation." : null,
     section.metadata.snapshotStatus !== "complete" ? "Source snapshot was not complete at creation." : null,
@@ -69,7 +72,8 @@ function SectionEditor({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, instructions: instructions.trim() || null, content,
-          ...(verifyVendorFacts ? { verifiedVendorFacts: true } : {}) }),
+          ...(verifyVendorFacts ? { verifiedVendorFacts: true } : {}),
+          ...(reviewedCurrentSource ? { reviewedCurrentSource: true } : {}) }),
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
@@ -163,17 +167,29 @@ function SectionEditor({
             : <p>Final review remains blocked until you explicitly verify and save the corrected draft.</p>}
         </div>
       ) : null}
+      {section.metadata.sourceReviewRequired === true ? (
+        <label className="flex items-start gap-2 rounded-lg border p-3 text-xs leading-5">
+          <input type="checkbox" className="mt-1" checked={reviewedCurrentSource}
+            disabled={!sourceReady || pending}
+            onChange={(event) => setReviewedCurrentSource(event.target.checked)} />
+          I inspected the current original documents and reviewed this preserved section wording,
+          its mandatory requirements, formatting and response against the updated source package.
+          Keep the saved text, but require a new vendor-fact approval for any prior AI draft.
+        </label>
+      ) : null}
       <BidDraftAction
         workspaceId={workspaceId}
         sectionId={section.id}
         currentContent={section.content}
         unsavedChanges={changed}
-        sourceReady={sourceReady}
-        sourceBlockers={sourceBlockers}
+        sourceReady={sourceReady && section.metadata.sourceReviewRequired !== true}
+        sourceBlockers={section.metadata.sourceReviewRequired === true
+          ? [...sourceBlockers, "Review and save the preserved response against the current original documents before drafting."]
+          : sourceBlockers}
         generations={generations}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={(!changed && !verifyVendorFacts) || pending || !title.trim()}
+        <button type="button" onClick={save} disabled={(!changed && !verifyVendorFacts && !reviewedCurrentSource) || pending || !title.trim()}
           className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
           {pending ? "Saving…" : "Save section"}
         </button>
