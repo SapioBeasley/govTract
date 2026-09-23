@@ -30,35 +30,35 @@ const source = {
 
 test("adding a required signature page needs an explicitly refreshed, complete understanding covering ALL snapshot versions",()=>{
   const ready=assessBidSourceReconciliation({
-    snapshot,requirements:source,understandingInputVersionIds:["terms","specs","signature"],
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:source,understandingInputVersionIds:["terms","specs","signature"],
   });
   assert.deepEqual(ready,{state:"ready",addedDocumentVersionIds:["signature"],removedDocumentVersionIds:[]});
   assert.equal(assessBidSourceReconciliation({
-    snapshot,requirements:source,understandingInputVersionIds:["terms","specs"],
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:source,understandingInputVersionIds:["terms","specs"],
   }).state,"blocked");
   assert.equal(assessBidSourceReconciliation({
-    snapshot,requirements:{...source,isStale:true},
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:{...source,isStale:true},
     understandingInputVersionIds:["terms","specs","signature"],
   }).state,"blocked");
   assert.equal(assessBidSourceReconciliation({
     snapshot:{...snapshot,documents:[doc("terms"),doc("specs"),doc("signature","blocked")],storedDocumentCount:2,blockedDocumentCount:1,snapshotStatus:"blocked"},
-    requirements:source,understandingInputVersionIds:["terms","specs","signature"],
+    previousDocumentVersionIds:["terms","specs"],requirements:source,understandingInputVersionIds:["terms","specs","signature"],
   }).state,"blocked");
 });
 
 test("missing or prior-version citation never becomes source-ready just because understanding was regenerated",()=>{
   assert.equal(assessBidSourceReconciliation({
-    snapshot,requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[]}]},
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[]}]},
     understandingInputVersionIds:["terms","specs","signature"],
   }).state,"blocked");
   assert.equal(assessBidSourceReconciliation({
-    snapshot,requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[{
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[{
       ...source.requirements[0]!.evidence[0]!,opportunityDocumentVersionId:"superseded-version",
     }]}]},
     understandingInputVersionIds:["terms","specs","signature"],
   }).state,"blocked");
   assert.equal(assessBidSourceReconciliation({
-    snapshot,requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[{
+    snapshot,previousDocumentVersionIds:["terms","specs"],requirements:{...source,requirements:[{...source.requirements[0]!,evidence:[{
       ...source.requirements[0]!.evidence[0]!,excerpt:"  ",
     }]}]},
     understandingInputVersionIds:["terms","specs","signature"],
@@ -68,10 +68,10 @@ test("missing or prior-version citation never becomes source-ready just because 
 test("already reconciled state is idempotent, and a new amendment blocks any older understanding",()=>{
   assert.equal(assessBidSourceReconciliation({
     snapshot:{...snapshot,stale:false,supersedesSnapshotId:null},
-    requirements:source,understandingInputVersionIds:["terms","specs","signature"],
+    previousDocumentVersionIds:["terms","specs"],requirements:source,understandingInputVersionIds:["terms","specs","signature"],
   }).state,"ready");
   assert.equal(assessBidSourceReconciliation({
     snapshot:{...snapshot,currentDocumentSetFingerprint:"new-amendment"},
-    requirements:source,understandingInputVersionIds:["terms","specs","signature"],
+    previousDocumentVersionIds:["terms","specs"],requirements:source,understandingInputVersionIds:["terms","specs","signature"],
   }).state,"blocked");
 });
