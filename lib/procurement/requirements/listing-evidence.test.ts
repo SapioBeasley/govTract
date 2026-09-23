@@ -112,7 +112,7 @@ test("FOB destination instructions are grounded only in a substantial verbatim o
   const finding="City of Houston, Texas (FOB destination point as listed on individual Purchase Orders).";
   const original="All supplied goods shall be delivered F.O.B. destination point as listed on individual Purchase Orders, in accordance with the City's specifications.";
   const excerpt=findVerbatimRequirementPassage(original,finding);
-  assert.match(excerpt??"",/F\\.O\\.B\\. destination point as listed on individual Purchase Orders/i);
+  assert.match(excerpt??"",/F\.O\.B\. destination point as listed on individual Purchase Orders/i);
   assert.equal(findVerbatimRequirementPassage(
     "The City may direct shipping to other locations under separate purchase orders.",finding),null);
   assert.equal(findVerbatimRequirementPassage(
