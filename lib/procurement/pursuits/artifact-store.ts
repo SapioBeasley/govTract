@@ -17,6 +17,7 @@ type BlobPut = typeof put;
 
 function redactSnapshotFailureMessage(message: string) {
   return message
+    .replace(/https?:\/\/\S+/gi, "[REDACTED_URL]")
     .replace(/\b(VERCEL_OIDC_TOKEN|BLOB_READ_WRITE_TOKEN|VERCEL_TOKEN)=\S+/gi, "$1=[REDACTED]")
     .replace(/(Authorization:\s*Bearer\s+)\S+/gi, "$1[REDACTED]")
     .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED]")
