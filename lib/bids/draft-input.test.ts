@@ -241,3 +241,14 @@ test("mixed listing and document-backed sections use distinct source citations w
   incomplete.completenessStatus="partial";
   assert.equal(prepareBidDraftInput({snapshot:snapshot(),section:s,requirements:incomplete,company:null}).state,"blocked");
 });
+
+test("reconciled but human-edited response remains blocked until the user reviews its preserved wording",()=>{
+  const s=section();
+  s.metadata.sourceReviewRequired=true;
+  s.content="Previously saved response must be checked against newly amended documents.";
+  const result=prepareBidDraftInput({
+    snapshot:snapshot(),section:s,requirements:source(),company:null,
+  });
+  assert.equal(result.state,"blocked");
+  if (result.state==="blocked") assert.match(result.reasons.join(" "),/review.*preserved|preserved.*review/i);
+});
