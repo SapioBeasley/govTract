@@ -53,11 +53,22 @@ function stem(value: string) {
 function tokens(value: string) {
   return normalize(value).split(" ").filter(Boolean).map(stem);
 }
+/** Brief quantitative findings have one semantic term, so the usual two-term
+ * overlap rule cannot establish provenance. Require the *entire* finding to
+ * be one numeric amount immediately followed by its unit in the raw listing.
+ * Different quantities, units or additional commitments are never inferred. */
+function exactShortQuantityClaim(text: string, source: string) {
+  const claim = normalize(text);
+  if (!/^\d+(?:\.\d+)? [\p{L}][\p{L}\p{N}]*$/u.test(claim)) return false;
+  const available = normalize(source);
+  return available.split(" ").some((token,index,all) =>
+    index+1<all.length && token+" "+all[index+1]===claim);
+}
 function supportsClaim(text: string, source: string) {
   const claim = tokens(text), available = new Set(tokens(source));
   if (claim.some((t) => /^\d+$/.test(t) && !available.has(t))) return false;
   const meaningful = [...new Set(claim.filter((t) => t.length >= 4 && !STOP.has(t) && !/^\d+$/.test(t)))];
-  if (meaningful.length < 2) return false;
+  if (meaningful.length < 2) return exactShortQuantityClaim(text,source);
   const matched = meaningful.filter((t) => available.has(t)).length;
   return matched >= 2 && matched / meaningful.length >= 0.6;
 }

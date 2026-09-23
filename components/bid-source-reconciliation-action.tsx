@@ -7,10 +7,10 @@ type Document = { id:string; versionId:string; filename:string; status:string; c
 /** Two independent, explicitly user-triggered actions: paid understanding regeneration
  * and a deterministic, checksum-pinned outline rebind that does not call the model. */
 export function BidSourceReconciliationAction({
-  workspaceId,opportunityId,documents,requiresUnderstanding,canReconcile,
+  workspaceId,opportunityId,documents,requiresUnderstanding,canReconcile,blockingReasons,
 }:{
   workspaceId:string;opportunityId:string;documents:Document[];
-  requiresUnderstanding:boolean;canReconcile:boolean;
+  requiresUnderstanding:boolean;canReconcile:boolean;blockingReasons:string[];
 }) {
   const router=useRouter();
   const inFlight=useRef(false);
@@ -64,6 +64,10 @@ export function BidSourceReconciliationAction({
     <p className="text-xs leading-5 text-[var(--muted-foreground)]">
       A newer source document or stale understanding blocks drafting. Review each original document and any new signature form or amendment before rebinding the saved bid. Previously saved response text is preserved. No understanding or bid draft is regenerated on page load.
     </p>
+    <p className="text-xs leading-5" role="status">
+      {reviewed.length} of {documents.length} original documents confirmed.
+      {canReconcile && !allReviewed ? " Check each original document above before Reconcile becomes available." : ""}
+    </p>
     <div className="grid gap-2">
       {documents.map((document)=>(
         <label className="flex min-w-0 items-start gap-2 text-xs" key={document.versionId}>
@@ -89,7 +93,8 @@ export function BidSourceReconciliationAction({
     </button>
     {!canReconcile?<p role="status" className="text-xs leading-5">
       Reconciliation requires a complete, current understanding with verified evidence from every original source file.
-      If the AI refresh cannot produce that evidence, drafting stays disabled; missing excerpts are never invented.
+      {blockingReasons.length ? blockingReasons.join(" ") : "Review each original document and confirm its checkbox to enable Reconcile."}
+      Missing excerpts are never invented; do not repeat a paid AI refresh solely to repair evidence matching.
     </p>:null}
     {message?<p role="status" className="text-xs leading-5">{message}</p>:null}
   </div>;

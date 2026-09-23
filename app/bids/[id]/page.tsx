@@ -126,6 +126,20 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
       : null,
   ].filter((reason): reason is string => Boolean(reason));
 
+  const reconciliationBlockers = [
+    snapshot.snapshotStatus !== "complete" || snapshot.documents.some((document) => document.status !== "stored")
+      ? "The current source package has unretained original documents." : null,
+    !workspace.sourceRequirements
+      ? "No completed solicitation understanding is available." : null,
+    workspace.sourceRequirements?.isStale
+      ? "The latest understanding is still stale. Review any newly changed original files before a manual refresh." : null,
+    missingEvidence.length
+      ? `${missingEvidence.length} requirement(s) lack verifiable evidence: ${missingEvidence.slice(0,5).map((requirement) =>
+          `${requirement.requirementKey} — ${requirement.text}`).join("; ")}. A repeated AI refresh is not a substitute for verified original-source evidence.` : null,
+    workspace.sourceRequirements && workspace.sourceRequirements.completenessStatus !== "complete" && !missingEvidence.length
+      ? `The current understanding remains partial: ${workspace.sourceRequirements.incompleteReasons.join(", ") || "source coverage incomplete"}.` : null,
+  ].filter((reason): reason is string => Boolean(reason));
+
   return (
     <main className="min-w-0 overflow-x-clip px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
       <div className="mx-auto min-w-0 max-w-6xl">
@@ -258,12 +272,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   status:document.status,
                   changed:!previousVersionIds.has(document.opportunityDocumentVersionId),
                 }))}
+                blockingReasons={reconciliationBlockers}
                 requiresUnderstanding={Boolean(workspace.sourceRequirements?.isStale ||
                   workspace.sourceRequirements?.completenessStatus !== "complete")}
-                canReconcile={snapshot.snapshotStatus === "complete" &&
-                  snapshot.documents.every((document) => document.status === "stored") &&
-                  workspace.sourceRequirements?.completenessStatus === "complete" &&
-                  !workspace.sourceRequirements.isStale && missingEvidence.length === 0}
+                canReconcile={reconciliationBlockers.length === 0}
               />
             ) : null}
           </Section>

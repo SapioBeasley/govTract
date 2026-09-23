@@ -62,3 +62,14 @@ test("source recovery rejects partial Blob results and stale bid refresh has an 
   assert.match(reconciliation,/assessBidSourceReconciliation/);
   assert.doesNotMatch(reconciliation,/generateSolicitationUnderstanding|generateBidSectionDraft|Gemini/);
 });
+
+test("Reconcile explains exact missing evidence and requires visible confirmation of every original document", () => {
+  const page=source("app/bids/[id]/page.tsx");
+  const action=source("components/bid-source-reconciliation-action.tsx");
+  assert.match(page,/reconciliationBlockers/);
+  assert.match(action,/reviewed\.length/);
+  assert.match(action,/documents\.length/);
+  assert.match(action,/Reconcile reviewed source and outline/);
+  assert.match(action,/blockingReasons/);
+  assert.doesNotMatch(action,/useEffect\([^)]*generateSolicitationUnderstanding/);
+});

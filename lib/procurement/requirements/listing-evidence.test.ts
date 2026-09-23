@@ -126,3 +126,22 @@ test("captured Houston general-terms FOB clause includes an optional definite ar
   assert.equal(findVerbatimRequirementPassage(
     "The Bidder agrees to furnish and deliver bid items, FOB shipping point as listed on the individual Purchase Orders.",finding),null);
 });
+
+test("short exact quantity and unit from authoritative listing can be cited without another paid understanding cycle", () => {
+  const proof=resolveAuthoritativeListingEvidence({source,section:"quantities",text:"10 licenses."});
+  assert.equal(proof?.field,"description");
+  assert.match(proof?.excerpt??"",/10 licenses/i);
+  for (const text of ["11 licenses.","10 subscriptions.","10 licenses with guaranteed uptime.","10 licenses and 20 tablets."]) {
+    assert.equal(resolveAuthoritativeListingEvidence({source,section:"quantities",text}),null,text);
+  }
+  const unsupported=structuredClone(source);
+  unsupported.listing.fieldProvenance.description={authority:"secondary",sourceRecordPk:source.record.id};
+  assert.equal(resolveAuthoritativeListingEvidence({source:unsupported,section:"quantities",text:"10 licenses."}),null);
+  const changed=structuredClone(source);
+  changed.record.rawPayload.description={html:"Seeking only 8 licenses."};
+  assert.equal(resolveAuthoritativeListingEvidence({source:changed,section:"quantities",text:"10 licenses."}),null);
+  const different=structuredClone(source);
+  different.record.rawPayload.description={html:"Seeking only 8 licenses."};
+  different.listing.description="Seeking only 8 licenses.";
+  assert.equal(resolveAuthoritativeListingEvidence({source:different,section:"quantities",text:"10 licenses."}),null);
+});
