@@ -151,3 +151,55 @@ test("Vercel Blob SDK failures are blocked as storage unavailable and logged wit
   assert.match(messages[0]!, /OIDC is enabled for this project/);
   assert.doesNotMatch(messages[0]!, /secret-token|header\.payload\.signature/);
 });
+
+test("runtime falls back to scoped private Blob token when Vercel OIDC upload is rejected, without exposing credentials", async () => {
+  const calls:Record<string,unknown>[]=[];
+  const messages:string[]=[];
+  const old=console.error;
+  const putBlob:PutBlob=async(_path,body,options)=>{
+    await drainBlobBody(body);
+    calls.push(options as unknown as Record<string,unknown>);
+    if (calls.length===1) throw Object.assign(new Error("OIDC is not authorized in this deployment"),{status:403});
+    return {pathname:artifact.storageKey,etag:"etag-fallback"} as PutBlobResult;
+  };
+  console.error=(...parts:unknown[])=>messages.push(parts.map(String).join(" "));
+  try {
+    const store=createVercelBlobSnapshotArtifactStore({
+      env:{VERCEL_OIDC_TOKEN:"oidc-secret",BLOB_STORE_ID:"store_123",
+        BLOB_READ_WRITE_TOKEN:"blob_rw_secret"},putBlob,
+    });
+    const result=await store.putFile(artifact);
+    assert.equal(result.etag,"etag-fallback");
+  } finally {
+    console.error=old;
+  }
+  assert.equal(calls.length,2);
+  assert.equal(calls[0]?.oidcToken,"oidc-secret");
+  assert.equal(calls[1]?.token,"blob_rw_secret");
+  assert.equal(calls[1]?.oidcToken,undefined);
+  assert.doesNotMatch(messages.join(" "),/oidc-secret|blob_rw_secret/);
+});
+
+test("failed original private Blob storage provides actionable redacted auth diagnostics",async()=>{
+  const errors:string[]=[];
+  const old=console.error;
+  const putBlob:PutBlob=async(_path,body)=>{
+    await drainBlobBody(body);
+    throw Object.assign(new Error("Forbidden Authorization: Bearer secret-token"),{status:403});
+  };
+  console.error=(...parts:unknown[])=>errors.push(parts.map(String).join(" "));
+  try {
+    const store=createVercelBlobSnapshotArtifactStore({env:{
+      VERCEL_OIDC_TOKEN:"oidc-secret",BLOB_STORE_ID:"store_123",
+    },putBlob});
+    await assert.rejects(()=>store.putFile(artifact),(error:unknown)=>{
+      assert.ok(error instanceof SnapshotRetrievalError);
+      assert.equal(error.code,"storage_unavailable");
+      assert.doesNotMatch(error.message,/secret-token/);
+      return true;
+    });
+  } finally {console.error=old;}
+  assert.match(errors.join(" "),/auth_failure|403/);
+  assert.match(errors.join(" "),/oidc=true/);
+  assert.doesNotMatch(errors.join(" "),/oidc-secret|secret-token/);
+});
