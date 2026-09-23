@@ -50,3 +50,15 @@ test("pending original files have an explicit bounded source-retrieval action wi
   assert.match(route,/export async function POST/);
   assert.doesNotMatch(route,/generateBidSectionDraft|generateSolicitationUnderstanding/);
 });
+
+test("source recovery rejects partial Blob results and stale bid refresh has an explicit user action", () => {
+  const route=source("app/api/bids/[id]/source-snapshot/route.ts");
+  const page=source("app/bids/[id]/page.tsx");
+  const action=source("components/bid-source-reconciliation-action.tsx");
+  const reconciliation=source("lib/bids/source-reconciliation.ts");
+  assert.match(route,/result.state !== "complete"/);
+  assert.match(page,/<BidSourceReconciliationAction/);
+  assert.match(action,/explicit|manual|review/i);
+  assert.match(reconciliation,/assessBidSourceReconciliation/);
+  assert.doesNotMatch(reconciliation,/generateSolicitationUnderstanding|generateBidSectionDraft|Gemini/);
+});
