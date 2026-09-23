@@ -53,7 +53,7 @@ export async function reconcileBidSource(workspaceId:string, reviewedDocumentVer
   const db=getDb();
   await db.transaction(async(tx)=>{
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${workspaceId}))`);
-    const [row]=await tx.select({sourceSnapshot:bidWorkspaces.sourceSnapshot})
+    const [row]=await tx.select({sourceSnapshot:bidWorkspaces.sourceSnapshot,metadata:bidWorkspaces.metadata})
       .from(bidWorkspaces).where(eq(bidWorkspaces.id,workspaceId)).limit(1);
     if (!row || row.sourceSnapshot.pursuitSnapshotId!==snapshot.pursuitSnapshotId ||
       row.sourceSnapshot.documentSetFingerprint!==snapshot.documentSetFingerprint) {
@@ -70,7 +70,7 @@ export async function reconcileBidSource(workspaceId:string, reviewedDocumentVer
       const isUnedited=!(section.content?.trim()) &&
         section.title===next.title &&
         section.metadata.generatorVersion==="deterministic-v1";
-      const metadata={
+      const metadata:Record<string,unknown>={
         ...section.metadata,
         understandingId:source.understandingId,
         understandingStale:false,
@@ -110,7 +110,7 @@ export async function reconcileBidSource(workspaceId:string, reviewedDocumentVer
         documentSetFingerprint:snapshot.documentSetFingerprint,
         snapshotStatus:"complete",stale:false,staleReason:null,
       },
-      metadata:{...workspace.metadata,reviewState:"not_started"},
+      metadata:{...row.metadata,reviewState:"not_started"},
       updatedAt:new Date(),
     }).where(and(eq(bidWorkspaces.id,workspaceId),
       sql`${bidWorkspaces.sourceSnapshot}->>'pursuitSnapshotId' = ${snapshot.pursuitSnapshotId}`,
