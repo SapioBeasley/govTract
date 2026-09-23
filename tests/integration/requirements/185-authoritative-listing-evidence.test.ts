@@ -34,7 +34,8 @@ test("previously unlinked listing requirements hydrate without AI; revoking raw-
       summary:"Ten annual licenses",scope:[],deliverables:[],workBreakdown:[],
       location:[{key:"location",text:"The solicitation is issued by the City of Houston, TX.",details:{sourceSegmentIds:[]}}],
       schedule:[{key:"due",text:"Bids are due by 2026-09-23T17:00:00.000Z.",details:{sourceSegmentIds:[]}}],
-      quantities:[{key:"quantity",text:"10 annual licenses.",details:{sourceSegmentIds:[]}}],
+      quantities:[{key:"quantity",text:"10 annual licenses.",details:{sourceSegmentIds:[]}},
+        {key:"quantity-short",text:"10 licenses.",details:{sourceSegmentIds:[]}}],
       qualifications:[],insuranceBonding:[],mandatoryEvents:[],
       pricingInstructions:[{key:"pricing",text:"Bid 10 licenses as one lump sum.",details:{sourceSegmentIds:[]}}],
       submissionComponents:[],evaluationCriteria:[],disqualifiers:[],questionsAmbiguities:[],
@@ -50,7 +51,7 @@ test("previously unlinked listing requirements hydrate without AI; revoking raw-
     }
     const first=await loadLatestSolicitationRequirements(opportunity!.id);
     assert.equal(first?.completenessStatus,"complete",JSON.stringify(first?.incompleteReasons));
-    assert.equal(first?.requirements.length,4);
+    assert.equal(first?.requirements.length,5);
     for(const requirement of first!.requirements) {
       assert.equal(requirement.evidence.length,0);
       assert.equal(requirement.listingEvidence?.sourceRecordId,source!.id);
