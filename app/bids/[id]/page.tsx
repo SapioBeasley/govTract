@@ -17,6 +17,7 @@ import { BidWorkspaceControl } from "@/components/bid-workspace-control";
 import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { BidFinalReview } from "@/components/bid-final-review";
+import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
@@ -88,7 +89,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
     document.status !== "stored" && document.status !== "pending");
   const sourceBlockers = [
     pendingFiles.length
-      ? `${pendingFiles.length} original source file(s) are queued but not stored: ${pendingFiles.map((file) => file.filename).join(", ")}. Retry the bounded pursuit-snapshot job from Beacon opportunity pull in GitHub Actions and refresh this workspace.`
+      ? `${pendingFiles.length} original source file(s) are queued but not stored: ${pendingFiles.map((file) => file.filename).join(", ")}. Use Retrieve source files in the Source snapshot section; if unavailable, use the bounded Beacon snapshot batch in GitHub Actions.`
       : null,
     unavailableFiles.length
       ? `Source retrieval failed or was blocked for: ${unavailableFiles.map((file) => `${file.filename} (${file.failureCode ?? file.status})`).join(", ")}. Check source access and rerun the pursuit-snapshot job; do not draft without these files.`
@@ -226,6 +227,9 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                     </div>
                   ))}
               </div>
+            ) : null}
+            {snapshot.documents.some((document) => document.status !== "stored") ? (
+              <BidSourceRefreshAction workspaceId={workspace.id} unavailableCount={snapshot.documents.filter((document) => document.status !== "stored").length} />
             ) : null}
           </Section>
 
