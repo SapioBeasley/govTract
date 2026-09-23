@@ -14,6 +14,16 @@ export async function POST(_request: Request, context:{params:Promise<{id:string
   }
   try {
     const result = await refreshBidSourceSnapshot(id);
+    if (result.state !== "complete") {
+      const code = result.blocked ? "source_storage_or_access_blocked" :
+        result.failed ? "source_retrieval_failed" : "source_retrieval_incomplete";
+      return NextResponse.json({snapshot:result,error:{
+        code,
+        message:result.blocked
+          ? "At least one original source file could not be stored. Check the private Blob store connection and retry retrieval; AI drafting remains blocked."
+          : "One or more original source files were not reliably retained. Review the source access and retry; AI drafting remains blocked.",
+      }},{status:503});
+    }
     return NextResponse.json({snapshot:result});
   } catch (error) {
     const message = error instanceof Error ? error.message : "The original source package could not be retrieved.";
