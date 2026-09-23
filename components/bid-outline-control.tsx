@@ -43,7 +43,7 @@ function SectionEditor({
     setTitle(section.title);
     setInstructions(section.instructions ?? "");
     setContent(section.content ?? "");
-  }, [section.title, section.instructions, section.content]);
+  }, [section.title, section.instructions, section.content, section.metadata.sourceReviewRequired]);
 
   const changed =
     title !== section.title ||
