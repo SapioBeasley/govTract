@@ -146,7 +146,7 @@ export function findVerbatimRequirementPassage(content: string, requirement: str
   // Agency terms sometimes spell the same defined delivery clause "F.O.B.".
   // Accept only this substantial, exact source clause (never a vague shipping
   // reference, a fabricated document segment, or a weaker FOB shipping-point term).
-  const fobClause=/F\\.?\\s*O\\.?\\s*B\\.?\\s*destination\\s+point\\s+as\\s+listed\\s+on\\s+individual\\s+Purchase\\s+Orders/i;
+  const fobClause=/F\.?\s*O\.?\s*B\.?\s*destination\s+point\s+as\s+listed\s+on\s+individual\s+Purchase\s+Orders/i;
   if (fobClause.test(requirement)) {
     const sourceClause=fobClause.exec(content);
     if (sourceClause) return content.slice(Math.max(0,sourceClause.index-170),
