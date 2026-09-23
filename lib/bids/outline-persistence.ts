@@ -11,6 +11,7 @@ export type UpdateBidOutlineSectionInput = {
   instructions?: string | null;
   content?: string | null;
   verifiedVendorFacts?: boolean;
+  reviewedCurrentSource?: boolean;
 };
 
 function wordCount(value: string | null | undefined) {
@@ -86,6 +87,18 @@ export async function updateBidOutlineSection(
   const metadata = { ...section.metadata };
   const contentChanged = input.content !== undefined && input.content !== section.content;
   if (contentChanged) delete metadata.verifiedVendorFactsFingerprint;
+  if (input.reviewedCurrentSource === true) {
+    if (metadata.sourceReviewRequired !== true) throw new Error("This section has no pending source review.");
+    if (current.sourceSnapshot.stale || current.sourceSnapshot.snapshotStatus !== "complete" ||
+      !current.sourceRequirements || current.sourceRequirements.isStale ||
+      current.sourceRequirements.completenessStatus !== "complete" ||
+      metadata.pursuitSnapshotId !== current.sourceSnapshot.pursuitSnapshotId ||
+      metadata.understandingId !== current.sourceRequirements.understandingId) {
+      throw new Error("The current source package and understanding must be complete before confirming response review.");
+    }
+    delete metadata.sourceReviewRequired;
+    metadata.sourceReviewReviewedAt = new Date().toISOString();
+  }
   if (input.verifiedVendorFacts === true) {
     if (!metadata.aiDraftReview) throw new Error("Only an AI draft requires this explicit fact-verification action.");
     if (current.sourceSnapshot.stale || current.sourceSnapshot.snapshotStatus !== "complete" ||
@@ -110,7 +123,7 @@ export async function updateBidOutlineSection(
       content: input.content,
       wordCount: wordCount(input.content),
     }),
-    ...(contentChanged || input.verifiedVendorFacts === true ? { metadata } : {}),
+    ...(contentChanged || input.verifiedVendorFacts === true || input.reviewedCurrentSource === true ? { metadata } : {}),
     updatedAt: new Date(),
   }).where(and(
     eq(bidSections.bidWorkspaceId, workspaceId),
