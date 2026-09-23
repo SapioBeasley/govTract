@@ -18,6 +18,8 @@ import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { BidFinalReview } from "@/components/bid-final-review";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
+import { BidSourceReconciliationAction } from "@/components/bid-source-reconciliation-action";
+import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
@@ -81,6 +83,19 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const snapshot = workspace.sourceSnapshot;
+  const previousSnapshot = snapshot.supersedesSnapshotId
+    ? await getPursuitSnapshot(snapshot.supersedesSnapshotId)
+    : null;
+  const previousVersionIds = new Set(previousSnapshot?.documents.map((document) =>
+    document.opportunityDocumentVersionId) ?? snapshot.documents.map((document) =>
+    document.opportunityDocumentVersionId));
+  const outlineNeedsReconciliation = workspace.sections.some((section) =>
+    section.metadata.understandingId !== workspace.sourceRequirements?.understandingId ||
+    section.metadata.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
+    section.metadata.documentSetFingerprint !== snapshot.documentSetFingerprint);
+  const showSourceReconciliation = Boolean(snapshot.stale || workspace.sourceRequirements?.isStale ||
+    workspace.sourceRequirements?.completenessStatus !== "complete" ||
+    outlineNeedsReconciliation);
   const missingEvidence = sourceRequirements.filter((requirement) =>
     !requirement.listingEvidence &&
     (!requirement.evidence.length || requirement.evidence.some((proof) => !proof.excerpt?.trim())));
@@ -230,6 +245,26 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             ) : null}
             {snapshot.documents.some((document) => document.status !== "stored") ? (
               <BidSourceRefreshAction workspaceId={workspace.id} unavailableCount={snapshot.documents.filter((document) => document.status !== "stored").length} />
+            ) : null}
+            {showSourceReconciliation ? (
+              <BidSourceReconciliationAction
+                key={snapshot.pursuitSnapshotId ?? "no-snapshot"}
+                workspaceId={workspace.id}
+                opportunityId={workspace.opportunityId}
+                documents={snapshot.documents.map((document) => ({
+                  id:document.id,
+                  versionId:document.opportunityDocumentVersionId,
+                  filename:document.filename,
+                  status:document.status,
+                  changed:!previousVersionIds.has(document.opportunityDocumentVersionId),
+                }))}
+                requiresUnderstanding={Boolean(workspace.sourceRequirements?.isStale ||
+                  workspace.sourceRequirements?.completenessStatus !== "complete")}
+                canReconcile={snapshot.snapshotStatus === "complete" &&
+                  snapshot.documents.every((document) => document.status === "stored") &&
+                  workspace.sourceRequirements?.completenessStatus === "complete" &&
+                  !workspace.sourceRequirements.isStale && missingEvidence.length === 0}
+              />
             ) : null}
           </Section>
 
