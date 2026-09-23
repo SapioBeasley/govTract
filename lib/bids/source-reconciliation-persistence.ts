@@ -69,6 +69,7 @@ export async function reconcileBidSource(workspaceId:string, reviewedDocumentVer
       matched.add(key!);
       const isUnedited=!(section.content?.trim()) &&
         section.title===next.title &&
+        (section.instructions??"")===next.instructions &&
         section.metadata.generatorVersion==="deterministic-v1";
       const metadata:Record<string,unknown>={
         ...section.metadata,
@@ -85,7 +86,6 @@ export async function reconcileBidSource(workspaceId:string, reviewedDocumentVer
       delete metadata.verifiedVendorFactsFingerprint;
       await tx.update(bidSections).set({
         requirementLinks:next.requirementLinks,
-        ...(isUnedited?{instructions:next.instructions}:{}),
         metadata,
         updatedAt:new Date(),
       }).where(and(eq(bidSections.id,section.id),eq(bidSections.bidWorkspaceId,workspaceId)));
