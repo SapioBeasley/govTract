@@ -118,3 +118,11 @@ test("FOB destination instructions are grounded only in a substantial verbatim o
   assert.equal(findVerbatimRequirementPassage(
     "All goods are FOB shipping point and risk transfers at dispatch.",finding),null);
 });
+
+test("captured Houston general-terms FOB clause includes an optional definite article without fabricating a citation",()=>{
+  const finding="City of Houston, Texas (FOB destination point as listed on individual Purchase Orders).";
+  const original="The Bidder agrees to furnish and deliver bid items, FOB destination point as listed on the individual Purchase Orders, in accordance with the Net Prices and other conditions shown herein.";
+  assert.match(findVerbatimRequirementPassage(original,finding)??"",/FOB destination point as listed on the individual Purchase Orders/i);
+  assert.equal(findVerbatimRequirementPassage(
+    "The Bidder agrees to furnish and deliver bid items, FOB shipping point as listed on the individual Purchase Orders.",finding),null);
+});
