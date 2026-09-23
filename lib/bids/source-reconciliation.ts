@@ -1,9 +1,13 @@
 import type { BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
-import type { SolicitationRequirementSet } from "@/lib/procurement/requirements/persistence";
+import type { PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 
 type ReconciliationInput = {
   snapshot: BidWorkspaceSourceSnapshot;
-  requirements: SolicitationRequirementSet | null;
+  requirements: {
+    isStale:boolean;
+    completenessStatus:"complete" | "partial";
+    requirements:Array<Pick<PersistedSolicitationRequirement,"requirementKey" | "evidence" | "listingEvidence">>;
+  } | null;
   previousDocumentVersionIds: string[];
   understandingInputVersionIds: string[];
 };
