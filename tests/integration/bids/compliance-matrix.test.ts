@@ -117,10 +117,27 @@ test("compliance matrix is idempotent, preserves user progress and historical ve
     const frozen = form.evidence;
     assert.equal((frozen.references as Array<{ opportunityDocumentVersionId: string }>)[0]?.opportunityDocumentVersionId, versions["Required Form.pdf"]);
 
-    await updateBidComplianceRequirement(workspace!.id, form.id, { status: "complete", responseNotes: "Finished and checked." });
+    // The old contract allowed a source citation alone to mark Complete. It must now
+    // fail closed until the bidder confirms an actual original form or saved response.
+    await assert.rejects(
+      () => updateBidComplianceRequirement(workspace!.id, form.id, { status: "complete" }),
+      /saved bid response|original form|reviewed/i,
+    );
+    const formSourceId = form.sourceRequirementKey!.split(":")[1]!;
+    await sql`
+      UPDATE bid_workspaces SET metadata = jsonb_build_object(
+        'originalFormsFingerprint', ${firstSnapshot.documentSetFingerprint},
+        'confirmedOriginalForms', jsonb_build_array(${formSourceId})
+      ) WHERE id = ${workspace!.id}
+    `;
+    await updateBidComplianceRequirement(workspace!.id, form.id, {
+      status: "complete", responseNotes: "Finished and checked.",
+      responseSelection: { kind: "original_form" }, responseReviewed: true,
+    });
     const regenerated = await generateBidComplianceMatrix(workspace!.id);
     assert.equal(regenerated?.requirements.length, 3, "repeated generation must not duplicate rows");
     assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.status, "complete");
+    assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.effectiveStatus, "complete");
     assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.responseNotes, "Finished and checked.");
     assert.deepEqual(regenerated?.requirements.find((r) => r.id === form.id)?.evidence, frozen);
 
