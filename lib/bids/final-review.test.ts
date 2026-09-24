@@ -64,6 +64,30 @@ function fixture() {
   };
 }
 
+
+test("a source-verified Complete checkbox alone cannot pass final review without saved bidder response proof", () => {
+  const input = fixture();
+  // This fixture represents a legacy Complete saved before bidder-response proof existed.
+  input.workspace.requirements[0]!.responseEvidence = null;
+  const result = evaluateBidFinalReview(input);
+  assert.equal(result.readyForHumanReview, false);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "mandatory_requirement_incomplete" &&
+    issue.requirementId === "source-form-1"));
+});
+
+test("an edited saved response needs compliance re-review even if its old Complete status persists", () => {
+  const input = fixture();
+  input.workspace.requirements[1]!.responseEvidence = {
+    kind: "section" as const, sectionId: "section-1",
+    contentFingerprint: "old-draft-fingerprint", snapshotId: "snapshot-1",
+    sourceFingerprint: fingerprint, understandingId: sourceId,
+  };
+  const result = evaluateBidFinalReview(input);
+  assert.equal(result.readyForHumanReview, false);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "mandatory_requirement_incomplete" &&
+    issue.requirementId === "source-submit-1"));
+});
+
 test("complete, current source versions and explicitly confirmed original source forms permit human final review", () => {
   const result = evaluateBidFinalReview(fixture());
   assert.deepEqual(result.blockingIssues, []);
