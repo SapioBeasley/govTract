@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
+import type { RequirementResponseEvidence } from "@/lib/bids/response-proof";
 
 const version = "version-1";
 const checksum = "a".repeat(64);
@@ -54,7 +55,7 @@ function fixture() {
           sourceFingerprint: fingerprint, understandingId: sourceId }
       : { kind: "section" as const, sectionId: "section-1",
           contentFingerprint: createHash("sha256").update("We will perform the requested work.").digest("hex"),
-          snapshotId: "snapshot-1", sourceFingerprint: fingerprint, understandingId: sourceId },
+          snapshotId: "snapshot-1", sourceFingerprint: fingerprint, understandingId: sourceId } as RequirementResponseEvidence | null,
   }));
   return {
     workspace: {
