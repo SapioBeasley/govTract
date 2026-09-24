@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Building2,
   CalendarDays,
-  CheckCircle2,
   ClipboardCheck,
   FileText,
   Link2,
@@ -15,7 +14,6 @@ import {
 
 import { BidWorkspaceControl } from "@/components/bid-workspace-control";
 import { BidOutlineControl } from "@/components/bid-outline-control";
-import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { BidFinalReview } from "@/components/bid-final-review";
 import { GuidedBidProgress } from "@/components/guided-bid-progress";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
@@ -23,6 +21,7 @@ import { BidSourceReconciliationAction } from "@/components/bid-source-reconcili
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
+import { groupBidBuilderRequirements } from "@/lib/bids/builder";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +85,14 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const generations = await listBidDraftGenerations(workspace.id);
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
+  const sourceEligible = Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+    (workspace.sourceRequirements.completenessStatus === "complete" ||
+      (workspace.sourceRequirements.completenessStatus === "partial" &&
+        workspace.sourceRequirements.incompleteReasons.length > 0 &&
+        workspace.sourceRequirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing"))));
+  const builderGroups = groupBidBuilderRequirements(workspace.requirements, workspace.sections,
+    workspace.sourceRequirements?.understandingId ?? null,
+    workspace.sourceRequirements?.requirements ?? []);
   const snapshot = workspace.sourceSnapshot;
   const previousSnapshot = snapshot.supersedesSnapshotId
     ? await getPursuitSnapshot(snapshot.supersedesSnapshotId)
@@ -328,19 +335,30 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             )}
           </Section>
 
-          <Section id="compliance-requirements" title="Compliance requirements" icon={<CheckCircle2 className="size-5" />}>
-            <ComplianceMatrixControl
+          <Section id="prepare-bid" title="Prepare bid" icon={<FileText className="size-5" />}>
+            <p className="mb-4 text-sm leading-6 text-[var(--muted-foreground)]">
+              Response sections and buyer requirements now share one workspace. Save a response, then
+              review linked requirements directly beneath its heading.
+            </p>
+            {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
+            <span id="compliance-requirements" className="block scroll-mt-5" />
+            <span id="response-sections" className="block scroll-mt-5" />
+            <BidOutlineControl
               workspaceId={workspace.id}
-              requirements={workspace.requirements}
+              initialSections={workspace.sections}
+              groups={builderGroups}
+              generations={generations}
+              sourceBlockers={sourceBlockers}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
+              sourceReady={
+                snapshot.snapshotStatus === "complete" &&
+                !snapshot.stale &&
+                workspace.sourceRequirements?.completenessStatus === "complete" &&
+                !workspace.sourceRequirements.isStale
+              }
               context={{
                 workspaceId: workspace.id,
-                sourceReady: Boolean(
-                  snapshot.snapshotStatus === "complete" &&
-                  !snapshot.stale &&
-                  workspace.sourceRequirements?.completenessStatus === "complete" &&
-                  !workspace.sourceRequirements.isStale
-                ),
+                sourceReady: Boolean(snapshot.snapshotStatus === "complete" && !snapshot.stale && sourceEligible),
                 snapshotCurrent: Boolean(
                   snapshot.pursuitSnapshotId &&
                   snapshot.snapshotStatus === "complete" &&
@@ -350,10 +368,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
                   snapshot.documents.every((document) => document.status === "stored")
                 ),
-                understandingCurrent: Boolean(
-                  workspace.sourceRequirements?.completenessStatus === "complete" &&
-                  !workspace.sourceRequirements.isStale
-                ),
+                understandingCurrent: Boolean(sourceEligible),
+                sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+                  snapshot.snapshotStatus === "complete" && !snapshot.stale),
+                documents: snapshot.documents,
                 currentSnapshotId: snapshot.pursuitSnapshotId,
                 currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
                 confirmedOriginalForms: workspace.confirmedOriginalForms,
@@ -368,25 +386,36 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                 })),
               }}
             />
+            <details id="previous-source-requirements" className="mt-5 min-w-0 scroll-mt-5 rounded-xl border p-4">
+              <summary className="cursor-pointer text-sm font-semibold">
+                Previous-source requirement history ({builderGroups.historical.length})
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+                Prior source versions and saved notes are retained for reference, but cannot
+                count toward current bid completion or be silently rebound to new buyer requirements.
+              </p>
+              <div className="mt-3 grid gap-2">
+                {builderGroups.historical.map((requirement) => (
+                  <article key={requirement.id} id={`compliance-requirement-${requirement.id}`}
+                    className="min-w-0 scroll-mt-5 rounded-lg border p-3 text-sm">
+                    <p className="break-words font-semibold">{requirement.text}</p>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      Previously saved: {requirement.status.replaceAll("_", " ")} · Not current
+                    </p>
+                    {requirement.responseNotes ? (
+                      <p className="mt-2 whitespace-pre-wrap break-words text-xs">Saved notes: {requirement.responseNotes}</p>
+                    ) : null}
+                    <Link href={`/bids/${workspace.id}/evidence/${requirement.id}`}
+                      className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold underline underline-offset-2">
+                      View historical source evidence (read-only)
+                    </Link>
+                  </article>
+                ))}
+                {!builderGroups.historical.length ? <p className="text-xs">No previous-source requirement rows.</p> : null}
+              </div>
+            </details>
           </Section>
 
-          <Section id="response-sections" title="Response sections" icon={<FileText className="size-5" />}>
-            <BidOutlineControl
-              workspaceId={workspace.id}
-              initialSections={workspace.sections}
-              requirements={workspace.requirements}
-              generations={generations}
-              sourceBlockers={sourceBlockers}
-              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
-              sourceReady={
-                snapshot.snapshotStatus === "complete" &&
-                !snapshot.stale &&
-                workspace.sourceRequirements?.completenessStatus === "complete" &&
-                !workspace.sourceRequirements.isStale
-              }
-            />
-          </Section>
-          
           <Section id="final-review" title="Final review and external submission" icon={<ClipboardCheck className="size-5" />}>
             <BidFinalReview
               workspaceId={workspace.id}

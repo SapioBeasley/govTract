@@ -90,8 +90,16 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
     snapshot.blockedDocumentCount === 0 && snapshot.failedDocumentCount === 0 &&
     filesUnavailable.length === 0);
-  const understandingCurrent = Boolean(source && source.completenessStatus === "complete" &&
-    !source.isStale && source.requirements.length > 0);
+  const reviewedMissingEvidence = Boolean(source && !source.isStale &&
+    source.completenessStatus === "partial" &&
+    source.incompleteReasons.length > 0 &&
+    source.incompleteReasons.every((reason) => reason === "requirement_evidence_missing") &&
+    source.requirements.length > 0 &&
+    source.requirements.every((item) => workspace.requirements.some((row) =>
+      row.sourceRequirementKey === `${source.understandingId}:${item.id}` && row.canMarkComplete)));
+  const understandingCurrent = Boolean(source && !source.isStale &&
+    source.requirements.length > 0 &&
+    (source.completenessStatus === "complete" || reviewedMissingEvidence));
   const sourcesReady = snapshotCurrent && understandingCurrent && count("sources") === 0;
 
   const staleSections = workspace.sections.filter((section) =>
@@ -107,7 +115,8 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
       .map((issue) => issue.sectionId).filter((id): id is string => Boolean(id)),
   ]);
   const sectionsMissing = workspace.sections.length === 0;
-  const complianceMissing = workspace.requirements.length === 0;
+  const complianceMissing = !source || !workspace.requirements.some((item) =>
+    item.sourceRequirementKey?.startsWith(`${source.understandingId}:`));
   const originals = workspace.finalReview.sourceChecks.filter((check) => check.originalRequired);
   const formsMissing = originals.filter((check) => !check.originalConfirmed);
   const aiDrafts = workspace.sections.filter((section) => Boolean(section.metadata.aiDraftReview));

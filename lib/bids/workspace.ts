@@ -4,6 +4,8 @@ import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } 
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
 import { responseEvidenceIsCurrent, type RequirementResponseEvidence } from "@/lib/bids/response-proof";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
+import { bidRequirementSourceReviews } from "@/lib/db/source-review-schema";
+import { applySourceReview, type SourceReviewRecord } from "@/lib/bids/source-review";
 
 import {
   bidRequirements,
@@ -70,6 +72,8 @@ export type BidWorkspaceRequirement = {
   effectiveStatus: ComplianceStatus;
   canMarkComplete: boolean;
   evidence: Record<string, unknown>;
+  originalEvidence?: Record<string, unknown>;
+  sourceReview?: SourceReviewRecord | null;
   responseNotes: string | null;
   responseEvidence?: RequirementResponseEvidence | null;
   sortOrder: number;
@@ -245,7 +249,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
   }
 
   const db = getDb();
-  const [requirements, sections, sourceRequirements, sourceSnapshot, appliedGenerations] = await Promise.all([
+  const [requirements, sections, sourceRequirements, sourceSnapshot, appliedGenerations, sourceReviews] = await Promise.all([
     db
       .select({
         id: bidRequirements.id,
@@ -283,6 +287,9 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
       .from(bidDraftGenerations)
       .where(and(eq(bidDraftGenerations.bidWorkspaceId, workspaceId), eq(bidDraftGenerations.applied, true)))
       .orderBy(desc(bidDraftGenerations.createdAt), desc(bidDraftGenerations.id)),
+    db.select().from(bidRequirementSourceReviews)
+      .where(eq(bidRequirementSourceReviews.bidWorkspaceId, workspaceId))
+      .orderBy(desc(bidRequirementSourceReviews.createdAt), desc(bidRequirementSourceReviews.id)),
   ]);
 
   const state = metadataState(row.metadata ?? {});
@@ -292,6 +299,17 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     Array.isArray(row.metadata?.confirmedOriginalForms)
       ? row.metadata.confirmedOriginalForms.filter((id): id is string => typeof id === "string")
       : [];
+  const latestReviewByRequirement = new Map<string, SourceReviewRecord>();
+  for (const review of sourceReviews) {
+    if (!latestReviewByRequirement.has(review.bidRequirementId)) {
+      latestReviewByRequirement.set(review.bidRequirementId, review);
+    }
+  }
+  const sourceSetEligible = Boolean(sourceRequirements && !sourceRequirements.isStale &&
+    (sourceRequirements.completenessStatus === "complete" ||
+      (sourceRequirements.completenessStatus === "partial" &&
+        sourceRequirements.incompleteReasons.length > 0 &&
+        sourceRequirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing"))));
   const workspace = {
     ...row,
     status: row.status,
@@ -300,18 +318,27 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     sourceSnapshot,
     sourceRequirements,
     requirements: requirements.map((requirement) => {
-      const sourceRequirement = isComplianceEvidence(requirement.evidence)
-        ? sourceRequirements?.requirements.find((source) => source.id === requirement.evidence.sourceRequirementId)
+      const originalEvidence = requirement.evidence;
+      const effectiveEvidence = isComplianceEvidence(originalEvidence)
+        ? applySourceReview(originalEvidence, latestReviewByRequirement.get(requirement.id), {
+          understandingId: sourceRequirements?.understandingId ?? null,
+          snapshotId: sourceSnapshot.pursuitSnapshotId,
+          fingerprint: sourceSnapshot.documentSetFingerprint,
+          documents: sourceSnapshot.documents,
+        })
+        : originalEvidence;
+      const sourceRequirement = isComplianceEvidence(effectiveEvidence)
+        ? sourceRequirements?.requirements.find((source) => source.id === effectiveEvidence.sourceRequirementId)
         : null;
       const sourceReady = Boolean(
-        sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale &&
-        isComplianceEvidence(requirement.evidence) &&
-        resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId,
+        sourceSetEligible && sourceRequirements &&
+        isComplianceEvidence(effectiveEvidence) &&
+        resolveComplianceStatus("complete", effectiveEvidence, sourceSnapshot, sourceRequirements.understandingId,
           sourceRequirement?.listingEvidence ?? null) === "complete"
       );
-      const sourceStatus = sourceRequirements?.completenessStatus === "complete" &&
-        !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
-          ? resolveComplianceStatus(requirement.status, requirement.evidence, sourceSnapshot,
+      const sourceStatus = sourceSetEligible && sourceRequirements &&
+        isComplianceEvidence(effectiveEvidence)
+          ? resolveComplianceStatus(requirement.status, effectiveEvidence, sourceSnapshot,
             sourceRequirements.understandingId, sourceRequirement?.listingEvidence ?? null)
           : "needs_review" as const;
       const responseCurrent = sourceRequirement && sourceRequirements
@@ -320,10 +347,14 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
             snapshotId: sourceSnapshot.pursuitSnapshotId,
             fingerprint: sourceSnapshot.documentSetFingerprint,
             understandingId: sourceRequirements.understandingId,
+            requirementKey: sourceRequirement.requirementKey,
           })
         : false;
       return {
         ...requirement,
+        evidence: effectiveEvidence,
+        originalEvidence,
+        sourceReview: latestReviewByRequirement.get(requirement.id) ?? null,
         // Existing completed responses with no bidder-side proof stay in the DB but
         // do not count as current completion until explicitly re-reviewed.
         effectiveStatus: sourceStatus === "complete" && !responseCurrent ? "needs_review" as const : sourceStatus,

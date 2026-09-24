@@ -193,3 +193,22 @@ test("saved AI sections require content-bound verified vendor approval even when
   };
   assert.ok(evaluateBidFinalReview(input).blockingIssues.some((issue) => issue.code === "ai_vendor_facts_unverified"));
 });
+
+test("audited original-source decision changes effective mandatory status and preserves original AI output", () => {
+  const input = fixture();
+  const instruction = input.workspace.sourceRequirements.requirements[1]!;
+  instruction.level = "unknown";
+  const original = structuredClone(instruction);
+  input.workspace.requirements[1]!.evidence = {
+    understandingId: sourceId, sourceRequirementId: instruction.id, sourceFindingKey: instruction.sourceFindingKey,
+    pursuitSnapshotId: "snapshot-1", requirementLevel: "required", issues: [],
+    references: [{ snapshotDocumentId: "snapshot-document-1", opportunityDocumentVersionId: version,
+      filename: "Original pricing form.xlsx", checksumSha256: checksum,
+      documentExtractionSegmentId: "segment-1", locator: { page: 3 },
+      excerpt: "Upload signed form to portal." }],
+  };
+  const checked = evaluateBidFinalReview(input);
+  assert.equal(checked.blockingIssues.some((issue) => issue.code === "requiredness_unverified"), false);
+  assert.equal(checked.sourceChecks[1]?.mandatory, true);
+  assert.deepEqual(instruction, original, "stored source understanding is not rewritten");
+});

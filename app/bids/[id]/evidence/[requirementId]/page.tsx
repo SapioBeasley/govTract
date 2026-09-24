@@ -17,6 +17,7 @@ export default async function ComplianceEvidencePage({ params }: Props) {
   if (!requirement || !isComplianceEvidence(requirement.evidence)) notFound();
 
   const evidence = requirement.evidence;
+  const original = isComplianceEvidence(requirement.originalEvidence) ? requirement.originalEvidence : evidence;
   // An older compliance row may predate read-side hydration of its source excerpt.
   // Resolve only against the same immutable understanding and pinned snapshot.
   const currentSourceRequirement =
@@ -52,10 +53,28 @@ export default async function ComplianceEvidencePage({ params }: Props) {
             </p>
           ) : null}
         </div>
-        {evidence.issues.length ? (
+        {original.issues.length ? (
           <p className="mt-4 rounded-xl border p-4 text-sm">
-            Evidence warnings recorded at generation: {evidence.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.
+            Original source warnings (preserved): {original.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.
           </p>
+        ) : null}
+        {requirement.sourceReview ? (
+          <section className="mt-4 min-w-0 rounded-xl border bg-white p-4 text-sm leading-6">
+            <h2 className="font-semibold">Audited reviewer source determination (separate from the AI finding)</h2>
+            <p>Requiredness: {requirement.sourceReview.level}. This action does not mark the bid response Complete.</p>
+            <p className="break-all">Original version: {requirement.sourceReview.documentVersionId}</p>
+            <p className="break-all">Original SHA-256: {requirement.sourceReview.documentChecksum}</p>
+            <p className="break-words">Source locator: {JSON.stringify(requirement.sourceReview.locator)}</p>
+            <p className="mt-2 whitespace-pre-wrap break-words">Verbatim excerpt: {requirement.sourceReview.excerpt}</p>
+            {requirement.sourceReview.reviewerNote ? (
+              <p className="mt-2 whitespace-pre-wrap break-words">Reviewer rationale: {requirement.sourceReview.reviewerNote}</p>
+            ) : null}
+            {requirement.sourceReview.createdAt ? (
+              <p className="mt-2 text-xs">Recorded: {new Date(requirement.sourceReview.createdAt).toISOString()}</p>
+            ) : null}
+            {requirement.canMarkComplete ? <p className="mt-2 font-medium">Current source review verified.</p> :
+              <p className="mt-2 font-medium">Historical or invalidated source decision: current bid completion remains blocked.</p>}
+          </section>
         ) : null}
         {listingEvidence ? (
           <section className="mt-4 rounded-xl border bg-white p-4 text-sm leading-6">

@@ -10,6 +10,9 @@ export type ComplianceGuidanceContext = {
   currentUnderstandingId: string | null;
   sections: Array<{ id: string; title: string; ready: boolean }>;
   confirmedOriginalForms: string[];
+  sourceReviewAllowed?: boolean;
+  documents?: Array<{ id: string; opportunityDocumentVersionId: string; filename: string;
+    status: string; checksumSha256: string | null }>;
 };
 export type ComplianceGuidance = {
   kind: "blocked" | "actionable" | "addressed";
@@ -65,16 +68,16 @@ export function explainComplianceRequirement(
       evidence.issues.includes("requirement_requiredness_unknown")) {
     return blocked(
       "Complete is unavailable because the original solicitation has not established whether this item is mandatory.",
-      "Read the original source and resolve whether the requirement is mandatory using authoritative evidence. A response-status selection cannot verify requiredness.",
-      evidenceHref, "Inspect source evidence",
+      "View the original source (read-only). Viewing it does not resolve requiredness. An audited reviewer determination linked to the current original excerpt is required; no in-product resolution action is available yet.",
+      evidenceHref, "View original evidence (read-only)",
     );
   }
   if (evidence.issues.includes("requirement_evidence_missing") ||
       (!evidence.references.length && !evidence.listingEvidence)) {
     return blocked(
       "Complete is unavailable because the solicitation evidence for this requirement is missing.",
-      "Inspect the original source and excerpt; once you verify source evidence, use Add newly extracted requirements to update eligible rows.",
-      evidenceHref, "Inspect missing source evidence",
+      "View pinned originals (read-only). Viewing a document does not resolve missing evidence. Retrieve missing originals in Source snapshot; if no original excerpt exists, this row stays blocked until a verifiable source excerpt is recovered.",
+      evidenceHref, "View source evidence (read-only)",
     );
   }
   // The server can clear these transient source-retrieval warnings when the exact pinned file is restored.
@@ -88,7 +91,7 @@ export function explainComplianceRequirement(
       unresolved.length
         ? `Inspect the original citation and resolve its source warning: ${unresolved.map((issue) => issue.replaceAll("_", " ")).join("; ")}.`
         : "Inspect the original document, version and evidence. Review current sources before retrying.",
-      evidenceHref, "Inspect source evidence",
+      evidenceHref, "View source evidence (read-only)",
     );
   }
   if (requirement.requirementType === "form" &&

@@ -63,3 +63,17 @@ test("legacy Complete rows without matching saved response evidence remain unver
     snapshotId: "snapshot-1", understandingId: "understanding-1", sourceFingerprint: "fingerprint-1" },
     [section()], [], "deliverable", "source-1", source), false);
 });
+
+test("a response can only satisfy the buyer source key actually linked to that heading", () => {
+  const linked = section({ requirementLinks: { sourceRequirementKeys: ["deliverables:assembled_unit"] } });
+  const pinned = { ...source, requirementKey: "deliverables:assembled_unit" };
+  const proof = buildBidResponseEvidence({ kind: "section", sectionId: "section-1" },
+    [linked], [], "deliverable", "source-1", pinned);
+  assert.equal(responseEvidenceIsCurrent(proof, [linked], [], "deliverable", "source-1", pinned), true);
+  assert.throws(() => buildBidResponseEvidence({ kind: "section", sectionId: "section-1" },
+    [linked], [], "deliverable", "source-1",
+    { ...source, requirementKey: "pricing:total" }), /linked|heading/i);
+  assert.equal(responseEvidenceIsCurrent(proof,
+    [section({ requirementLinks: { sourceRequirementKeys: ["pricing:total"] } })],
+    [], "deliverable", "source-1", pinned), false, "mapping edits invalidate historic coverage");
+});

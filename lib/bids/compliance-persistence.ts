@@ -104,7 +104,7 @@ export async function updateBidComplianceRequirement(
   if (input.status === "complete") {
     if (
       !isComplianceEvidence(requirement.evidence) ||
-      workspace.sourceRequirements?.completenessStatus !== "complete" ||
+      !workspace.sourceRequirements || !requirement.canMarkComplete ||
       workspace.sourceRequirements.isStale ||
       resolveComplianceStatus(
         "complete",
@@ -128,6 +128,7 @@ export async function updateBidComplianceRequirement(
         snapshotId: workspace.sourceSnapshot.pursuitSnapshotId,
         fingerprint: workspace.sourceSnapshot.documentSetFingerprint,
         understandingId: workspace.sourceRequirements.understandingId,
+        requirementKey: sourceRequirement.requirementKey,
       });
   }
 

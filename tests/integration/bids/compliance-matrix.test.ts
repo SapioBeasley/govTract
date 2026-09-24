@@ -157,6 +157,20 @@ test("compliance matrix is idempotent, preserves user progress and historical ve
       }),
       /explicitly confirm/i,
     );
+    // The earlier fixture created a section without a source-requirement link.
+    // Under #195 that cannot prove an unrelated buyer ask: assert the rejection,
+    // then model the intended linked pricing heading before confirming coverage.
+    await assert.rejects(
+      () => updateBidComplianceRequirement(workspace!.id, pricing.id, {
+        status: "complete", responseSelection: { kind: "section", sectionId: responseSection!.id },
+        responseReviewed: true,
+      }),
+      /not linked/i,
+    );
+    await sql`
+      UPDATE bid_sections SET requirement_links = ${sql.json({ sourceRequirementKeys: ["fixture-1"] })}
+      WHERE id = ${responseSection!.id}
+    `;
     await updateBidComplianceRequirement(workspace!.id, pricing.id, {
       status: "complete", responseSelection: { kind: "section", sectionId: responseSection!.id },
       responseReviewed: true,
