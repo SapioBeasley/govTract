@@ -8,10 +8,13 @@ export type ComplianceGuidanceContext = {
   understandingCurrent: boolean;
   currentSnapshotId: string | null;
   currentUnderstandingId: string | null;
+  sections: Array<{ id: string; title: string; ready: boolean }>;
+  confirmedOriginalForms: string[];
 };
 export type ComplianceGuidance = {
   kind: "blocked" | "actionable" | "addressed";
   canComplete: boolean;
+  blocker?: "source" | "response";
   explanation: string;
   nextAction: string;
   link: { href: string; label: string };
@@ -25,7 +28,7 @@ export function explainComplianceRequirement(
   const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
   const evidenceHref = `/bids/${context.workspaceId}/evidence/${requirement.id}`;
   const blocked = (explanation: string, nextAction: string, href: string, label: string): ComplianceGuidance => ({
-    kind: "blocked", canComplete: false, explanation, nextAction, link: { href, label },
+    kind: "blocked", canComplete: false, blocker: "source", explanation, nextAction, link: { href, label },
   });
   if (!context.snapshotCurrent) {
     return blocked(
@@ -87,6 +90,29 @@ export function explainComplianceRequirement(
         : "Inspect the original document, version and evidence. Review current sources before retrying.",
       evidenceHref, "Inspect source evidence",
     );
+  }
+  if (requirement.requirementType === "form" &&
+      !context.confirmedOriginalForms.includes(evidence.sourceRequirementId)) {
+    return { ...blocked(
+      "Complete is unavailable because the required original form has not yet been confirmed as completed and included in your bid.",
+      "Complete the buyer's original form and confirm it under Final review. A drafted paragraph cannot replace the original.",
+      "#final-review", "Confirm original form in final review",
+    ), blocker: "response" };
+  }
+  if (requirement.requirementType !== "form" && !context.sections.some((section) => section.ready)) {
+    return { ...blocked(
+      "Complete is unavailable because this bid has no saved, current response section ready to address the requirement.",
+      "Draft and save the matching response section first. You can track this requirement as Working on it in the meantime.",
+      "#response-sections", "Draft and save a bid response",
+    ), blocker: "response" };
+  }
+  if (requirement.status === "complete" && requirement.effectiveStatus !== "complete") {
+    return {
+      kind: "actionable", canComplete: true,
+      explanation: "This requirement was previously marked Complete, but its saved bid response or original-form proof is no longer current. Review the actual response and confirm it again.",
+      nextAction: "Choose the current saved bid section or confirmed original form, review it, then save Complete again.",
+      link: { href: "#response-sections", label: "Review saved bid response" },
+    };
   }
   if (requirement.effectiveStatus === "complete") {
     return {
