@@ -14,6 +14,7 @@ export function groupBidBuilderRequirements(
   requirements: BidWorkspaceRequirement[],
   sections: BidWorkspaceSection[],
   currentUnderstandingId: string | null,
+  sourceRequirements: Array<{ id: string; requirementKey: string }> = [],
 ) {
   const current = currentUnderstandingId
     ? requirements.filter((row) =>
@@ -22,6 +23,11 @@ export function groupBidBuilderRequirements(
     : [];
   const activeIds = new Set(current.map((row) => row.id));
   const historical = requirements.filter((row) => !activeIds.has(row.id));
+  // Outline links store the source requirementKey while compliance rows store
+  // understandingId:source UUID. Join through the actual persisted source ID.
+  const outlineKeyByComplianceKey = new Map(sourceRequirements.map((source) => [
+    `${currentUnderstandingId}:${source.id}`, source.requirementKey,
+  ]));
   const bySection: Record<string, BidWorkspaceRequirement[]> = Object.fromEntries(
     sections.map((section) => [section.id, []]),
   );
@@ -40,7 +46,8 @@ export function groupBidBuilderRequirements(
       const prescribedResponse = row.requirementType === "submission_instruction" &&
         section.metadata.source === "solicitation_heading";
       if (!row.sourceRequirementKey || (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
-          claimed.has(row.id) || !keys.has(row.sourceRequirementKey)) continue;
+          claimed.has(row.id) || (!keys.has(row.sourceRequirementKey) &&
+            !keys.has(outlineKeyByComplianceKey.get(row.sourceRequirementKey) ?? ""))) continue;
       bySection[section.id]!.push(row);
       claimed.add(row.id);
     }
