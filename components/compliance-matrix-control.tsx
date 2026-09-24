@@ -42,9 +42,9 @@ function ComplianceRow({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          ...(status !== requirement.status ? { status } : {}),
+          ...(status !== requirement.status || confirmingComplete ? { status } : {}),
           responseNotes: notes.trim() || null,
-          ...(status === "complete" && status !== requirement.status ? {
+          ...(confirmingComplete ? {
             responseSelection: responseChoice === "original_form"
               ? { kind: "original_form" } : { kind: "section", sectionId: responseChoice },
             responseReviewed: reviewedResponse,
@@ -65,8 +65,9 @@ function ComplianceRow({
     }
   }
 
-  const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "");
-  const confirmingComplete = status === "complete" && status !== requirement.status;
+  const needsReproof = requirement.status === "complete" && requirement.effectiveStatus !== "complete";
+  const confirmingComplete = status === "complete" && (status !== requirement.status || needsReproof);
+  const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "") || confirmingComplete;
   const formConfirmed = evidence?.sourceRequirementId ? context.confirmedOriginalForms.includes(evidence.sourceRequirementId) : false;
   const responseOptions = requirement.requirementType === "form" ? [] : context.sections.filter((section) => section.ready);
   const selectedReady = responseChoice === "original_form" ? requirement.requirementType === "form" && formConfirmed : responseOptions.some((section) => section.id === responseChoice);
@@ -156,7 +157,7 @@ function ComplianceRow({
           </span>
         </label>
       </div>
-      {status === "complete" && status !== requirement.status ? (
+      {confirmingComplete ? (
         <div className="mt-4 grid min-w-0 gap-3 rounded-lg border p-3">
           <label className="min-w-0 text-sm font-semibold">
             Where is this requirement addressed in your saved bid?
