@@ -91,7 +91,7 @@ function SectionEditor({
   }
 
   return (
-    <article id={`response-section-${section.id}`} className="grid min-w-0 scroll-mt-5 gap-3 rounded-xl border p-4">
+    <article className="grid min-w-0 gap-3 border-t p-4 sm:p-5">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-[var(--muted-foreground)]">
           {section.metadata.source === "solicitation_heading"
@@ -229,6 +229,17 @@ export function BidOutlineControl({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => setSections(initialSections), [initialSections]);
+  useEffect(() => {
+    const openLinkedSection = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      const target = id ? document.getElementById(id) : null;
+      const details = target?.closest("details");
+      if (details) details.open = true;
+    };
+    openLinkedSection();
+    window.addEventListener("hashchange", openLinkedSection);
+    return () => window.removeEventListener("hashchange", openLinkedSection);
+  }, []);
 
   async function refreshRequirements() {
     setPending(true);
@@ -323,13 +334,40 @@ export function BidOutlineControl({
             {sections.length} saved response section{sections.length === 1 ? "" : "s"}.
             Editing or reopening will not regenerate or overwrite the outline.
           </p>
-          {sections.map((section, index) => (
-            <SectionEditor key={section.id} workspaceId={workspaceId} section={section}
-              linkedRequirements={groups.bySection[section.id] ?? []} context={context}
-              onMove={move} first={index === 0 || pending}
-              last={index === sections.length - 1 || pending} sourceReady={sourceReady}
-              sourceBlockers={sourceBlockers} generations={generations} />
-          ))}
+          <nav aria-label="Bid response headings" className="flex min-w-0 flex-wrap gap-2">
+            {sections.map((section) => (
+              <a key={section.id} href={`#response-section-${section.id}`}
+                className="inline-flex min-h-11 max-w-full items-center rounded-lg border px-3 py-2 text-xs font-semibold underline underline-offset-2 [overflow-wrap:anywhere]">
+                {section.title}
+              </a>
+            ))}
+            <a href="#submission-source-checks"
+              className="inline-flex min-h-11 items-center rounded-lg border px-3 py-2 text-xs font-semibold underline underline-offset-2">
+              Submission & source checks
+            </a>
+          </nav>
+          {sections.map((section, index) => {
+            const rows = groups.bySection[section.id] ?? [];
+            return (
+              <details key={section.id} id={`response-section-${section.id}`}
+                open={index === 0} className="min-w-0 scroll-mt-5 overflow-hidden rounded-xl border">
+                <summary className="cursor-pointer p-4 text-sm font-semibold sm:p-5">
+                  <span className="block break-words">{section.title}</span>
+                  <span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)]">
+                    {section.metadata.source === "solicitation_heading" ? "Solicitation heading" :
+                      "Suggested heading—edit to match the solicitation"} ·
+                    {" "}{rows.length} linked buyer requirements ·
+                    {" "}{rows.filter((row) => row.effectiveStatus === "complete").length} reviewed as addressed ·
+                    {" "}{rows.filter((row) => !row.canMarkComplete).length} need source resolution
+                  </span>
+                </summary>
+                <SectionEditor workspaceId={workspaceId} section={section}
+                  linkedRequirements={rows} context={context} onMove={move}
+                  first={index === 0 || pending} last={index === sections.length - 1 || pending}
+                  sourceReady={sourceReady} sourceBlockers={sourceBlockers} generations={generations} />
+              </details>
+            );
+          })}
         </>
       )}
       <details id="submission-source-checks" className="min-w-0 scroll-mt-5 rounded-xl border p-4">
