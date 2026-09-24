@@ -279,7 +279,7 @@ export function ComplianceMatrixControl({
             {([
               ["all", "All"],
               ["actionable", "My next responses"],
-              ["blocked", "Source verification needed"],
+              ["blocked", "Blocked — see next action"],
               ["addressed", "Addressed"],
             ] as const).map(([value, label]) => (
               <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}
