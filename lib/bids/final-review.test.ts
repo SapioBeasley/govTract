@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
@@ -46,6 +47,14 @@ function fixture() {
     requirementType: requirement.type, text: requirement.text, isRequired: true,
     status: "complete", effectiveStatus: "complete" as "complete" | "needs_review", canMarkComplete: true,
     evidence: {}, responseNotes: null, sortOrder: 0,
+    // A clean fixture represents a bidder who has actually prepared and reviewed
+    // the original form or saved section; buyer citations alone are not enough.
+    responseEvidence: requirement.type === "form"
+      ? { kind: "original_form" as const, sourceRequirementId: requirement.id, snapshotId: "snapshot-1",
+          sourceFingerprint: fingerprint, understandingId: sourceId }
+      : { kind: "section" as const, sectionId: "section-1",
+          contentFingerprint: createHash("sha256").update("We will perform the requested work.").digest("hex"),
+          snapshotId: "snapshot-1", sourceFingerprint: fingerprint, understandingId: sourceId },
   }));
   return {
     workspace: {
