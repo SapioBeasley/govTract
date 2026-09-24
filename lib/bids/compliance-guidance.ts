@@ -1,0 +1,102 @@
+import { isComplianceEvidence } from "./compliance";
+import type { BidWorkspaceRequirement } from "./workspace";
+
+export type ComplianceGuidanceContext = {
+  workspaceId: string;
+  sourceReady: boolean;
+  snapshotCurrent: boolean;
+  understandingCurrent: boolean;
+  currentSnapshotId: string | null;
+  currentUnderstandingId: string | null;
+};
+export type ComplianceGuidance = {
+  kind: "blocked" | "actionable" | "addressed";
+  canComplete: boolean;
+  explanation: string;
+  nextAction: string;
+  link: { href: string; label: string };
+};
+
+/** Presentation only: server-side evidence and saved-response checks remain authoritative. */
+export function explainComplianceRequirement(
+  requirement: BidWorkspaceRequirement,
+  context: ComplianceGuidanceContext,
+): ComplianceGuidance {
+  const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
+  const evidenceHref = `/bids/${context.workspaceId}/evidence/${requirement.id}`;
+  const blocked = (explanation: string, nextAction: string, href: string, label: string): ComplianceGuidance => ({
+    kind: "blocked", canComplete: false, explanation, nextAction, link: { href, label },
+  });
+  if (!context.snapshotCurrent) {
+    return blocked(
+      "Complete is unavailable because the current original solicitation package is missing, incomplete, or changed.",
+      "Retrieve or reconcile current originals and amendments in Source snapshot; then return to this requirement.",
+      "#source-snapshot", "Review current originals",
+    );
+  }
+  if (!context.understandingCurrent) {
+    return blocked(
+      "Complete is unavailable because the current solicitation understanding is incomplete or needs source review.",
+      "Check which source finding is unverified in Source requirements before continuing. An AI refresh is not automatic.",
+      "#source-requirements", "Review current understanding",
+    );
+  }
+  if (!evidence) {
+    return blocked(
+      "Complete is unavailable because this response has no verifiable source reference.",
+      "Inspect the original solicitation and create or repair the source-derived compliance requirement.",
+      "#source-requirements", "Review source requirements",
+    );
+  }
+  if (evidence.pursuitSnapshotId !== context.currentSnapshotId ||
+      evidence.understandingId !== context.currentUnderstandingId) {
+    return blocked(
+      requirement.status === "complete"
+        ? "This was previously marked Complete, but the source or understanding changed. The earlier response still exists and needs re-review."
+        : "Complete is unavailable because this row is pinned to an earlier source package or understanding.",
+      "Review the current originals and reconcile the bid. Existing response notes and old evidence must not be silently overwritten.",
+      "#source-snapshot", "Review changed originals",
+    );
+  }
+  if (evidence.requirementLevel === "unknown" ||
+      evidence.issues.includes("requirement_requiredness_unknown")) {
+    return blocked(
+      "Complete is unavailable because the original solicitation has not established whether this item is mandatory.",
+      "Read the original source and resolve whether the requirement is mandatory using authoritative evidence. A response-status selection cannot verify requiredness.",
+      evidenceHref, "Inspect source evidence",
+    );
+  }
+  if (evidence.issues.includes("requirement_evidence_missing") ||
+      (!evidence.references.length && !evidence.listingEvidence)) {
+    return blocked(
+      "Complete is unavailable because the solicitation evidence for this requirement is missing.",
+      "Inspect the original source and its excerpt; after verified source evidence is available, use Add newly extracted requirements to repair eligible rows.",
+      evidenceHref, "Inspect missing source evidence",
+    );
+  }
+  if (evidence.issues.length || !requirement.canMarkComplete) {
+    return blocked(
+      requirement.status === "complete"
+        ? "This was previously marked Complete, but its original source evidence is no longer verifiable."
+        : "Complete is unavailable because the pinned source evidence is not currently verifiable.",
+      evidence.issues.length
+        ? `Inspect the original citation and resolve its source warning: ${evidence.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.`
+        : "Inspect the original document, version and evidence. Review current sources before retrying.",
+      evidenceHref, "Inspect source evidence",
+    );
+  }
+  if (requirement.effectiveStatus === "complete") {
+    return {
+      kind: "addressed", canComplete: true,
+      explanation: "You marked this requirement addressed in your bid. This does not certify vendor facts, original forms, signatures, or submission.",
+      nextAction: "Check your saved response and final-review checklist before external submission.",
+      link: { href: "#final-review", label: "View final review" },
+    };
+  }
+  return {
+    kind: "actionable", canComplete: context.sourceReady && requirement.canMarkComplete,
+    explanation: "The buyer's requirement has verifiable source evidence. Complete means you have addressed it in your bid, not just read it.",
+    nextAction: "Review the response section or required original form, document where your bid addresses this item in response notes, select Complete, then Save requirement.",
+    link: { href: "#response-sections", label: "Go to response sections" },
+  };
+}
