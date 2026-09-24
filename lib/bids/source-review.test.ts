@@ -55,3 +55,19 @@ test("a verified reviewer decision does not erase unrelated provenance defects",
   });
   assert.ok(effective.issues.includes("document_version_outside_snapshot"));
 });
+
+test("review repair replaces a missing original excerpt in effective evidence, retaining raw citation history", () => {
+  const missing = { ...original, references: [{
+    snapshotDocumentId: "document-1", opportunityDocumentVersionId: "version-1",
+    filename: "Solicitation.pdf", checksumSha256: "checksum-1",
+    documentExtractionSegmentId: "segment-1", locator: { page: 4 }, excerpt: null,
+  }] };
+  const effective = applySourceReview(missing, review, {
+    understandingId: "understanding-1", snapshotId: "snapshot-1", fingerprint: "sha-1",
+    documents: [{ id: "document-1", opportunityDocumentVersionId: "version-1",
+      status: "stored", checksumSha256: "checksum-1" }],
+  });
+  assert.equal(effective.references.length, 1);
+  assert.equal(effective.references[0]?.excerpt, review.excerpt);
+  assert.equal(missing.references[0]?.excerpt, null);
+});
