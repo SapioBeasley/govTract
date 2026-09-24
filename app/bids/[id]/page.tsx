@@ -332,12 +332,30 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               requirements={workspace.requirements}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
-              sourceReady={
-                snapshot.snapshotStatus === "complete" &&
-                !snapshot.stale &&
-                workspace.sourceRequirements?.completenessStatus === "complete" &&
-                !workspace.sourceRequirements.isStale
-              }
+              context={{
+                workspaceId: workspace.id,
+                sourceReady: Boolean(
+                  snapshot.snapshotStatus === "complete" &&
+                  !snapshot.stale &&
+                  workspace.sourceRequirements?.completenessStatus === "complete" &&
+                  !workspace.sourceRequirements.isStale
+                ),
+                snapshotCurrent: Boolean(
+                  snapshot.pursuitSnapshotId &&
+                  snapshot.snapshotStatus === "complete" &&
+                  !snapshot.stale &&
+                  snapshot.documentSetFingerprint &&
+                  snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
+                  snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
+                  snapshot.documents.every((document) => document.status === "stored")
+                ),
+                understandingCurrent: Boolean(
+                  workspace.sourceRequirements?.completenessStatus === "complete" &&
+                  !workspace.sourceRequirements.isStale
+                ),
+                currentSnapshotId: snapshot.pursuitSnapshotId,
+                currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
+              }}
             />
           </Section>
 
