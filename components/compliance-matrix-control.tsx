@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { COMPLIANCE_STATUSES, isComplianceEvidence, type ComplianceStatus } from "@/lib/bids/compliance";
 import { explainComplianceRequirement, type ComplianceGuidanceContext } from "@/lib/bids/compliance-guidance";
@@ -29,6 +29,12 @@ function ComplianceRow({
   const [notes, setNotes] = useState(requirement.responseNotes ?? "");
   const [responseChoice, setResponseChoice] = useState(requirement.responseEvidence?.kind === "section" ? requirement.responseEvidence.sectionId : requirement.responseEvidence?.kind === "original_form" ? "original_form" : "");
   const [reviewedResponse, setReviewedResponse] = useState(false);
+  // A previously checked acknowledgment never carries over to changed originals,
+  // understanding, saved completion status, or edited bid response content.
+  useEffect(() => { setReviewedResponse(false); }, [
+    context.currentSnapshotId, context.currentUnderstandingId,
+    requirement.effectiveStatus, requirement.status,
+  ]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const guidance = explainComplianceRequirement(requirement, context);
