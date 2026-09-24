@@ -73,7 +73,7 @@ export function explainComplianceRequirement(
       (!evidence.references.length && !evidence.listingEvidence)) {
     return blocked(
       "Complete is unavailable because the solicitation evidence for this requirement is missing.",
-      "View pinned originals (read-only). Viewing a document does not resolve missing evidence. Retrieve missing originals in Source snapshot; if no original excerpt exists, this row remains blocked pending evidence-backed repair.",
+      "View pinned originals (read-only). Viewing a document does not resolve missing evidence. Retrieve missing originals in Source snapshot; if no original excerpt exists, this row stays blocked until a verifiable source excerpt is recovered.",
       evidenceHref, "View source evidence (read-only)",
     );
   }
