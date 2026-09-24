@@ -27,7 +27,7 @@ const row = (overrides: Partial<BidWorkspaceRequirement> = {}): BidWorkspaceRequ
   ...overrides,
 });
 
-const context = { sourceReady: true, snapshotCurrent: true, understandingCurrent: true,
+const context = { workspaceId: "bid-1", sourceReady: true, snapshotCurrent: true, understandingCurrent: true,
   currentSnapshotId: "snapshot-1", currentUnderstandingId: "understanding-1" };
 
 test("current pinned evidence allows addressed and explains what the person must verify", () => {
