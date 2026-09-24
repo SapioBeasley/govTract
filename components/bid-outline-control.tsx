@@ -92,37 +92,43 @@ function SectionEditor({
 
   return (
     <article className="grid min-w-0 gap-3 border-t p-4 sm:p-5">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-[var(--muted-foreground)]">
-          {section.metadata.source === "solicitation_heading"
-            ? "Solicitation heading"
-            : "Suggested heading—edit to match the solicitation"}
-        </span>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => onMove(section.id, -1)} disabled={first || pending}
-            className="rounded-lg border px-2 py-1 text-xs disabled:opacity-40"
-            aria-label={`Move ${section.title} up`}>Move up</button>
-          <button type="button" onClick={() => onMove(section.id, 1)} disabled={last || pending}
-            className="rounded-lg border px-2 py-1 text-xs disabled:opacity-40"
-            aria-label={`Move ${section.title} down`}>Move down</button>
-        </div>
-      </div>
+      <h4 className="text-base font-semibold">Step 1: Write your response</h4>
+      <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+        Describe what you will actually supply and how you meet the buyer's instructions.
+        Do not treat a copied buyer requirement as evidence of your offer.
+      </p>
       {warnings.length ? (
         <p className="rounded-lg border p-2 text-xs leading-5 text-[var(--muted-foreground)]" role="status">
           {warnings.join(" ")} Review the authoritative documents before treating this outline as current.
         </p>
       ) : null}
-      <label className="grid min-w-0 gap-1 text-xs font-medium">
-        Response section heading
-        <input value={title} onChange={(event) => setTitle(event.target.value)}
-          maxLength={200} className="h-10 min-w-0 rounded-lg border bg-white px-3 text-sm" />
-      </label>
-      <label className="grid min-w-0 gap-1 text-xs font-medium">
-        Source instructions and formatting (editable)
-        <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)}
-          maxLength={20_000} rows={3}
-          className="min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm" />
-      </label>
+      <details className="min-w-0 rounded-lg border p-3">
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold">Edit heading and source instructions</summary>
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+          {section.metadata.source === "solicitation_heading"
+            ? "This heading comes from the solicitation."
+            : "Suggested heading—edit to match the solicitation."}
+        </p>
+        <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+          <button type="button" onClick={() => onMove(section.id, -1)} disabled={first || pending}
+            className="rounded-lg border px-2 py-1 text-xs disabled:opacity-40"
+            aria-label={"Move " + section.title + " up"}>Move up</button>
+          <button type="button" onClick={() => onMove(section.id, 1)} disabled={last || pending}
+            className="rounded-lg border px-2 py-1 text-xs disabled:opacity-40"
+            aria-label={"Move " + section.title + " down"}>Move down</button>
+        </div>
+        <label className="mt-3 grid min-w-0 gap-1 text-xs font-medium">
+          Response section heading
+          <input value={title} onChange={(event) => setTitle(event.target.value)}
+            maxLength={200} className="h-10 min-w-0 rounded-lg border bg-white px-3 text-sm" />
+        </label>
+        <label className="mt-3 grid min-w-0 gap-1 text-xs font-medium">
+          Source instructions and formatting (editable)
+          <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)}
+            maxLength={20_000} rows={3}
+            className="min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm" />
+        </label>
+      </details>
       <label className="grid min-w-0 gap-1 text-xs font-medium">
         Draft response
         <textarea value={content} onChange={(event) => setContent(event.target.value)}
@@ -164,17 +170,26 @@ function SectionEditor({
           Keep the saved text, but require a new vendor-fact approval for any prior AI draft.
         </label>
       ) : null}
-      <BidDraftAction
-        workspaceId={workspaceId}
-        sectionId={section.id}
-        currentContent={section.content}
-        unsavedChanges={changed}
-        sourceReady={sourceReady && section.metadata.sourceReviewRequired !== true}
-        sourceBlockers={section.metadata.sourceReviewRequired === true
-          ? [...sourceBlockers, "Review and save the preserved response against the current original documents before drafting."]
-          : sourceBlockers}
-        generations={generations}
-      />
+      <details className="min-w-0 rounded-lg border p-3">
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold">
+          Optional: Draft with AI (manual action)
+        </summary>
+        <p className="mt-2 text-xs leading-5">
+          AI can help write a draft but cannot verify your product or company claims. Review all
+          generated text before you save or confirm it; generating a draft is not required to bid.
+        </p>
+        <BidDraftAction
+          workspaceId={workspaceId}
+          sectionId={section.id}
+          currentContent={section.content}
+          unsavedChanges={changed}
+          sourceReady={sourceReady && section.metadata.sourceReviewRequired !== true}
+          sourceBlockers={section.metadata.sourceReviewRequired === true
+            ? [...sourceBlockers, "Review and save the preserved response against the current original documents before drafting."]
+            : sourceBlockers}
+          generations={generations}
+        />
+      </details>
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={save} disabled={(!changed && !verifyVendorFacts && !reviewedCurrentSource) || pending || !title.trim()}
           className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
@@ -186,14 +201,18 @@ function SectionEditor({
         {message ? <span role="status" className="break-words text-xs">{message}</span> : null}
       </div>
       <div className="grid min-w-0 gap-3 border-t pt-4" aria-label={`Buyer requirements linked to ${section.title}`}>
-        <h4 className="text-sm font-semibold">Buyer requirements in this response ({linkedRequirements.length})</h4>
+        <h4 className="text-base font-semibold">Step 2: Check what the buyer asked for ({linkedRequirements.length})</h4>
         <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-          These are the buyer's asks, not headings. Write and Save section above, then review each saved
-          response below. Source verification and bidder response coverage are separate checks.
+          Each buyer request has one next action. Save your response above, then confirm only those
+          requests that your actual offer addresses. You do not need to select the heading again.
         </p>
+        {changed ? <p role="status" className="rounded-lg border p-3 text-xs">
+          Save your response edits above before checking these requirements.
+        </p> : null}
         {linkedRequirements.length ? linkedRequirements.map((requirement) => (
           <ComplianceRow key={requirement.id} requirement={requirement}
-            context={{ ...context, sections: context.sections.filter((choice) => choice.id === section.id) }} />
+            context={{ ...context, sections: context.sections.filter((choice) => choice.id === section.id)
+              .map((choice) => ({ ...choice, ready: choice.ready && !changed })) }} />
         )) : (
           <p className="rounded-lg border border-dashed p-3 text-xs leading-5">
             No current buyer requirements are linked to this heading. Verify the original solicitation
@@ -231,10 +250,18 @@ export function BidOutlineControl({
   useEffect(() => setSections(initialSections), [initialSections]);
   useEffect(() => {
     const openLinkedSection = () => {
-      const id = decodeURIComponent(window.location.hash.slice(1));
+      const id = decodeURIComponent(window.location.hash.slice(1).split("#")[0] ?? "");
       const target = id ? document.getElementById(id) : null;
       const details = target?.closest("details");
-      if (details) details.open = true;
+      if (details) {
+        details.open = true;
+        let parent = details.parentElement?.closest("details") ?? null;
+        while (parent) {
+          parent.open = true;
+          parent = parent.parentElement?.closest("details") ?? null;
+        }
+        target?.scrollIntoView({ block: "start" });
+      }
     };
     openLinkedSection();
     window.addEventListener("hashchange", openLinkedSection);

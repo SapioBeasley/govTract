@@ -209,6 +209,99 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
         </header>
 
         <div className="mt-5 grid min-w-0 gap-5">
+          <Section id="prepare-bid" title="Prepare bid" icon={<FileText className="size-5" />}>
+            <p className="mb-4 text-sm leading-6 text-[var(--muted-foreground)]">
+              First write what your company will supply, then check each buyer request below your saved response.
+              Each card shows just your next action. Detailed sources and other options are available when needed.
+            </p>
+            {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
+            <span id="compliance-requirements" className="block scroll-mt-5" />
+            <span id="response-sections" className="block scroll-mt-5" />
+            <BidOutlineControl
+              workspaceId={workspace.id}
+              initialSections={workspace.sections}
+              groups={builderGroups}
+              generations={generations}
+              sourceBlockers={sourceBlockers}
+              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
+              sourceReady={
+                snapshot.snapshotStatus === "complete" &&
+                !snapshot.stale &&
+                workspace.sourceRequirements?.completenessStatus === "complete" &&
+                !workspace.sourceRequirements.isStale
+              }
+              context={{
+                workspaceId: workspace.id,
+                sourceReady: Boolean(snapshot.snapshotStatus === "complete" && !snapshot.stale && sourceEligible),
+                snapshotCurrent: Boolean(
+                  snapshot.pursuitSnapshotId &&
+                  snapshot.snapshotStatus === "complete" &&
+                  !snapshot.stale &&
+                  snapshot.documentSetFingerprint &&
+                  snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
+                  snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
+                  snapshot.documents.every((document) => document.status === "stored")
+                ),
+                understandingCurrent: Boolean(sourceEligible),
+                sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+                  snapshot.snapshotStatus === "complete" && !snapshot.stale),
+                documents: snapshot.documents,
+                currentSnapshotId: snapshot.pursuitSnapshotId,
+                currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
+                confirmedOriginalForms: workspace.confirmedOriginalForms,
+                sections: workspace.sections.map((section) => ({
+                  id: section.id,
+                  title: section.title,
+                  content: section.content,
+                  ready: savedSectionCanAddressRequirement(section, {
+                    snapshotId: snapshot.pursuitSnapshotId,
+                    fingerprint: snapshot.documentSetFingerprint,
+                    understandingId: workspace.sourceRequirements?.understandingId ?? null,
+                  }),
+                })),
+              }}
+            />
+            <details id="previous-source-requirements" className="mt-5 min-w-0 scroll-mt-5 rounded-xl border p-4">
+              <summary className="cursor-pointer text-sm font-semibold">
+                Previous-source requirement history ({builderGroups.historical.length})
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+                Prior source versions and saved notes are retained for reference, but cannot
+                count toward current bid completion or be silently rebound to new buyer requirements.
+              </p>
+              <div className="mt-3 grid gap-2">
+                {builderGroups.historical.map((requirement) => (
+                  <article key={requirement.id} id={`compliance-requirement-${requirement.id}`}
+                    className="min-w-0 scroll-mt-5 rounded-lg border p-3 text-sm">
+                    <p className="break-words font-semibold">{requirement.text}</p>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      Previously saved: {requirement.status.replaceAll("_", " ")} · Not current
+                    </p>
+                    {requirement.responseNotes ? (
+                      <p className="mt-2 whitespace-pre-wrap break-words text-xs">Saved notes: {requirement.responseNotes}</p>
+                    ) : null}
+                    <Link href={`/bids/${workspace.id}/evidence/${requirement.id}`}
+                      className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold underline underline-offset-2">
+                      View historical source evidence (read-only)
+                    </Link>
+                  </article>
+                ))}
+                {!builderGroups.historical.length ? <p className="text-xs">No previous-source requirement rows.</p> : null}
+              </div>
+            </details>
+          </Section>
+
+          <details id="source-documents-and-technical-details"
+            open={snapshot.stale || snapshot.snapshotStatus !== "complete"}
+            className="min-w-0 scroll-mt-5 rounded-2xl border bg-white p-4 shadow-sm sm:p-6">
+            <summary className="min-h-11 cursor-pointer text-sm font-semibold">
+              Source documents and technical details
+            </summary>
+            <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+              Use this area when a buyer requirement asks for missing originals or when you need
+              to inspect the detailed progress report. Your work in the bid builder stays saved.
+            </p>
+            <div className="mt-4 grid min-w-0 gap-5">
           <GuidedBidProgress workspace={workspace} />
           <BidWorkspaceControl
             workspaceId={workspace.id}
@@ -335,86 +428,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             )}
           </Section>
 
-          <Section id="prepare-bid" title="Prepare bid" icon={<FileText className="size-5" />}>
-            <p className="mb-4 text-sm leading-6 text-[var(--muted-foreground)]">
-              Response sections and buyer requirements now share one workspace. Save a response, then
-              review linked requirements directly beneath its heading.
-            </p>
-            {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
-            <span id="compliance-requirements" className="block scroll-mt-5" />
-            <span id="response-sections" className="block scroll-mt-5" />
-            <BidOutlineControl
-              workspaceId={workspace.id}
-              initialSections={workspace.sections}
-              groups={builderGroups}
-              generations={generations}
-              sourceBlockers={sourceBlockers}
-              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
-              sourceReady={
-                snapshot.snapshotStatus === "complete" &&
-                !snapshot.stale &&
-                workspace.sourceRequirements?.completenessStatus === "complete" &&
-                !workspace.sourceRequirements.isStale
-              }
-              context={{
-                workspaceId: workspace.id,
-                sourceReady: Boolean(snapshot.snapshotStatus === "complete" && !snapshot.stale && sourceEligible),
-                snapshotCurrent: Boolean(
-                  snapshot.pursuitSnapshotId &&
-                  snapshot.snapshotStatus === "complete" &&
-                  !snapshot.stale &&
-                  snapshot.documentSetFingerprint &&
-                  snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
-                  snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
-                  snapshot.documents.every((document) => document.status === "stored")
-                ),
-                understandingCurrent: Boolean(sourceEligible),
-                sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
-                  snapshot.snapshotStatus === "complete" && !snapshot.stale),
-                documents: snapshot.documents,
-                currentSnapshotId: snapshot.pursuitSnapshotId,
-                currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
-                confirmedOriginalForms: workspace.confirmedOriginalForms,
-                sections: workspace.sections.map((section) => ({
-                  id: section.id,
-                  title: section.title,
-                  ready: savedSectionCanAddressRequirement(section, {
-                    snapshotId: snapshot.pursuitSnapshotId,
-                    fingerprint: snapshot.documentSetFingerprint,
-                    understandingId: workspace.sourceRequirements?.understandingId ?? null,
-                  }),
-                })),
-              }}
-            />
-            <details id="previous-source-requirements" className="mt-5 min-w-0 scroll-mt-5 rounded-xl border p-4">
-              <summary className="cursor-pointer text-sm font-semibold">
-                Previous-source requirement history ({builderGroups.historical.length})
-              </summary>
-              <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
-                Prior source versions and saved notes are retained for reference, but cannot
-                count toward current bid completion or be silently rebound to new buyer requirements.
-              </p>
-              <div className="mt-3 grid gap-2">
-                {builderGroups.historical.map((requirement) => (
-                  <article key={requirement.id} id={`compliance-requirement-${requirement.id}`}
-                    className="min-w-0 scroll-mt-5 rounded-lg border p-3 text-sm">
-                    <p className="break-words font-semibold">{requirement.text}</p>
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      Previously saved: {requirement.status.replaceAll("_", " ")} · Not current
-                    </p>
-                    {requirement.responseNotes ? (
-                      <p className="mt-2 whitespace-pre-wrap break-words text-xs">Saved notes: {requirement.responseNotes}</p>
-                    ) : null}
-                    <Link href={`/bids/${workspace.id}/evidence/${requirement.id}`}
-                      className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold underline underline-offset-2">
-                      View historical source evidence (read-only)
-                    </Link>
-                  </article>
-                ))}
-                {!builderGroups.historical.length ? <p className="text-xs">No previous-source requirement rows.</p> : null}
-              </div>
-            </details>
-          </Section>
+            </div>
+          </details>
 
           <Section id="final-review" title="Final review and external submission" icon={<ClipboardCheck className="size-5" />}>
             <BidFinalReview
