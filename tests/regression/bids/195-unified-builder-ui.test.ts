@@ -28,3 +28,18 @@ test("source evidence viewing is never described as an automatic requiredness fi
   assert.match(row, /Bid response:/);
   assert.match(row, /Source verification:/);
 });
+
+test("blocked requirement has a separately audited source-review action, not a Complete shortcut", () => {
+  const row = read("components/compliance-matrix-control.tsx");
+  const action = read("components/bid-source-review-action.tsx");
+  const route = read("app/api/bids/[id]/compliance/[requirementId]/source-review/route.ts");
+  const service = read("lib/bids/source-review-persistence.ts");
+  assert.match(row, /BidSourceReviewAction/);
+  assert.match(action, /verbatim excerpt/i);
+  assert.match(action, /reviewerNote/);
+  assert.match(action, /confirmed/);
+  assert.match(route, /reviewBidRequirementSource/);
+  assert.doesNotMatch(route, /updateBidComplianceRequirement|status: "complete"/);
+  assert.match(service, /documentExtractions\.checksumSha256/);
+  assert.match(service, /bidRequirementSourceReviews/);
+});
