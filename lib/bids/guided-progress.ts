@@ -1,5 +1,4 @@
 import type { BidWorkspaceRecord } from "./workspace";
-import { groupBidBuilderRequirements } from "./builder";
 import type { FinalReviewIssue } from "./final-review";
 
 export type GuidanceStepId = "sources" | "reconcile" | "compliance" | "sections" | "assistance" | "originals" | "handoff";
@@ -108,9 +107,8 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
       .map((issue) => issue.sectionId).filter((id): id is string => Boolean(id)),
   ]);
   const sectionsMissing = workspace.sections.length === 0;
-  const complianceMissing = groupBidBuilderRequirements(
-    workspace.requirements, workspace.sections, source?.understandingId ?? null,
-  ).current.length === 0;
+  const complianceMissing = !source || !workspace.requirements.some((item) =>
+    item.sourceRequirementKey?.startsWith(`${source.understandingId}:`));
   const originals = workspace.finalReview.sourceChecks.filter((check) => check.originalRequired);
   const formsMissing = originals.filter((check) => !check.originalConfirmed);
   const aiDrafts = workspace.sections.filter((section) => Boolean(section.metadata.aiDraftReview));
