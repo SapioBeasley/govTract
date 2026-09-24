@@ -73,7 +73,7 @@ export function explainComplianceRequirement(
       (!evidence.references.length && !evidence.listingEvidence)) {
     return blocked(
       "Complete is unavailable because the solicitation evidence for this requirement is missing.",
-      "Inspect the original source and its excerpt; once you verify its evidence, use Add newly extracted requirements to repair eligible rows.",
+      "Inspect the original source and excerpt; once you verify source evidence, use Add newly extracted requirements to update eligible rows.",
       evidenceHref, "Inspect missing source evidence",
     );
   }
