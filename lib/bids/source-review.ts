@@ -12,6 +12,8 @@ export type SourceReviewRecord = {
   segmentId: string;
   locator: Record<string, unknown>;
   excerpt: string;
+  reviewerNote?: string;
+  createdAt?: Date | string;
 };
 
 type SourceReviewContext = {
