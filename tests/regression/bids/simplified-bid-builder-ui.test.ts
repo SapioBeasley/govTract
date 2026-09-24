@@ -11,7 +11,7 @@ test("bid builder leads with a write-then-review flow, not source metadata and a
   assert.match(outline, /Step 1: Write your response/);
   assert.match(outline, /Step 2: Check what the buyer asked for/);
   assert.match(outline, /<details[^>]*>\s*<summary[^>]*>Edit heading and source instructions/);
-  assert.match(page, /<details[^>]*>\s*<summary[^>]*>Source documents and technical details/);
+  assert.match(page, /id="source-documents-and-technical-details"[\s\S]*?<summary[^>]*>\s*Source documents and technical details/);
   assert.match(page, /<GuidedBidProgress workspace=\{workspace\}/);
   assert.match(page, /id="prepare-bid"/);
 });
