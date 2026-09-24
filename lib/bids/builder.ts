@@ -48,3 +48,5 @@ export function groupBidBuilderRequirements(
   }
   return { current, historical, bySection, unassigned };
 }
+
+export type BidBuilderGroups = ReturnType<typeof groupBidBuilderRequirements>;
