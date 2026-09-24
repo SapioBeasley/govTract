@@ -85,6 +85,11 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const generations = await listBidDraftGenerations(workspace.id);
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
+  const sourceEligible = Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+    (workspace.sourceRequirements.completenessStatus === "complete" ||
+      (workspace.sourceRequirements.completenessStatus === "partial" &&
+        workspace.sourceRequirements.incompleteReasons.length > 0 &&
+        workspace.sourceRequirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing"))));
   const builderGroups = groupBidBuilderRequirements(workspace.requirements, workspace.sections,
     workspace.sourceRequirements?.understandingId ?? null,
     workspace.sourceRequirements?.requirements ?? []);
@@ -353,12 +358,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               }
               context={{
                 workspaceId: workspace.id,
-                sourceReady: Boolean(
-                  snapshot.snapshotStatus === "complete" &&
-                  !snapshot.stale &&
-                  workspace.sourceRequirements?.completenessStatus === "complete" &&
-                  !workspace.sourceRequirements.isStale
-                ),
+                sourceReady: Boolean(snapshot.snapshotStatus === "complete" && !snapshot.stale && sourceEligible),
                 snapshotCurrent: Boolean(
                   snapshot.pursuitSnapshotId &&
                   snapshot.snapshotStatus === "complete" &&
@@ -368,10 +368,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
                   snapshot.documents.every((document) => document.status === "stored")
                 ),
-                understandingCurrent: Boolean(
-                  workspace.sourceRequirements?.completenessStatus === "complete" &&
-                  !workspace.sourceRequirements.isStale
-                ),
+                understandingCurrent: sourceEligible,
+                sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+                  snapshot.snapshotStatus === "complete" && !snapshot.stale),
+                documents: snapshot.documents,
                 currentSnapshotId: snapshot.pursuitSnapshotId,
                 currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
                 confirmedOriginalForms: workspace.confirmedOriginalForms,
