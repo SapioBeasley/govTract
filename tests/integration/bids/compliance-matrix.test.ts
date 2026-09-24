@@ -126,8 +126,8 @@ test("compliance matrix is idempotent, preserves user progress and historical ve
     const formSourceId = form.sourceRequirementKey!.split(":")[1]!;
     await sql`
       UPDATE bid_workspaces SET metadata = jsonb_build_object(
-        'originalFormsFingerprint', ${firstSnapshot.documentSetFingerprint},
-        'confirmedOriginalForms', jsonb_build_array(${formSourceId})
+        'originalFormsFingerprint', ${firstSnapshot.documentSetFingerprint}::text,
+        'confirmedOriginalForms', jsonb_build_array(${formSourceId}::text)
       ) WHERE id = ${workspace!.id}
     `;
     await updateBidComplianceRequirement(workspace!.id, form.id, {
