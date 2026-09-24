@@ -74,13 +74,16 @@ export function explainComplianceRequirement(
       evidenceHref, "Inspect missing source evidence",
     );
   }
-  if (evidence.issues.length || !requirement.canMarkComplete) {
+  // The server can clear these transient source-retrieval warnings when the exact pinned file is restored.
+  const unresolved = evidence.issues.filter((issue) =>
+    issue !== "snapshot_incomplete" && issue !== "evidence_document_unavailable");
+  if (unresolved.length || !requirement.canMarkComplete) {
     return blocked(
       requirement.status === "complete"
         ? "This was previously marked Complete, but its original source evidence is no longer verifiable."
         : "Complete is unavailable because the pinned source evidence is not currently verifiable.",
-      evidence.issues.length
-        ? `Inspect the original citation and resolve its source warning: ${evidence.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.`
+      unresolved.length
+        ? `Inspect the original citation and resolve its source warning: ${unresolved.map((issue) => issue.replaceAll("_", " ")).join("; ")}.`
         : "Inspect the original document, version and evidence. Review current sources before retrying.",
       evidenceHref, "Inspect source evidence",
     );
