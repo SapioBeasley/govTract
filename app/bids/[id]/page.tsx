@@ -86,7 +86,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const builderGroups = groupBidBuilderRequirements(workspace.requirements, workspace.sections,
-    workspace.sourceRequirements?.understandingId ?? null);
+    workspace.sourceRequirements?.understandingId ?? null,
+    workspace.sourceRequirements?.requirements ?? []);
   const snapshot = workspace.sourceSnapshot;
   const previousSnapshot = snapshot.supersedesSnapshotId
     ? await getPursuitSnapshot(snapshot.supersedesSnapshotId)
