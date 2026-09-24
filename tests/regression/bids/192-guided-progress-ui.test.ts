@@ -34,3 +34,11 @@ test("guide uses persisted evidence only and preserves manual model and human ha
   assert.match(finalReview, /!review\.readyForHumanReview/);
   assert.match(finalReview, /govTract does not submit/);
 });
+
+test("first manual AI draft and replacements both require explicit cost and overwrite confirmation", () => {
+  const action = read("components/bid-draft-action.tsx");
+  assert.match(action, /window\.confirm/);
+  assert.doesNotMatch(action, /if \(replace && !window\.confirm/);
+  assert.match(action, /may incur a paid AI charge/);
+  assert.ok(action.indexOf("window.confirm") < action.indexOf("fetch(`/api/bids/"));
+});
