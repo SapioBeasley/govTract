@@ -187,9 +187,7 @@ export function ComplianceRow({
       </div>
       {message ? <p role="status" className="mt-3 break-words text-sm">{message}</p> : null}
       <details className="mt-3 min-w-0 rounded-lg border p-3">
-        <summary className="min-h-11 cursor-pointer text-xs font-semibold">
-          Original source and other options
-        </summary>
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold">Original source and other options</summary>
         <div className="mt-3 grid min-w-0 gap-3 text-xs leading-5">
           <p><strong>Source verification:</strong> {requirement.canMarkComplete && context.snapshotCurrent &&
             context.understandingCurrent ? "Current original confirmed." : "Needs source review."}</p>
