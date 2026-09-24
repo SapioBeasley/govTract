@@ -28,7 +28,9 @@ const row = (overrides: Partial<BidWorkspaceRequirement> = {}): BidWorkspaceRequ
 });
 
 const context = { workspaceId: "bid-1", sourceReady: true, snapshotCurrent: true, understandingCurrent: true,
-  currentSnapshotId: "snapshot-1", currentUnderstandingId: "understanding-1" };
+  currentSnapshotId: "snapshot-1", currentUnderstandingId: "understanding-1",
+  sections: [{ id: "section-1", title: "Technical response", ready: true }],
+  confirmedOriginalForms: [] as string[] };
 
 test("current pinned evidence allows addressed and explains what the person must verify", () => {
   const state = explainComplianceRequirement(row(), context);
@@ -95,4 +97,32 @@ test("status classification honors effective saved status and unverified vendor 
   assert.match(completed.explanation, /not.*vendor|not.*certif/i);
   assert.equal(explainComplianceRequirement(row({ status: "drafting", effectiveStatus: "drafting" }), context).kind, "actionable");
   assert.equal(explainComplianceRequirement(row({ canMarkComplete: false }), context).kind, "blocked");
+});
+
+test("verified source cannot enable Complete before there is a saved bid response", () => {
+  const state = explainComplianceRequirement(row(), { ...context, sections: [] });
+  assert.equal(state.canComplete, false);
+  assert.equal(state.kind, "blocked");
+  assert.equal(state.blocker, "response");
+  assert.equal(state.link.href, "#response-sections");
+  assert.match(state.explanation, /bid response/i);
+});
+
+test("a form requirement needs a confirmed original form, not an unrelated response section", () => {
+  const form = row({ requirementType: "form" });
+  const missing = explainComplianceRequirement(form, context);
+  assert.equal(missing.canComplete, false);
+  assert.equal(missing.link.href, "#final-review");
+  const confirmed = explainComplianceRequirement(form,
+    { ...context, confirmedOriginalForms: ["source-1"], sections: [] });
+  assert.equal(confirmed.canComplete, true);
+});
+
+test("previously completed row with edited bid content asks for explicit response re-review", () => {
+  const state = explainComplianceRequirement(row({
+    status: "complete", effectiveStatus: "needs_review",
+  }), context);
+  assert.equal(state.kind, "actionable");
+  assert.match(state.explanation, /previous|earlier/i);
+  assert.equal(state.canComplete, true);
 });
