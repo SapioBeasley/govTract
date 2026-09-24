@@ -90,7 +90,7 @@ function SectionEditor({
   }
 
   return (
-    <article className="grid min-w-0 gap-3 rounded-xl border p-4">
+    <article id={`response-section-${section.id}`} className="grid min-w-0 scroll-mt-5 gap-3 rounded-xl border p-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-[var(--muted-foreground)]">
           {section.metadata.source === "solicitation_heading"
