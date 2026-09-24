@@ -16,7 +16,7 @@ const LABELS: Record<ComplianceStatus, string> = {
   not_applicable: "Not applicable (verify against source)",
 };
 
-function ComplianceRow({
+export function ComplianceRow({
   requirement,
   context,
 }: {
@@ -95,6 +95,15 @@ function ComplianceRow({
         </span>
         <span className="rounded-full border px-2.5 py-1">{statusDescription}</span>
       </div>
+      <div className="mt-3 grid gap-1 text-xs leading-5" aria-live="polite">
+        <p><strong>Source verification:</strong> {requirement.canMarkComplete && context.snapshotCurrent && context.understandingCurrent
+          ? "Current original evidence is verified." : "Needs source resolution; saving bid text does not clear source blockers."}</p>
+        <p><strong>Bid response:</strong> {requirement.effectiveStatus === "complete"
+          ? "Reviewed as addressed in the current saved bid." : requirement.requirementType === "form"
+            ? formConfirmed ? "Original form confirmed; explicitly review coverage." : "Confirm the completed original form in Final review."
+            : responseOptions.length ? "Saved response exists; explicitly review whether it addresses this ask."
+              : "Draft and save the matching response before marking Complete."}</p>
+      </div>
       <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
         What the buyer asks
       </h3>
@@ -125,7 +134,7 @@ function ComplianceRow({
         {guidance.kind === "blocked" && evidence ? (
           <Link href={`/bids/${context.workspaceId}/evidence/${requirement.id}`}
             className="ml-3 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
-            View pinned document evidence
+            View pinned source (read-only)
           </Link>
         ) : null}
       </div>
