@@ -35,10 +35,29 @@ export async function PATCH(request: Request, context: Context) {
   if (body.status === undefined && body.responseNotes === undefined) {
     return NextResponse.json({ error: { message: "A compliance status or response note is required." } }, { status: 400 });
   }
+  if (body.responseSelection !== undefined) {
+    const value = body.responseSelection;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return NextResponse.json({ error: { message: "Select a saved bid response or confirmed original form." } }, { status: 400 });
+    }
+    const selection = value as Record<string, unknown>;
+    if (selection.kind === "section" ? !UUID.test(String(selection.sectionId ?? "")) :
+        selection.kind !== "original_form") {
+      return NextResponse.json({ error: { message: "Select a valid response section or original form." } }, { status: 400 });
+    }
+  }
+  if (body.responseReviewed !== undefined && typeof body.responseReviewed !== "boolean") {
+    return NextResponse.json({ error: { message: "Response review confirmation must be a boolean." } }, { status: 400 });
+  }
+  if (body.status === "complete" && (body.responseSelection === undefined || body.responseReviewed !== true)) {
+    return NextResponse.json({ error: { message: "Select and review the saved bid response or confirmed original form before marking Complete." } }, { status: 400 });
+  }
   try {
     const workspace = await updateBidComplianceRequirement(id, requirementId, {
       ...(body.status === undefined ? {} : { status: body.status }),
       ...(body.responseNotes === undefined ? {} : { responseNotes: body.responseNotes as string | null }),
+      ...(body.responseSelection === undefined ? {} : { responseSelection: body.responseSelection as import("@/lib/bids/response-proof").RequirementResponseSelection }),
+      ...(body.responseReviewed === undefined ? {} : { responseReviewed: body.responseReviewed as boolean }),
     });
     return NextResponse.json({ workspace });
   } catch (error) {
