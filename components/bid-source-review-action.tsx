@@ -128,14 +128,17 @@ export function BidSourceReviewAction({
                 className="min-h-11 w-fit rounded-lg bg-[var(--primary)] px-4 py-2 font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
                 {saving ? "Checking original…" : "Confirm this original"}
               </button>
-              <details className="min-w-0 rounded-lg border p-3">
+              <details open={!pinnedReviewChoice} className="min-w-0 rounded-lg border p-3">
                 <summary onClick={() => { setManual(true); setConfirmed(false); }}
                   className="min-h-11 cursor-pointer text-xs font-semibold">
-                  Review a different passage or original
+                  {pinnedReviewChoice ? "Review a different passage or original" :
+                    "Choose an original and its exact instruction"}
                 </summary>
                 <p className="mt-2 text-xs">
-                  If the excerpt above does not establish requiredness, choose another
-                  original and paste an exact excerpt. Verification still uses its stored checksum.
+                  {pinnedReviewChoice
+                    ? "If the excerpt above does not establish requiredness, select another original and paste an exact passage."
+                    : "There is no reusable original excerpt for this buyer request. Select the retained original and copy an exact passage that establishes its requiredness."}
+                  The saved decision is checked against that file's stored checksum.
                 </p>
                 <label className="mt-3 grid min-w-0 gap-1 text-xs font-semibold">
                   Current retained original
