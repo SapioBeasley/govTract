@@ -43,3 +43,12 @@ test("blocked requirement has a separately audited source-review action, not a C
   assert.match(service, /documentExtractions\.checksumSha256/);
   assert.match(service, /bidRequirementSourceReviews/);
 });
+
+test("responsive heading navigation opens the linked section for keyboard and deep-link use", () => {
+  const outline = read("components/bid-outline-control.tsx");
+  assert.match(outline, /aria-label="Bid response headings"/);
+  assert.match(outline, /<details key=\{section.id\}/);
+  assert.match(outline, /<summary/);
+  assert.match(outline, /closest\("details"\)/);
+  assert.match(outline, /response-section-\$\{section.id\}/);
+});
