@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { COMPLIANCE_STATUSES, isComplianceEvidence, type ComplianceStatus } from "@/lib/bids/compliance";
+import { COMPLIANCE_STATUSES, isComplianceEvidence, isComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
 import { explainComplianceRequirement, type ComplianceGuidanceContext } from "@/lib/bids/compliance-guidance";
 import type { BidWorkspaceRequirement } from "@/lib/bids/workspace";
 import { BidSourceReviewAction } from "@/components/bid-source-review-action";
+import { nextRequirementAction } from "@/lib/bids/builder-actions";
 
 const LABELS: Record<ComplianceStatus, string> = {
   missing: "Not addressed",
@@ -25,210 +26,220 @@ export function ComplianceRow({
   context: ComplianceGuidanceContext;
 }) {
   const router = useRouter();
-  // A persisted legacy Complete without current response proof must be reviewed again.
-  const [status, setStatus] = useState(requirement.status === "complete" && requirement.effectiveStatus !== "complete" ? "needs_review" : requirement.status);
   const [notes, setNotes] = useState(requirement.responseNotes ?? "");
-  const [responseChoice, setResponseChoice] = useState(requirement.responseEvidence?.kind === "section" ? requirement.responseEvidence.sectionId : requirement.responseEvidence?.kind === "original_form" ? "original_form" : "");
-  const [reviewedResponse, setReviewedResponse] = useState(false);
-  // A previously checked acknowledgment never carries over to changed originals,
-  // understanding, saved completion status, or edited bid response content.
-  useEffect(() => { setReviewedResponse(false); }, [
-    context.currentSnapshotId, context.currentUnderstandingId,
-    requirement.effectiveStatus, requirement.status,
-  ]);
+  const [advancedStatus, setAdvancedStatus] = useState<ComplianceStatus>(
+    isComplianceStatus(requirement.status) ? requirement.status : "needs_review",
+  );
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const guidance = explainComplianceRequirement(requirement, context);
-  const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
+  // Updates after source confirmation or saving should not retain a stale local dropdown.
+  useEffect(() => {
+    setNotes(requirement.responseNotes ?? "");
+    setAdvancedStatus(isComplianceStatus(requirement.status) ? requirement.status : "needs_review");
+  }, [requirement.status, requirement.responseNotes]);
 
-  async function save() {
+  const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
+  const guidance = explainComplianceRequirement(requirement, context);
+  const formConfirmed = evidence?.sourceRequirementId
+    ? context.confirmedOriginalForms.includes(evidence.sourceRequirementId) : false;
+  // The enclosing response heading supplies only its own linked current section.
+  // The API independently validates its actual source key, content, and snapshot.
+  const responseSection = requirement.requirementType === "form"
+    ? null : context.sections.find((section) => section.ready) ?? null;
+  const action = nextRequirementAction(requirement, {
+    snapshotCurrent: context.snapshotCurrent,
+    understandingCurrent: context.understandingCurrent,
+    sourceReady: context.sourceReady,
+    matchingResponseReady: Boolean(responseSection),
+    originalFormConfirmed: formConfirmed,
+  });
+  const isForm = requirement.requirementType === "form";
+  const canConfirm = action.kind === "confirm" &&
+    (isForm ? formConfirmed : Boolean(responseSection));
+
+  async function saveStatus(status: ComplianceStatus | null, reviewed = false) {
+    if (pending) return;
     setPending(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/bids/${context.workspaceId}/compliance/${requirement.id}`, {
+      const response = await fetch("/api/bids/" + context.workspaceId + "/compliance/" + requirement.id, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          ...(status !== requirement.status || confirmingComplete ? { status } : {}),
+          ...(status ? { status } : {}),
           responseNotes: notes.trim() || null,
-          ...(confirmingComplete ? {
-            responseSelection: responseChoice === "original_form"
-              ? { kind: "original_form" } : { kind: "section", sectionId: responseChoice },
-            responseReviewed: reviewedResponse,
+          ...(reviewed ? {
+            responseSelection: isForm
+              ? { kind: "original_form" } : { kind: "section", sectionId: responseSection?.id },
+            responseReviewed: true,
           } : {}),
         }),
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
-        setMessage(payload.error?.message ?? "Requirement could not be saved.");
+        setMessage(payload.error?.message ?? "Your response could not be saved.");
       } else {
-        setMessage("Saved. Recheck the current source and final-review status.");
+        setMessage(reviewed ? "Marked addressed in your saved bid." : "Progress and notes saved.");
         router.refresh();
       }
     } catch {
-      setMessage("Requirement could not be saved. Your unsaved response notes are still here.");
+      setMessage("Could not save this requirement. Your entered notes remain available.");
     } finally {
       setPending(false);
     }
   }
 
-  const needsReproof = requirement.status === "complete" && requirement.effectiveStatus !== "complete";
-  const confirmingComplete = status === "complete" && (status !== requirement.status || needsReproof);
-  const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "") || confirmingComplete;
-  const formConfirmed = evidence?.sourceRequirementId ? context.confirmedOriginalForms.includes(evidence.sourceRequirementId) : false;
-  const responseOptions = requirement.requirementType === "form" ? [] : context.sections.filter((section) => section.ready);
-  const selectedReady = responseChoice === "original_form" ? requirement.requirementType === "form" && formConfirmed : responseOptions.some((section) => section.id === responseChoice);
-  const statusDescription = guidance.kind === "blocked" ? (guidance.blocker === "response" ? "Bid response required" : "Source verification needed") :
-    guidance.kind === "addressed" ? "Addressed in your bid" :
-      requirement.effectiveStatus === "not_applicable" ? "Marked not applicable — verify" :
-        "Your response needs action";
+  const pill = action.kind === "done" ? "Addressed" :
+    action.kind === "source" ? "Check buyer instruction" :
+    action.kind === "response" ? "Write response" :
+    action.kind === "form" ? "Complete original form" : "Review your response";
 
   return (
-    <article id={`compliance-requirement-${requirement.id}`}
+    <article id={"compliance-requirement-" + requirement.id}
       className="min-w-0 scroll-mt-5 rounded-xl border p-4">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium">
-        <span className="rounded-full bg-[var(--muted)] px-2.5 py-1 capitalize">
-          {requirement.requirementType.replaceAll("_", " ")}
-        </span>
-        <span className="rounded-full border px-2.5 py-1">
-          {evidence?.requirementLevel === "unknown" ? "Mandatory status unverified" :
-            evidence?.requirementLevel === "required" ? "Required" :
-              evidence?.requirementLevel === "optional" ? "Optional" :
-                requirement.isRequired ? "Required" : "Optional"}
-        </span>
-        <span className="rounded-full border px-2.5 py-1">{statusDescription}</span>
-      </div>
-      <div className="mt-3 grid gap-1 text-xs leading-5" aria-live="polite">
-        <p><strong>Source verification:</strong> {requirement.canMarkComplete && context.snapshotCurrent && context.understandingCurrent
-          ? "Current original evidence is verified." : "Needs source resolution; saving bid text does not clear source blockers."}</p>
-        <p><strong>Bid response:</strong> {requirement.effectiveStatus === "complete"
-          ? "Reviewed as addressed in the current saved bid." : requirement.requirementType === "form"
-            ? formConfirmed ? "Original form confirmed; explicitly review coverage." : "Confirm the completed original form in Final review."
-            : responseOptions.length ? "Saved response exists; explicitly review whether it addresses this ask."
-              : "Draft and save the matching response before marking Complete."}</p>
-      </div>
-      <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-        What the buyer asks
-      </h3>
-      <p className="mt-1 min-w-0 break-words text-sm leading-6 [overflow-wrap:anywhere]">
-        {requirement.text}
-      </p>
-      {evidence ? (
-        <p className="mt-2 min-w-0 break-words text-xs leading-5 text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
-          Original source: {evidence.references.length ?
-            evidence.references.map((reference) =>
-              `${reference.filename ?? "Unmatched original"}${typeof reference.locator.page === "number" ? `, page ${reference.locator.page}` : ""}`).join("; ") :
-            evidence.listingEvidence ? "Authoritative opportunity listing" : "No pinned original excerpt"}
-        </p>
-      ) : null}
-
-      {evidence?.references.filter((reference) => reference.excerpt?.trim()).slice(0, 2).map((reference, index) => (
-        <blockquote key={`${reference.opportunityDocumentVersionId}-${index}`}
-          className="mt-2 min-w-0 border-l-2 pl-3 text-xs leading-5 text-[var(--muted-foreground)]">
-          <p className="font-semibold">Pinned original excerpt {index + 1}{reference.filename ? ` · ${reference.filename}` : ""}</p>
-          <p className="mt-1 whitespace-pre-wrap break-words">{reference.excerpt}</p>
-        </blockquote>
-      ))}
-      {evidence?.listingEvidence?.excerpt ? (
-        <blockquote className="mt-2 border-l-2 pl-3 text-xs leading-5">Original listing excerpt: {evidence.listingEvidence.excerpt}</blockquote>
-      ) : null}
-      {requirement.sourceReview && requirement.canMarkComplete ? (
-        <p className="mt-2 text-xs font-medium">Source determination recorded against the current original. Bid-response review remains separate.</p>
-      ) : null}
-      <div role={guidance.kind === "blocked" ? "status" : undefined}
-        className="mt-3 min-w-0 rounded-lg border bg-[var(--muted)]/35 p-3 text-sm leading-6">
-        <p className="font-semibold">
-          {guidance.kind === "blocked" ? "Why Complete is disabled" : "What this status means"}
-        </p>
-        <p className="mt-1 break-words [overflow-wrap:anywhere]">{guidance.explanation}</p>
-        <p className="mt-2 break-words [overflow-wrap:anywhere]">
-          <strong>Next:</strong> {guidance.nextAction}
-        </p>
-        <Link href={guidance.link.href} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
-          {guidance.link.label}
-        </Link>
-        {guidance.kind === "blocked" && evidence ? (
-          <Link href={`/bids/${context.workspaceId}/evidence/${requirement.id}`}
-            className="ml-3 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
-            View pinned source (read-only)
-          </Link>
+      <div className="flex min-w-0 flex-wrap gap-2 text-xs font-semibold">
+        <span className="rounded-full border px-2.5 py-1">{pill}</span>
+        {evidence?.requirementLevel !== "unknown" ? (
+          <span className="rounded-full bg-[var(--muted)] px-2.5 py-1">
+            {evidence?.requirementLevel === "required" ? "Buyer requires" : "Buyer says optional"}
+          </span>
         ) : null}
       </div>
-
-      {!requirement.canMarkComplete && evidence && (evidence.requirementLevel === "unknown" ||
-        evidence.issues.some((issue) => ["requirement_requiredness_unknown", "requirement_evidence_missing",
-          "requirement_set_incomplete"].includes(issue))) ? (
-        <BidSourceReviewAction requirement={requirement} context={context} />
-      ) : null}
-      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-        <label className="min-w-0 text-xs font-semibold">
-          My bid response
-          <select value={status} onChange={(event) => setStatus(event.target.value)}
-            className="mt-1.5 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">
-            {COMPLIANCE_STATUSES.map((value) => (
-              <option key={value} value={value} disabled={value === "complete" && !guidance.canComplete}>
-                {LABELS[value]}
-              </option>
-            ))}
-          </select>
-          {guidance.kind === "blocked" ? (
-            <span className="mt-1 block text-xs font-normal">
-              You can still save notes or mark this item Working on it; Complete requires verified source evidence and a saved bid response or confirmed original form.
-            </span>
-          ) : null}
-          {requirement.status === "complete" && requirement.effectiveStatus !== "complete" ? (
-            <span className="mt-1 block text-xs font-normal">
-              Previously saved Complete is not currently accepted by final review. Review the source or your changed bid response, then explicitly confirm again.
-            </span>
-          ) : null}
-        </label>
-        <label className="min-w-0 text-xs font-semibold">
-          Where my bid addresses it / what remains
-          <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
-            maxLength={10_000} rows={3}
-            placeholder="Example: Technical response, paragraph 2. Still need supplier certificate and signed original form."
-            className="mt-1.5 block w-full min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm font-normal" />
-          <span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)]">
-            Record your response location and outstanding work. Notes do not replace required forms or source evidence.
-          </span>
-        </label>
+      <h4 className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        What the buyer wants
+      </h4>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{requirement.text}</p>
+      <div className="mt-3 min-w-0 rounded-lg bg-[var(--muted)]/35 p-3">
+        <p className="text-sm font-semibold">What you need to do next</p>
+        <p className="mt-1 text-sm font-medium">{action.title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">{action.detail}</p>
+        {action.kind === "source" ? (
+          <>
+            <p className="mt-2 text-xs leading-5">
+              {context.snapshotCurrent && context.understandingCurrent
+                ? "The source check is separate from writing your bid. Confirm the current original below."
+                : "Your original documents or understanding need attention before this item can be confirmed."}
+            </p>
+            {!requirement.canMarkComplete && evidence &&
+              (evidence.requirementLevel === "unknown" ||
+                evidence.issues.some((issue) => ["requirement_requiredness_unknown",
+                  "requirement_evidence_missing", "requirement_set_incomplete"].includes(issue))) ? (
+                <BidSourceReviewAction requirement={requirement} context={context} />
+              ) : (
+                <Link href={guidance.link.href}
+                  className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-2">
+                  {guidance.link.label}
+                </Link>
+              )}
+          </>
+        ) : null}
+        {action.kind === "response" ? (
+          responseSection ? (
+            <p className="mt-2 text-xs">Save the edited response above before confirming coverage.</p>
+          ) : context.sections.length ? (
+            <a href={"#response-section-" + context.sections[0]!.id}
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-2">
+              Write and save the response above
+            </a>
+          ) : (
+            <a href="#final-review"
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-2">
+              Check submission requirements and original forms
+            </a>
+          )
+        ) : null}
+        {action.kind === "form" ? (
+          <a href="#final-review" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-2">
+            Complete and confirm the original form
+          </a>
+        ) : null}
+        {action.kind === "confirm" && canConfirm ? (
+          <details className="mt-3 min-w-0 rounded-lg border bg-white p-3">
+            <summary className="min-h-11 cursor-pointer text-sm font-semibold">Review saved response</summary>
+            {responseSection ? (
+              <>
+                <p className="mt-2 text-xs font-semibold">{responseSection.title}</p>
+                <blockquote className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words border-l-2 pl-3 text-xs leading-5">
+                  {responseSection.content?.slice(0, 1800)}
+                  {(responseSection.content?.length ?? 0) > 1800 ? "… (preview only; read the full response in the editor above)" : null}
+                </blockquote>
+                <a href={"#response-section-" + responseSection.id}
+                  className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold underline underline-offset-2">
+                  Read or edit the full saved response
+                </a>
+              </>
+            ) : (
+              <p className="mt-2 text-xs">You have confirmed the completed original form in Final review.</p>
+            )}
+            <p className="mt-2 text-xs leading-5">
+              Only confirm if your actual offer addresses this buyer request. Repeating the solicitation
+              or an unverified AI draft is not proof that you can supply the item.
+            </p>
+            <button type="button" onClick={() => saveStatus("complete", true)} disabled={pending}
+              className="mt-3 min-h-11 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
+              {pending ? "Saving…" : "I reviewed this response — Mark addressed in my bid"}
+            </button>
+          </details>
+        ) : null}
+        {action.kind === "done" ? (
+          <p className="mt-2 text-xs">Your saved response was explicitly reviewed. This does not submit a bid or verify vendor claims.</p>
+        ) : null}
       </div>
-      {confirmingComplete ? (
-        <div className="mt-4 grid min-w-0 gap-3 rounded-lg border p-3">
-          <label className="min-w-0 text-sm font-semibold">
-            Where is this requirement addressed in your saved bid?
-            <select value={responseChoice} onChange={(event) => { setResponseChoice(event.target.value); setReviewedResponse(false); }}
-              className="mt-2 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">
-              <option value="">Choose saved response evidence…</option>
-              {responseOptions.map((section) => (
-                <option key={section.id} value={section.id}>{section.title}</option>
+      {message ? <p role="status" className="mt-3 break-words text-sm">{message}</p> : null}
+      <details className="mt-3 min-w-0 rounded-lg border p-3">
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold">
+          Original source and other options
+        </summary>
+        <div className="mt-3 grid min-w-0 gap-3 text-xs leading-5">
+          <p><strong>Source verification:</strong> {requirement.canMarkComplete && context.snapshotCurrent &&
+            context.understandingCurrent ? "Current original confirmed." : "Needs source review."}</p>
+          <p><strong>Bid response:</strong> {requirement.effectiveStatus === "complete"
+            ? "Reviewed and addressed in the current saved bid."
+            : responseSection ? "Saved response is ready for your explicit review."
+              : "No current linked saved response is ready."}</p>
+          {evidence?.references.filter((reference) => reference.excerpt?.trim()).slice(0, 2).map((reference, index) => (
+            <blockquote key={reference.opportunityDocumentVersionId + "-" + index}
+              className="min-w-0 whitespace-pre-wrap break-words border-l-2 pl-3">
+              <p className="mb-1 font-semibold">{reference.filename ?? "Original source"}</p>
+              {reference.excerpt}
+            </blockquote>
+          ))}
+          {evidence?.listingEvidence?.excerpt ? (
+            <blockquote className="border-l-2 pl-3">{evidence.listingEvidence.excerpt}</blockquote>
+          ) : null}
+          <Link href={"/bids/" + context.workspaceId + "/evidence/" + requirement.id}
+            className="inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+            View full source history (read-only)
+          </Link>
+          {guidance.kind === "blocked" ? (
+            <p>{guidance.explanation} {guidance.nextAction}</p>
+          ) : null}
+          <label className="grid gap-1 font-semibold">
+            Progress status (optional)
+            <select value={advancedStatus} onChange={(event) => setAdvancedStatus(event.target.value as ComplianceStatus)}
+              className="min-h-11 w-full rounded-lg border bg-white p-2 text-sm">
+              {COMPLIANCE_STATUSES.map((value) => (
+                <option key={value} value={value} disabled={value === "complete" && !guidance.canComplete}>
+                  {LABELS[value]}
+                </option>
               ))}
-              {requirement.requirementType === "form" && formConfirmed ? (
-                <option value="original_form">Completed original form (confirmed in Final review)</option>
-              ) : null}
             </select>
           </label>
-          <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-            Only saved, current, nonempty sections are available. Choose the section that actually
-            addresses this requirement; govTract does not certify the section's content.
-            {requirement.requirementType === "form" && !formConfirmed ?
-              " Confirm the completed original under Final review first." : ""}
-          </p>
-          <label className="flex min-w-0 items-start gap-3 text-sm leading-6">
-            <input type="checkbox" checked={reviewedResponse} disabled={!selectedReady}
-              onChange={(event) => setReviewedResponse(event.target.checked)}
-              className="mt-1 size-5 shrink-0" />
-            <span>I reviewed the saved response or original form and confirm that it addresses this buyer requirement.</span>
+          <label className="grid gap-1 font-semibold">
+            Private response notes (optional)
+            <textarea value={notes} rows={2} maxLength={10000}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="What remains to do? Which part of your offer addresses this?"
+              className="min-w-0 rounded-lg border bg-white p-2 text-sm font-normal" />
           </label>
+          <button type="button"
+            onClick={() => saveStatus(advancedStatus === "complete" ? null : advancedStatus)}
+            disabled={pending || (advancedStatus === requirement.status && notes === (requirement.responseNotes ?? ""))}
+            className="min-h-11 w-fit rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50">
+            {pending ? "Saving…" : "Save progress and notes"}
+          </button>
         </div>
-      ) : null}
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
-        <button type="button" disabled={!changed || pending || (confirmingComplete && (!guidance.canComplete || !selectedReady || !reviewedResponse))} onClick={save}
-          className="min-h-11 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-50">
-          {pending ? "Saving…" : "Save my response status"}
-        </button>
-        {message ? <span role="status" className="min-w-0 break-words text-xs">{message}</span> : null}
-      </div>
+      </details>
     </article>
   );
 }
