@@ -15,13 +15,18 @@ test("compliance cards explain requirement, response, and recovery without weake
   assert.match(ui, /disabled=\{value === "complete" && !guidance\.canComplete\}/);
   assert.match(ui, /explainComplianceRequirement/);
   assert.match(ui, /aria-pressed=\{filter === value\}/);
-  assert.match(ui, /Go to response sections|source-recovery action/);
+  assert.match(ui, /guidance\.link\.href/);
+  assert.match(ui, /responseSelection: responseChoice/);
+  assert.match(ui, /checked=\{reviewedResponse\}/);
+  assert.match(ui, /disabled=\{!changed \|\| pending \|\| \(confirmingComplete/);
   assert.doesNotMatch(ui, /generateSolicitationUnderstanding|generateBidSectionDraft/);
   const route = read("app/api/bids/[id]/compliance/[requirementId]/route.ts");
   const persistence = read("lib/bids/compliance-persistence.ts");
   assert.match(route, /updateBidComplianceRequirement/);
   assert.match(persistence, /resolveComplianceStatus/);
   assert.match(persistence, /input\.status === "complete"/);
+  assert.match(persistence, /buildBidResponseEvidence/);
+  assert.match(route, /body\.responseReviewed !== true/);
 });
 
 test("bid page supplies server-derived currentness and prevents a false Complete offer for stale originals", () => {
