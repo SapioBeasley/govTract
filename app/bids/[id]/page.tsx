@@ -330,6 +330,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
           </Section>
 
           <Section id="prepare-bid" title="Prepare bid" icon={<FileText className="size-5" />}>
+            <p className="mb-4 text-sm leading-6 text-[var(--muted-foreground)]">
+              Response sections and buyer requirements now share one workspace. Save a response, then
+              review linked requirements directly beneath its heading.
+            </p>
             {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
             <span id="compliance-requirements" className="block scroll-mt-5" />
             <span id="response-sections" className="block scroll-mt-5" />
