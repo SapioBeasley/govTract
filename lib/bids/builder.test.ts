@@ -67,3 +67,12 @@ test("a missing current understanding does not quietly treat old rows as active"
   assert.equal(result.current.length, 0);
   assert.equal(result.historical.length, 1);
 });
+
+test("prescribed submission response is authorable but a generic submission fallback is not", () => {
+  const ask = requirement("current", 8, "submission_instruction");
+  const prescribed = { ...section("cover", [ask.sourceRequirementKey!]),
+    metadata: { source: "solicitation_heading" } };
+  const result = groupBidBuilderRequirements([ask], [prescribed], "current");
+  assert.equal(result.bySection.cover?.length, 1);
+  assert.equal(result.unassigned.length, 0);
+});
