@@ -22,3 +22,7 @@ CREATE INDEX bid_source_reviews_requirement_created_idx
  ON bid_requirement_source_reviews (bid_requirement_id, created_at);
 CREATE INDEX bid_source_reviews_workspace_idx
  ON bid_requirement_source_reviews (bid_workspace_id);
+
+CREATE UNIQUE INDEX bid_source_reviews_determination_uidx
+ ON bid_requirement_source_reviews (bid_requirement_id, understanding_id, snapshot_id,
+ source_fingerprint, level, document_version_id, excerpt);
