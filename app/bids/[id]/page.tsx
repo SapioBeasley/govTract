@@ -22,6 +22,7 @@ import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
 import { BidSourceReconciliationAction } from "@/components/bid-source-reconciliation-action";
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { getBidWorkspace } from "@/lib/bids/workspace";
+import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
 export const dynamic = "force-dynamic";
@@ -355,6 +356,16 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                 ),
                 currentSnapshotId: snapshot.pursuitSnapshotId,
                 currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
+                confirmedOriginalForms: workspace.confirmedOriginalForms,
+                sections: workspace.sections.map((section) => ({
+                  id: section.id,
+                  title: section.title,
+                  ready: savedSectionCanAddressRequirement(section, {
+                    snapshotId: snapshot.pursuitSnapshotId,
+                    fingerprint: snapshot.documentSetFingerprint,
+                    understandingId: workspace.sourceRequirements?.understandingId ?? null,
+                  }),
+                })),
               }}
             />
           </Section>
