@@ -111,8 +111,10 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
   const originals = workspace.finalReview.sourceChecks.filter((check) => check.originalRequired);
   const formsMissing = originals.filter((check) => !check.originalConfirmed);
   const aiDrafts = workspace.sections.filter((section) => Boolean(section.metadata.aiDraftReview));
+  const aiReviewIssues = new Set(issues.filter((issue) => issue.code === "ai_vendor_facts_unverified")
+    .map((issue) => issue.sectionId));
   const aiUnverified = workspace.sections.filter((section) => Boolean(section.metadata.aiDraftReview) &&
-    !section.metadata.verifiedVendorFactsFingerprint);
+    (!section.metadata.verifiedVendorFactsFingerprint || aiReviewIssues.has(section.id)));
 
   const steps: GuidanceStep[] = [
     {
@@ -173,7 +175,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
       id: "handoff", title: titles.handoff,
       status: workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
         ? "Complete" : workspace.reviewState === "approved" ? "Needs re-review"
-          : issues.length ? "Blocked" : "Needs action",
+          : issues.length || !workspace.finalReview.readyForHumanReview ? "Blocked" : "Needs action",
       description: workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
         ? "Human approval is current. Submit separately at the authoritative external portal and retain its receipt."
         : issues.length ? `${issues.length} final-review check(s) remain; Draft with AI is not submission readiness.`
@@ -231,6 +233,10 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     const first = groups.find((group) => group.stepId === "handoff")!.issues[0] ??
       groups.find((group) => group.issues.length)!.issues[0]!;
     nextAction = action("handoff", "Resolve final submission checks", first.message, first.href);
+  } else if (!workspace.finalReview.readyForHumanReview) {
+    nextAction = action("handoff", "Review remaining final checks",
+      "The server has not marked the package ready for human approval. Review the current final checklist.",
+      anchors.handoff);
   } else if (!workspace.finalReviewApprovalCurrent) {
     nextAction = action("handoff", "Approve current package",
       workspace.reviewState === "approved"
