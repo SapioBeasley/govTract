@@ -73,7 +73,7 @@ export function explainComplianceRequirement(
       (!evidence.references.length && !evidence.listingEvidence)) {
     return blocked(
       "Complete is unavailable because the solicitation evidence for this requirement is missing.",
-      "Inspect the original source and its excerpt; after verified source evidence is available, use Add newly extracted requirements to repair eligible rows.",
+      "Inspect the original source and its excerpt; once you verify its evidence, use Add newly extracted requirements to repair eligible rows.",
       evidenceHref, "Inspect missing source evidence",
     );
   }
@@ -101,7 +101,7 @@ export function explainComplianceRequirement(
   }
   if (requirement.requirementType !== "form" && !context.sections.some((section) => section.ready)) {
     return { ...blocked(
-      "Complete is unavailable because this bid has no saved, current response section ready to address the requirement.",
+      "Complete is blocked because this bid has no saved, current bid response section ready to address the requirement.",
       "Draft and save the matching response section first. You can track this requirement as Working on it in the meantime.",
       "#response-sections", "Draft and save a bid response",
     ), blocker: "response" };
