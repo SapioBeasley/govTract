@@ -50,13 +50,17 @@ export function applySourceReview(
     locator: review.locator,
     excerpt: review.excerpt,
   };
+  const verifiedReferences = original.references.filter((item) => item.excerpt?.trim() &&
+    context.documents.some((document) => document.id === item.snapshotDocumentId &&
+      document.opportunityDocumentVersionId === item.opportunityDocumentVersionId &&
+      document.checksumSha256 === item.checksumSha256 && document.status === "stored"));
   return {
     ...original,
     requirementLevel: review.level,
-    references: original.references.some((item) =>
+    references: verifiedReferences.some((item) =>
       item.snapshotDocumentId === review.snapshotDocumentId &&
       item.documentExtractionSegmentId === review.segmentId && item.excerpt?.trim())
-      ? original.references : [...original.references, reference],
+      ? verifiedReferences : [...verifiedReferences, reference],
     issues: original.issues.filter((issue) => ![
       "requirement_requiredness_unknown", "requirement_evidence_missing",
       "requirement_set_incomplete",
