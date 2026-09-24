@@ -17,7 +17,11 @@ test("Path 1 exposes a real bid workspace and opportunity handoff", () => {
   assert.match(bidsIndex, /listBidWorkspaces/);
   assert.match(bidDetail, /Source snapshot/);
   assert.match(bidDetail, /Source requirements/);
-  assert.match(bidDetail, /Response sections/);
+  // #197 unifies the old Response sections heading into Prepare bid. Keep the
+  // saved response editor and original deep link, without restoring a second checklist.
+  assert.match(bidDetail, /id="prepare-bid"/);
+  assert.match(bidDetail, /<BidOutlineControl/);
+  assert.match(bidDetail, /id="response-sections"/);
   assert.match(opportunityDetail, /StartBidButton/);
   assert.doesNotMatch(
     workspaceService,
