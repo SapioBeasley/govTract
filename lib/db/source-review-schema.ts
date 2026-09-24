@@ -1,4 +1,4 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, uniqueIndex, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { bidRequirements, bidWorkspaces } from "./canonical-schema";
 
 export const bidRequirementSourceReviews = pgTable("bid_requirement_source_reviews", {
@@ -21,4 +21,7 @@ export const bidRequirementSourceReviews = pgTable("bid_requirement_source_revie
 }, (table) => [
   index("bid_source_reviews_requirement_created_idx").on(table.bidRequirementId, table.createdAt),
   index("bid_source_reviews_workspace_idx").on(table.bidWorkspaceId),
+  uniqueIndex("bid_source_reviews_determination_uidx").on(table.bidRequirementId,
+    table.understandingId, table.snapshotId, table.sourceFingerprint, table.level,
+    table.documentVersionId, table.excerpt),
 ]);
