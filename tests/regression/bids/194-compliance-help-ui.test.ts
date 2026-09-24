@@ -18,6 +18,8 @@ test("compliance cards explain requirement, response, and recovery without weake
   assert.match(ui, /guidance\.link\.href/);
   assert.match(ui, /responseSelection: responseChoice/);
   assert.match(ui, /checked=\{reviewedResponse\}/);
+  assert.match(ui, /const needsReproof = requirement\.status === "complete" && requirement\.effectiveStatus !== "complete"/);
+  assert.match(ui, /status !== requirement\.status \|\| needsReproof/);
   assert.match(ui, /disabled=\{!changed \|\| pending \|\| \(confirmingComplete/);
   assert.doesNotMatch(ui, /generateSolicitationUnderstanding|generateBidSectionDraft/);
   const route = read("app/api/bids/[id]/compliance/[requirementId]/route.ts");
