@@ -37,7 +37,9 @@ export function groupBidBuilderRequirements(
         : [],
     );
     for (const row of current) {
-      if (!row.sourceRequirementKey || nonWritingTypes.has(row.requirementType) ||
+      const prescribedResponse = row.requirementType === "submission_instruction" &&
+        section.metadata.source === "solicitation_heading";
+      if (!row.sourceRequirementKey || (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
           claimed.has(row.id) || !keys.has(row.sourceRequirementKey)) continue;
       bySection[section.id]!.push(row);
       claimed.add(row.id);
