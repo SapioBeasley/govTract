@@ -8,7 +8,7 @@ export type ComplianceGuidanceContext = {
   understandingCurrent: boolean;
   currentSnapshotId: string | null;
   currentUnderstandingId: string | null;
-  sections: Array<{ id: string; title: string; ready: boolean }>;
+  sections: Array<{ id: string; title: string; ready: boolean; content?: string | null }>;
   confirmedOriginalForms: string[];
   sourceReviewAllowed?: boolean;
   documents?: Array<{ id: string; opportunityDocumentVersionId: string; filename: string;
