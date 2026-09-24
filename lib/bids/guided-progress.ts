@@ -126,7 +126,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
           : !snapshotCurrent ? "Verify the current snapshot and amendments before preparing a response."
             : "Verify incomplete or missing understanding and its original-source evidence.",
       href: !snapshotCurrent ? anchors.sources : "#source-requirements",
-      count: count("sources") + filesUnavailable.length,
+      count: count("sources") || filesUnavailable.length,
     },
     {
       id: "reconcile", title: titles.reconcile,
@@ -243,5 +243,9 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
       anchors.handoff, "External portal");
   }
 
-  return { steps, nextAction, groupedIssues: groups.filter((group) => group.issues.length > 0) };
+  return {
+    steps: steps.filter((step) => step.id !== "reconcile" || reconcileNeeded),
+    nextAction,
+    groupedIssues: groups.filter((group) => group.issues.length > 0),
+  };
 }
