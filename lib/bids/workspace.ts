@@ -347,6 +347,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
             snapshotId: sourceSnapshot.pursuitSnapshotId,
             fingerprint: sourceSnapshot.documentSetFingerprint,
             understandingId: sourceRequirements.understandingId,
+            requirementKey: sourceRequirement.requirementKey,
           })
         : false;
       return {
