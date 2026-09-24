@@ -90,8 +90,16 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
     snapshot.blockedDocumentCount === 0 && snapshot.failedDocumentCount === 0 &&
     filesUnavailable.length === 0);
-  const understandingCurrent = Boolean(source && source.completenessStatus === "complete" &&
-    !source.isStale && source.requirements.length > 0);
+  const reviewedMissingEvidence = Boolean(source && !source.isStale &&
+    source.completenessStatus === "partial" &&
+    source.incompleteReasons.length > 0 &&
+    source.incompleteReasons.every((reason) => reason === "requirement_evidence_missing") &&
+    source.requirements.length > 0 &&
+    source.requirements.every((item) => workspace.requirements.some((row) =>
+      row.sourceRequirementKey === `${source.understandingId}:${item.id}` && row.canMarkComplete)));
+  const understandingCurrent = Boolean(source && !source.isStale &&
+    source.requirements.length > 0 &&
+    (source.completenessStatus === "complete" || reviewedMissingEvidence));
   const sourcesReady = snapshotCurrent && understandingCurrent && count("sources") === 0;
 
   const staleSections = workspace.sections.filter((section) =>
