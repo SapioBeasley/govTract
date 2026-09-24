@@ -66,6 +66,9 @@ export function buildBidResponseEvidence(
     return { kind: "original_form", sourceRequirementId, snapshotId: source.snapshotId,
       sourceFingerprint: source.fingerprint, understandingId: source.understandingId };
   }
+  if (requirementType === "form") {
+    throw new Error("Confirm the completed original form under Final review; bid text does not replace the form.");
+  }
   const section = sections.find((item) => item.id === selection.sectionId);
   const reason = sectionReadiness(section, source);
   if (reason) throw new Error(reason);
@@ -92,7 +95,12 @@ export function responseEvidenceIsCurrent(
         { kind: "section", sectionId: saved.sectionId },
       sections, confirmedOriginalForms, requirementType, sourceRequirementId, source,
     );
-    return JSON.stringify(next) === JSON.stringify(saved);
+    if (next.kind !== saved.kind || next.snapshotId !== saved.snapshotId ||
+        next.sourceFingerprint !== saved.sourceFingerprint || next.understandingId !== saved.understandingId) return false;
+    return next.kind === "section" && saved.kind === "section"
+      ? next.sectionId === saved.sectionId && next.contentFingerprint === saved.contentFingerprint
+      : next.kind === "original_form" && saved.kind === "original_form" &&
+        next.sourceRequirementId === saved.sourceRequirementId;
   } catch {
     return false;
   }
