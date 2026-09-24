@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { getBidWorkspace } from "./workspace";
 import { isComplianceEvidence } from "./compliance";
@@ -64,7 +64,7 @@ export async function reviewBidRequirementSource(
     .where(and(
       eq(opportunityDocumentVersionExtractions.opportunityDocumentVersionId, document.opportunityDocumentVersionId),
       eq(documentExtractions.checksumSha256, document.checksumSha256!),
-      eq(documentExtractions.status, "completed"),
+      inArray(documentExtractions.status, ["extracted", "truncated"]),
       sql`position(${excerpt} in ${documentExtractionSegments.content}) > 0`,
     )).limit(1);
   if (!segment) {
