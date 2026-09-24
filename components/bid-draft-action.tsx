@@ -32,8 +32,9 @@ export function BidDraftAction({
   async function generate() {
     if (inFlight.current || unsavedChanges || !sourceReady) return;
     const replace = Boolean(currentContent?.trim());
-    if (replace && !window.confirm(
-      "Regenerate this section with AI? This will replace the saved response text if the source and section have not changed. Your previous generation will remain in the audit history.",
+    if (!window.confirm(replace
+      ? "Manually regenerate this section? This may incur a paid AI charge and will replace the saved response if sources and section are unchanged. Your previous generation remains in history. The server enforces the configured budget."
+      : "Manually draft this section with AI? This may incur a paid AI charge. The server enforces the configured budget. You must check every claim and save a reviewed response before final approval.",
     )) return;
     inFlight.current = true;
     setPending(true);
