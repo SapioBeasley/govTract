@@ -68,7 +68,7 @@ export function explainComplianceRequirement(
       evidence.issues.includes("requirement_requiredness_unknown")) {
     return blocked(
       "Complete is unavailable because the original solicitation has not established whether this item is mandatory.",
-      "View the original source (read-only). Viewing it does not resolve requiredness. An audited reviewer determination linked to the current original excerpt is required; no in-product resolution action is available yet.",
+      "Use Check what the original requires below. The saved original excerpt is supplied when available; you must confirm requiredness yourself. Opening a read-only source page does not resolve it.",
       evidenceHref, "View original evidence (read-only)",
     );
   }
@@ -76,7 +76,7 @@ export function explainComplianceRequirement(
       (!evidence.references.length && !evidence.listingEvidence)) {
     return blocked(
       "Complete is unavailable because the solicitation evidence for this requirement is missing.",
-      "View pinned originals (read-only). Viewing a document does not resolve missing evidence. Retrieve missing originals in Source snapshot; if no original excerpt exists, this row stays blocked until a verifiable source excerpt is recovered.",
+      "Use Check what the original requires below. If the saved excerpt is missing, choose an original and provide its exact passage. Viewing a read-only document does not resolve missing evidence; an unverifiable passage stays blocked.",
       evidenceHref, "View source evidence (read-only)",
     );
   }
