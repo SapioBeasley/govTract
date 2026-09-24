@@ -5,38 +5,37 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { COMPLIANCE_STATUSES, isComplianceEvidence, type ComplianceStatus } from "@/lib/bids/compliance";
+import { explainComplianceRequirement, type ComplianceGuidanceContext } from "@/lib/bids/compliance-guidance";
 import type { BidWorkspaceRequirement } from "@/lib/bids/workspace";
 
 const LABELS: Record<ComplianceStatus, string> = {
-  missing: "Missing",
-  drafting: "Drafting",
-  complete: "Complete",
-  needs_review: "Needs Review",
-  not_applicable: "Not Applicable",
+  missing: "Not addressed",
+  drafting: "Working on it",
+  complete: "Complete — addressed in my bid",
+  needs_review: "Needs clarification or review",
+  not_applicable: "Not applicable (verify against source)",
 };
 
 function ComplianceRow({
-  workspaceId,
   requirement,
-  sourceReady,
+  context,
 }: {
-  workspaceId: string;
   requirement: BidWorkspaceRequirement;
-  sourceReady: boolean;
+  context: ComplianceGuidanceContext;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(requirement.status);
   const [notes, setNotes] = useState(requirement.responseNotes ?? "");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const guidance = explainComplianceRequirement(requirement, context);
   const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
-  const canComplete = sourceReady && requirement.canMarkComplete;
 
   async function save() {
     setPending(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/bids/${workspaceId}/compliance/${requirement.id}`, {
+      const response = await fetch(`/api/bids/${context.workspaceId}/compliance/${requirement.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status, responseNotes: notes.trim() || null }),
@@ -45,112 +44,131 @@ function ComplianceRow({
       if (!response.ok) {
         setMessage(payload.error?.message ?? "Requirement could not be saved.");
       } else {
-        setMessage("Saved.");
+        setMessage("Saved. Recheck the current source and final-review status.");
         router.refresh();
       }
     } catch {
-      setMessage("Requirement could not be saved.");
+      setMessage("Requirement could not be saved. Your unsaved response notes are still here.");
     } finally {
       setPending(false);
     }
   }
 
   const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "");
+  const statusDescription = guidance.kind === "blocked" ? "Source verification needed" :
+    guidance.kind === "addressed" ? "Addressed in your bid" :
+      requirement.effectiveStatus === "not_applicable" ? "Marked not applicable — verify" :
+        "Your response needs action";
 
   return (
-    <article id={`compliance-requirement-${requirement.id}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
+    <article id={`compliance-requirement-${requirement.id}`}
+      className="min-w-0 scroll-mt-5 rounded-xl border p-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium">
         <span className="rounded-full bg-[var(--muted)] px-2.5 py-1 capitalize">
           {requirement.requirementType.replaceAll("_", " ")}
         </span>
         <span className="rounded-full border px-2.5 py-1">
-          {evidence?.requirementLevel === "unknown" ? "Mandatory status unknown" : requirement.isRequired ? "Required" : "Optional"}
+          {evidence?.requirementLevel === "unknown" ? "Mandatory status unverified" :
+            requirement.isRequired ? "Required" : "Optional"}
         </span>
-        {requirement.effectiveStatus === "needs_review" ? (
-          <span className="rounded-full border px-2.5 py-1">Needs source review</span>
-        ) : null}
+        <span className="rounded-full border px-2.5 py-1">{statusDescription}</span>
       </div>
-      <p className="mt-3 min-w-0 break-words text-sm leading-6 [overflow-wrap:anywhere]">
+      <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        What the buyer asks
+      </h3>
+      <p className="mt-1 min-w-0 break-words text-sm leading-6 [overflow-wrap:anywhere]">
         {requirement.text}
       </p>
       {evidence ? (
-        <div className="mt-2 min-w-0 text-xs leading-5 text-[var(--muted-foreground)]">
-          {evidence.references.length ? (
-            <p className="break-words [overflow-wrap:anywhere]">
-              Source: {evidence.references.map((reference) =>
-                `${reference.filename ?? "Unmatched source document"}${typeof reference.locator.page === "number" ? `, p. ${reference.locator.page}` : ""}`
-              ).join("; ")}
-            </p>
-          ) : <p>No evidence has been attached to this requirement.</p>}
-          {evidence.issues.length ? (
-            <p className="mt-1 break-words [overflow-wrap:anywhere]">
-              Evidence warnings at generation: {evidence.issues.map((issue) => issue.replaceAll("_", " ")).join("; ")}.
-            </p>
-          ) : null}
-          <Link
-            href={`/bids/${workspaceId}/evidence/${requirement.id}`}
-            className="mt-1 inline-block font-semibold underline underline-offset-2"
-          >
-            View pinned document/version evidence
-          </Link>
-        </div>
-      ) : (
-        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-          Source evidence is missing; review this requirement before completing.
+        <p className="mt-2 min-w-0 break-words text-xs leading-5 text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
+          Original source: {evidence.references.length ?
+            evidence.references.map((reference) =>
+              `${reference.filename ?? "Unmatched original"}${typeof reference.locator.page === "number" ? `, page ${reference.locator.page}` : ""}`).join("; ") :
+            evidence.listingEvidence ? "Authoritative opportunity listing" : "No pinned original excerpt"}
         </p>
-      )}
-      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]">
-        <label className="min-w-0 text-xs font-medium">
-          Response status
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            className="mt-1.5 h-10 w-full rounded-lg border bg-white px-2 text-sm"
-          >
+      ) : null}
+
+      <div role={guidance.kind === "blocked" ? "status" : undefined}
+        className="mt-3 min-w-0 rounded-lg border bg-[var(--muted)]/35 p-3 text-sm leading-6">
+        <p className="font-semibold">
+          {guidance.kind === "blocked" ? "Why Complete is disabled" : "What this status means"}
+        </p>
+        <p className="mt-1 break-words [overflow-wrap:anywhere]">{guidance.explanation}</p>
+        <p className="mt-2 break-words [overflow-wrap:anywhere]">
+          <strong>Next:</strong> {guidance.nextAction}
+        </p>
+        <Link href={guidance.link.href} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+          {guidance.link.label}
+        </Link>
+        {guidance.kind === "blocked" && evidence ? (
+          <Link href={`/bids/${context.workspaceId}/evidence/${requirement.id}`}
+            className="ml-3 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+            View pinned document evidence
+          </Link>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+        <label className="min-w-0 text-xs font-semibold">
+          My bid response
+          <select value={status} onChange={(event) => setStatus(event.target.value)}
+            className="mt-1.5 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">
             {COMPLIANCE_STATUSES.map((value) => (
-              <option key={value} value={value} disabled={value === "complete" && !canComplete}>
+              <option key={value} value={value} disabled={value === "complete" && !guidance.canComplete}>
                 {LABELS[value]}
               </option>
             ))}
           </select>
+          {guidance.kind === "blocked" ? (
+            <span className="mt-1 block text-xs font-normal">
+              You can still save notes or mark this item Working on it; only Complete requires current verified source evidence.
+            </span>
+          ) : null}
+          {requirement.status === "complete" && requirement.effectiveStatus !== "complete" ? (
+            <span className="mt-1 block text-xs font-normal">
+              Previously saved Complete, but this is not currently accepted by final review. Resolve the source issue.
+            </span>
+          ) : null}
         </label>
-        <label className="min-w-0 text-xs font-medium">
-          Response notes
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            maxLength={10_000}
-            rows={2}
-            placeholder="Owner, draft location, missing documents, review findings…"
-            className="mt-1.5 block w-full min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm"
-          />
+        <label className="min-w-0 text-xs font-semibold">
+          Where my bid addresses it / what remains
+          <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
+            maxLength={10_000} rows={3}
+            placeholder="Example: Technical response, paragraph 2. Still need supplier certificate and signed original form."
+            className="mt-1.5 block w-full min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm font-normal" />
+          <span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)]">
+            Record your response location and outstanding work. Notes do not replace required forms or source evidence.
+          </span>
         </label>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
         <button type="button" disabled={!changed || pending} onClick={save}
-          className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-50">
-          {pending ? "Saving…" : "Save requirement"}
+          className="min-h-11 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-50">
+          {pending ? "Saving…" : "Save my response status"}
         </button>
-        {message ? <span className="text-xs text-[var(--muted-foreground)]">{message}</span> : null}
+        {message ? <span role="status" className="min-w-0 break-words text-xs">{message}</span> : null}
       </div>
     </article>
   );
 }
 
+type Filter = "all" | "actionable" | "blocked" | "addressed";
+
 export function ComplianceMatrixControl({
   workspaceId,
   requirements,
   sourceAvailable,
-  sourceReady,
+  context,
 }: {
   workspaceId: string;
   requirements: BidWorkspaceRequirement[];
   sourceAvailable: boolean;
-  sourceReady: boolean;
+  context: ComplianceGuidanceContext;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
 
   async function generate() {
     setPending(true);
@@ -158,45 +176,81 @@ export function ComplianceMatrixControl({
     try {
       const response = await fetch(`/api/bids/${workspaceId}/compliance`, { method: "POST" });
       const payload = await response.json() as { error?: { message?: string } };
-      if (!response.ok) {
-        setMessage(payload.error?.message ?? "Compliance matrix could not be generated.");
-      } else {
+      if (!response.ok) setMessage(payload.error?.message ?? "Checklist could not be updated.");
+      else {
+        setMessage("Checklist refreshed from saved source evidence; prior responses were preserved.");
         router.refresh();
       }
     } catch {
-      setMessage("Compliance matrix could not be generated.");
+      setMessage("Checklist could not be updated. Saved responses were not overwritten.");
     } finally {
       setPending(false);
     }
   }
 
+  const rows = requirements.map((requirement) => ({
+    requirement, guidance: explainComplianceRequirement(requirement, context),
+  }));
+  const counts = {
+    all: rows.length,
+    actionable: rows.filter(({ guidance }) => guidance.kind === "actionable").length,
+    blocked: rows.filter(({ guidance }) => guidance.kind === "blocked").length,
+    addressed: rows.filter(({ guidance }) => guidance.kind === "addressed").length,
+  };
+  const visible = filter === "all" ? rows : rows.filter(({ guidance }) => guidance.kind === filter);
+
   return (
     <div className="grid min-w-0 gap-4">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 text-sm">
-        <p className="text-[var(--muted-foreground)]">
-          {requirements.length} bid requirement{requirements.length === 1 ? "" : "s"}.
-          {sourceReady
-            ? " Statuses are tracked separately from the authoritative solicitation."
-            : " Source coverage is incomplete or changed; verify affected requirements before completion."}
+      <div className="min-w-0 rounded-xl border bg-[var(--muted)]/35 p-4 text-sm leading-6">
+        <h3 className="font-semibold">How to use this checklist</h3>
+        <p className="mt-1">
+          Each card is a requirement from the buyer's solicitation. Review the original source,
+          prepare the matching bid response or form, and record where you addressed it.
+          Choose <strong>Complete</strong> only after your bid actually addresses that verified requirement.
         </p>
+        <p className="mt-2">
+          If Complete is disabled, read the reason and use the linked source-recovery action.
+          You can still save work-in-progress notes. Checking off a requirement does not verify
+          vendor claims, original signatures, or final portal submission.
+        </p>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold">{requirements.length} buyer requirement{requirements.length === 1 ? "" : "s"}</p>
         <button type="button" onClick={generate} disabled={pending || !sourceAvailable}
-          className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50">
-          {pending ? "Preparing…" : requirements.length ? "Add newly extracted requirements" : "Generate compliance matrix"}
+          className="min-h-11 rounded-lg border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
+          {pending ? "Updating…" : requirements.length ? "Add newly extracted requirements" : "Build requirement checklist"}
         </button>
       </div>
-      {message ? <p role="status" className="text-sm">{message}</p> : null}
+      {message ? <p role="status" className="min-w-0 break-words text-sm">{message}</p> : null}
       {requirements.length ? (
-        <div className="grid min-w-0 gap-3">
-          {requirements.map((requirement) => (
-            <ComplianceRow key={requirement.id} workspaceId={workspaceId}
-              requirement={requirement} sourceReady={sourceReady} />
-          ))}
-        </div>
+        <>
+          <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label="Filter bid requirements">
+            {([
+              ["all", "All"],
+              ["actionable", "My next responses"],
+              ["blocked", "Source verification needed"],
+              ["addressed", "Addressed"],
+            ] as const).map(([value, label]) => (
+              <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}
+                className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium ${filter === value ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-white"}`}>
+                {label} ({counts[value]})
+              </button>
+            ))}
+          </div>
+          <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+            Source verification needed is not the same as unfinished bid writing. Reopen affected originals before marking those rows Complete.
+          </p>
+          <div className="grid min-w-0 gap-3">
+            {visible.map(({ requirement }) => (
+              <ComplianceRow key={requirement.id} requirement={requirement} context={context} />
+            ))}
+            {!visible.length ? <p className="rounded-lg border border-dashed p-4 text-sm">No requirements in this view. Choose All to see every saved item.</p> : null}
+          </div>
+        </>
       ) : (
         <p className="rounded-xl border border-dashed p-4 text-sm text-[var(--muted-foreground)]">
-          {sourceAvailable
-            ? "Generate a bid response checklist from the persisted solicitation requirements. No AI regeneration is needed."
-            : "No structured requirements are available. Finish solicitation understanding before generating the compliance matrix."}
+          {sourceAvailable ? "Build a requirement checklist from the saved solicitation evidence. This does not call AI."
+            : "No structured requirements are available. Finish solicitation understanding before building this checklist."}
         </p>
       )}
     </div>
