@@ -24,8 +24,11 @@ function ComplianceRow({
   context: ComplianceGuidanceContext;
 }) {
   const router = useRouter();
-  const [status, setStatus] = useState(requirement.status);
+  // A persisted legacy Complete without current response proof must be reviewed again.
+  const [status, setStatus] = useState(requirement.status === "complete" && requirement.effectiveStatus !== "complete" ? "needs_review" : requirement.status);
   const [notes, setNotes] = useState(requirement.responseNotes ?? "");
+  const [responseChoice, setResponseChoice] = useState(requirement.responseEvidence?.kind === "section" ? requirement.responseEvidence.sectionId : requirement.responseEvidence?.kind === "original_form" ? "original_form" : "");
+  const [reviewedResponse, setReviewedResponse] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const guidance = explainComplianceRequirement(requirement, context);
@@ -38,7 +41,15 @@ function ComplianceRow({
       const response = await fetch(`/api/bids/${context.workspaceId}/compliance/${requirement.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status, responseNotes: notes.trim() || null }),
+        body: JSON.stringify({
+          ...(status !== requirement.status ? { status } : {}),
+          responseNotes: notes.trim() || null,
+          ...(status === "complete" && status !== requirement.status ? {
+            responseSelection: responseChoice === "original_form"
+              ? { kind: "original_form" } : { kind: "section", sectionId: responseChoice },
+            responseReviewed: reviewedResponse,
+          } : {}),
+        }),
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
@@ -55,7 +66,11 @@ function ComplianceRow({
   }
 
   const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "");
-  const statusDescription = guidance.kind === "blocked" ? "Source verification needed" :
+  const confirmingComplete = status === "complete" && status !== requirement.status;
+  const formConfirmed = evidence?.sourceRequirementId ? context.confirmedOriginalForms.includes(evidence.sourceRequirementId) : false;
+  const responseOptions = requirement.requirementType === "form" ? [] : context.sections.filter((section) => section.ready);
+  const selectedReady = responseChoice === "original_form" ? requirement.requirementType === "form" && formConfirmed : responseOptions.some((section) => section.id === responseChoice);
+  const statusDescription = guidance.kind === "blocked" ? (guidance.blocker === "response" ? "Bid response required" : "Source verification needed") :
     guidance.kind === "addressed" ? "Addressed in your bid" :
       requirement.effectiveStatus === "not_applicable" ? "Marked not applicable — verify" :
         "Your response needs action";
@@ -121,12 +136,12 @@ function ComplianceRow({
           </select>
           {guidance.kind === "blocked" ? (
             <span className="mt-1 block text-xs font-normal">
-              You can still save notes or mark this item Working on it; only Complete requires current verified source evidence.
+              You can still save notes or mark this item Working on it; Complete requires verified source evidence and a saved bid response or confirmed original form.
             </span>
           ) : null}
           {requirement.status === "complete" && requirement.effectiveStatus !== "complete" ? (
             <span className="mt-1 block text-xs font-normal">
-              Previously saved Complete, but this is not currently accepted by final review. Resolve the source issue.
+              Previously saved Complete is not currently accepted by final review. Review the source or your changed bid response, then explicitly confirm again.
             </span>
           ) : null}
         </label>
@@ -141,8 +156,37 @@ function ComplianceRow({
           </span>
         </label>
       </div>
+      {status === "complete" && status !== requirement.status ? (
+        <div className="mt-4 grid min-w-0 gap-3 rounded-lg border p-3">
+          <label className="min-w-0 text-sm font-semibold">
+            Where is this requirement addressed in your saved bid?
+            <select value={responseChoice} onChange={(event) => { setResponseChoice(event.target.value); setReviewedResponse(false); }}
+              className="mt-2 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">
+              <option value="">Choose saved response evidence…</option>
+              {responseOptions.map((section) => (
+                <option key={section.id} value={section.id}>{section.title}</option>
+              ))}
+              {requirement.requirementType === "form" && formConfirmed ? (
+                <option value="original_form">Completed original form (confirmed in Final review)</option>
+              ) : null}
+            </select>
+          </label>
+          <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+            Only saved, current, nonempty sections are available. Choose the section that actually
+            addresses this requirement; govTract does not certify the section's content.
+            {requirement.requirementType === "form" && !formConfirmed ?
+              " Confirm the completed original under Final review first." : ""}
+          </p>
+          <label className="flex min-w-0 items-start gap-3 text-sm leading-6">
+            <input type="checkbox" checked={reviewedResponse} disabled={!selectedReady}
+              onChange={(event) => setReviewedResponse(event.target.checked)}
+              className="mt-1 size-5 shrink-0" />
+            <span>I reviewed the saved response or original form and confirm that it addresses this buyer requirement.</span>
+          </label>
+        </div>
+      ) : null}
       <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
-        <button type="button" disabled={!changed || pending} onClick={save}
+        <button type="button" disabled={!changed || pending || (confirmingComplete && (!guidance.canComplete || !selectedReady || !reviewedResponse))} onClick={save}
           className="min-h-11 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? "Saving…" : "Save my response status"}
         </button>
@@ -206,10 +250,10 @@ export function ComplianceMatrixControl({
         <p className="mt-1">
           Each card is a requirement from the buyer's solicitation. Review the original source,
           prepare the matching bid response or form, and record where you addressed it.
-          Choose <strong>Complete</strong> only after your bid actually addresses that verified requirement.
+          Choose <strong>Complete</strong> only after your saved bid response or confirmed original form actually addresses that verified requirement.
         </p>
         <p className="mt-2">
-          If Complete is disabled, read the reason and use the linked source-recovery action.
+          If Complete is disabled, read the reason and use its link to prepare your response, confirm an original form, or repair the source.
           You can still save work-in-progress notes. Checking off a requirement does not verify
           vendor claims, original signatures, or final portal submission.
         </p>
@@ -238,7 +282,7 @@ export function ComplianceMatrixControl({
             ))}
           </div>
           <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-            Source verification needed is not the same as unfinished bid writing. Reopen affected originals before marking those rows Complete.
+            A disabled Complete may mean missing original evidence or an unfinished bid response. Follow the specific next action shown on each card.
           </p>
           <div className="grid min-w-0 gap-3">
             {visible.map(({ requirement }) => (
