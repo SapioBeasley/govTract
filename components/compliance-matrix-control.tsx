@@ -92,7 +92,9 @@ export function ComplianceRow({
         </span>
         <span className="rounded-full border px-2.5 py-1">
           {evidence?.requirementLevel === "unknown" ? "Mandatory status unverified" :
-            requirement.isRequired ? "Required" : "Optional"}
+            evidence?.requirementLevel === "required" ? "Required" :
+              evidence?.requirementLevel === "optional" ? "Optional" :
+                requirement.isRequired ? "Required" : "Optional"}
         </span>
         <span className="rounded-full border px-2.5 py-1">{statusDescription}</span>
       </div>
