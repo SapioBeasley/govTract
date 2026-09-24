@@ -117,12 +117,62 @@ test("compliance matrix is idempotent, preserves user progress and historical ve
     const frozen = form.evidence;
     assert.equal((frozen.references as Array<{ opportunityDocumentVersionId: string }>)[0]?.opportunityDocumentVersionId, versions["Required Form.pdf"]);
 
-    await updateBidComplianceRequirement(workspace!.id, form.id, { status: "complete", responseNotes: "Finished and checked." });
+    // The old contract allowed a source citation alone to mark Complete. It must now
+    // fail closed until the bidder confirms an actual original form or saved response.
+    await assert.rejects(
+      () => updateBidComplianceRequirement(workspace!.id, form.id, { status: "complete" }),
+      /saved bid response|original form|reviewed/i,
+    );
+    const formSourceId = form.sourceRequirementKey!.split(":")[1]!;
+    await sql`
+      UPDATE bid_workspaces SET metadata = jsonb_build_object(
+        'originalFormsFingerprint', ${firstSnapshot.documentSetFingerprint}::text,
+        'confirmedOriginalForms', jsonb_build_array(${formSourceId}::text)
+      ) WHERE id = ${workspace!.id}
+    `;
+    await updateBidComplianceRequirement(workspace!.id, form.id, {
+      status: "complete", responseNotes: "Finished and checked.",
+      responseSelection: { kind: "original_form" }, responseReviewed: true,
+    });
     const regenerated = await generateBidComplianceMatrix(workspace!.id);
     assert.equal(regenerated?.requirements.length, 3, "repeated generation must not duplicate rows");
     assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.status, "complete");
+    assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.effectiveStatus, "complete");
     assert.equal(regenerated?.requirements.find((r) => r.id === form.id)?.responseNotes, "Finished and checked.");
     assert.deepEqual(regenerated?.requirements.find((r) => r.id === form.id)?.evidence, frozen);
+
+    const pricing = regenerated!.requirements.find((r) => r.requirementType === "pricing")!;
+    const [responseSection] = await sql<{ id: string }[]>`
+      INSERT INTO bid_sections (bid_workspace_id, title, content, metadata)
+      VALUES (${workspace!.id}, 'Pricing response', 'Our saved pricing and delivery proposal.', ${sql.json({
+        pursuitSnapshotId: firstSnapshot.id, documentSetFingerprint: firstSnapshot.documentSetFingerprint,
+        understandingId: understanding!.id,
+      })})
+      RETURNING id
+    `;
+    await assert.rejects(
+      () => updateBidComplianceRequirement(workspace!.id, pricing.id, {
+        status: "complete", responseSelection: { kind: "section", sectionId: responseSection!.id },
+        responseReviewed: false,
+      }),
+      /explicitly confirm/i,
+    );
+    await updateBidComplianceRequirement(workspace!.id, pricing.id, {
+      status: "complete", responseSelection: { kind: "section", sectionId: responseSection!.id },
+      responseReviewed: true,
+    });
+    assert.equal((await getBidWorkspace(workspace!.id))!.requirements.find((r) => r.id === pricing.id)?.effectiveStatus,
+      "complete", "the saved bid section is proof of bidder-side coverage");
+    await sql`UPDATE bid_sections SET content = 'Edited proposal requiring fresh review' WHERE id = ${responseSection!.id}`;
+    const responseEdited = (await getBidWorkspace(workspace!.id))!.requirements.find((r) => r.id === pricing.id)!;
+    assert.equal(responseEdited.status, "complete", "historical bidder progress is retained");
+    assert.equal(responseEdited.effectiveStatus, "needs_review", "editing the cited bid text invalidates completion");
+    await assert.rejects(
+      () => updateBidComplianceRequirement(workspace!.id, pricing.id, {
+        status: "complete", responseReviewed: true,
+      }),
+      /select the saved bid response/i,
+    );
 
     const [addendumDocument] = await sql<{ id: string }[]>`
       SELECT id FROM opportunity_documents WHERE opportunity_id = ${opportunity!.id} AND name = 'Addendum 1.pdf'

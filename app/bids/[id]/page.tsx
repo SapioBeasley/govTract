@@ -22,6 +22,7 @@ import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
 import { BidSourceReconciliationAction } from "@/components/bid-source-reconciliation-action";
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { getBidWorkspace } from "@/lib/bids/workspace";
+import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
 
 export const dynamic = "force-dynamic";
@@ -332,12 +333,40 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               requirements={workspace.requirements}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
-              sourceReady={
-                snapshot.snapshotStatus === "complete" &&
-                !snapshot.stale &&
-                workspace.sourceRequirements?.completenessStatus === "complete" &&
-                !workspace.sourceRequirements.isStale
-              }
+              context={{
+                workspaceId: workspace.id,
+                sourceReady: Boolean(
+                  snapshot.snapshotStatus === "complete" &&
+                  !snapshot.stale &&
+                  workspace.sourceRequirements?.completenessStatus === "complete" &&
+                  !workspace.sourceRequirements.isStale
+                ),
+                snapshotCurrent: Boolean(
+                  snapshot.pursuitSnapshotId &&
+                  snapshot.snapshotStatus === "complete" &&
+                  !snapshot.stale &&
+                  snapshot.documentSetFingerprint &&
+                  snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
+                  snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
+                  snapshot.documents.every((document) => document.status === "stored")
+                ),
+                understandingCurrent: Boolean(
+                  workspace.sourceRequirements?.completenessStatus === "complete" &&
+                  !workspace.sourceRequirements.isStale
+                ),
+                currentSnapshotId: snapshot.pursuitSnapshotId,
+                currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
+                confirmedOriginalForms: workspace.confirmedOriginalForms,
+                sections: workspace.sections.map((section) => ({
+                  id: section.id,
+                  title: section.title,
+                  ready: savedSectionCanAddressRequirement(section, {
+                    snapshotId: snapshot.pursuitSnapshotId,
+                    fingerprint: snapshot.documentSetFingerprint,
+                    understandingId: workspace.sourceRequirements?.understandingId ?? null,
+                  }),
+                })),
+              }}
             />
           </Section>
 

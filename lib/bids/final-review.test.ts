@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
+import type { RequirementResponseEvidence } from "@/lib/bids/response-proof";
 
 const version = "version-1";
 const checksum = "a".repeat(64);
@@ -46,6 +48,14 @@ function fixture() {
     requirementType: requirement.type, text: requirement.text, isRequired: true,
     status: "complete", effectiveStatus: "complete" as "complete" | "needs_review", canMarkComplete: true,
     evidence: {}, responseNotes: null, sortOrder: 0,
+    // A clean fixture represents a bidder who has actually prepared and reviewed
+    // the original form or saved section; buyer citations alone are not enough.
+    responseEvidence: requirement.type === "form"
+      ? { kind: "original_form" as const, sourceRequirementId: requirement.id, snapshotId: "snapshot-1",
+          sourceFingerprint: fingerprint, understandingId: sourceId }
+      : { kind: "section" as const, sectionId: "section-1",
+          contentFingerprint: createHash("sha256").update("We will perform the requested work.").digest("hex"),
+          snapshotId: "snapshot-1", sourceFingerprint: fingerprint, understandingId: sourceId } as RequirementResponseEvidence | null,
   }));
   return {
     workspace: {
@@ -63,6 +73,30 @@ function fixture() {
     now: new Date("2026-09-19T22:00:00Z"),
   };
 }
+
+
+test("a source-verified Complete checkbox alone cannot pass final review without saved bidder response proof", () => {
+  const input = fixture();
+  // This fixture represents a legacy Complete saved before bidder-response proof existed.
+  input.workspace.requirements[0]!.responseEvidence = null;
+  const result = evaluateBidFinalReview(input);
+  assert.equal(result.readyForHumanReview, false);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "mandatory_requirement_incomplete" &&
+    issue.requirementId === "source-form-1"));
+});
+
+test("an edited saved response needs compliance re-review even if its old Complete status persists", () => {
+  const input = fixture();
+  input.workspace.requirements[1]!.responseEvidence = {
+    kind: "section" as const, sectionId: "section-1",
+    contentFingerprint: "old-draft-fingerprint", snapshotId: "snapshot-1",
+    sourceFingerprint: fingerprint, understandingId: sourceId,
+  };
+  const result = evaluateBidFinalReview(input);
+  assert.equal(result.readyForHumanReview, false);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "mandatory_requirement_incomplete" &&
+    issue.requirementId === "source-submit-1"));
+});
 
 test("complete, current source versions and explicitly confirmed original source forms permit human final review", () => {
   const result = evaluateBidFinalReview(fixture());

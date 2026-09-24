@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { getBidWorkspace } from "@/lib/bids/workspace";
+import { buildBidResponseEvidence, type RequirementResponseSelection } from "@/lib/bids/response-proof";
 import {
   isComplianceEvidence,
   isComplianceStatus,
@@ -15,6 +16,8 @@ import { getDb } from "@/lib/db/client";
 export type UpdateComplianceRequirementInput = {
   status?: ComplianceStatus;
   responseNotes?: string | null;
+  responseSelection?: RequirementResponseSelection;
+  responseReviewed?: boolean;
 };
 
 /**
@@ -97,6 +100,7 @@ export async function updateBidComplianceRequirement(
   const requirement = workspace.requirements.find((row) => row.id === requirementId);
   if (!requirement) throw new Error("Bid requirement was not found");
 
+  let responseEvidence = requirement.responseEvidence ?? null;
   if (input.status === "complete") {
     if (
       !isComplianceEvidence(requirement.evidence) ||
@@ -113,6 +117,18 @@ export async function updateBidComplianceRequirement(
     ) {
       throw new Error("Review the current solicitation and source evidence before marking this requirement complete");
     }
+    if (!input.responseSelection || input.responseReviewed !== true) {
+      throw new Error("Select the saved bid response or confirmed original form and explicitly confirm you reviewed it before marking Complete.");
+    }
+    const sourceRequirement = workspace.sourceRequirements.requirements.find((source) =>
+      source.id === requirement.evidence.sourceRequirementId);
+    if (!sourceRequirement) throw new Error("The current buyer requirement could not be verified.");
+    responseEvidence = buildBidResponseEvidence(input.responseSelection, workspace.sections,
+      workspace.confirmedOriginalForms, sourceRequirement.type, sourceRequirement.id, {
+        snapshotId: workspace.sourceSnapshot.pursuitSnapshotId,
+        fingerprint: workspace.sourceSnapshot.documentSetFingerprint,
+        understandingId: workspace.sourceRequirements.understandingId,
+      });
   }
 
   const db = getDb();
@@ -120,6 +136,7 @@ export async function updateBidComplianceRequirement(
     .update(bidRequirements)
     .set({
       ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.status === "complete" ? { responseEvidence } : {}),
       ...(input.responseNotes === undefined
         ? {}
         : { responseNotes: input.responseNotes?.trim() || null }),

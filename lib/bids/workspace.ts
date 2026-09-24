@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
+import { responseEvidenceIsCurrent, type RequirementResponseEvidence } from "@/lib/bids/response-proof";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 
 import {
@@ -70,6 +71,7 @@ export type BidWorkspaceRequirement = {
   canMarkComplete: boolean;
   evidence: Record<string, unknown>;
   responseNotes: string | null;
+  responseEvidence?: RequirementResponseEvidence | null;
   sortOrder: number;
 };
 
@@ -254,6 +256,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
         status: bidRequirements.status,
         evidence: bidRequirements.evidence,
         responseNotes: bidRequirements.responseNotes,
+        responseEvidence: bidRequirements.responseEvidence,
         sortOrder: bidRequirements.sortOrder,
       })
       .from(bidRequirements)
@@ -296,23 +299,37 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     notes: state.notes,
     sourceSnapshot,
     sourceRequirements,
-    requirements: requirements.map((requirement) => ({
-      ...requirement,
-      effectiveStatus: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
-        ? resolveComplianceStatus(
-            requirement.status,
-            requirement.evidence,
-            sourceSnapshot,
-            sourceRequirements.understandingId,
-            sourceRequirements.requirements.find((source) =>
-              source.id === requirement.evidence.sourceRequirementId)?.listingEvidence ?? null,
-          )
-        : "needs_review" as const,
-      canMarkComplete: sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
-        ? resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId,
-            sourceRequirements.requirements.find((source) => source.id === requirement.evidence.sourceRequirementId)?.listingEvidence ?? null) === "complete"
-        : false,
-    })),
+    requirements: requirements.map((requirement) => {
+      const sourceRequirement = isComplianceEvidence(requirement.evidence)
+        ? sourceRequirements?.requirements.find((source) => source.id === requirement.evidence.sourceRequirementId)
+        : null;
+      const sourceReady = Boolean(
+        sourceRequirements?.completenessStatus === "complete" && !sourceRequirements.isStale &&
+        isComplianceEvidence(requirement.evidence) &&
+        resolveComplianceStatus("complete", requirement.evidence, sourceSnapshot, sourceRequirements.understandingId,
+          sourceRequirement?.listingEvidence ?? null) === "complete"
+      );
+      const sourceStatus = sourceRequirements?.completenessStatus === "complete" &&
+        !sourceRequirements.isStale && isComplianceEvidence(requirement.evidence)
+          ? resolveComplianceStatus(requirement.status, requirement.evidence, sourceSnapshot,
+            sourceRequirements.understandingId, sourceRequirement?.listingEvidence ?? null)
+          : "needs_review" as const;
+      const responseCurrent = sourceRequirement && sourceRequirements
+        ? responseEvidenceIsCurrent(requirement.responseEvidence, sections, confirmedOriginalForms,
+          sourceRequirement.type, sourceRequirement.id, {
+            snapshotId: sourceSnapshot.pursuitSnapshotId,
+            fingerprint: sourceSnapshot.documentSetFingerprint,
+            understandingId: sourceRequirements.understandingId,
+          })
+        : false;
+      return {
+        ...requirement,
+        // Existing completed responses with no bidder-side proof stay in the DB but
+        // do not count as current completion until explicitly re-reviewed.
+        effectiveStatus: sourceStatus === "complete" && !responseCurrent ? "needs_review" as const : sourceStatus,
+        canMarkComplete: sourceReady,
+      };
+    }),
     // Historical generated drafts predate the explicit review marker. Preserve
     // their text and provenance, but never let removing old placeholders alone
     // upgrade that generated content to a verified vendor commitment.

@@ -110,6 +110,35 @@ test("five empty response sections stay grouped as five distinct outstanding act
   assert.equal(progress.nextAction.href, "#response-section-section-0");
 });
 
+test("after generating the checklist, next action is to draft a bid section before completion", () => {
+  const workspace = fixture();
+  workspace.sections = [];
+  workspace.requirements[0]!.status = "missing";
+  workspace.requirements[0]!.effectiveStatus = "missing";
+  workspace.finalReview.readyForHumanReview = false;
+  workspace.finalReview.blockingIssues = [
+    { code: "mandatory_requirement_incomplete", message: "Bid response missing", requirementId: "source-1" },
+    { code: "response_sections_missing", message: "Create the bid outline" },
+  ];
+  const guidance = deriveBidGuidance(workspace);
+  assert.equal(guidance.nextAction.stepId, "sections");
+  assert.equal(guidance.nextAction.href, "#response-sections");
+  assert.match(guidance.nextAction.reason, /outline|draft|response/i);
+});
+
+test("when all bid sections are empty, draft before trying to complete mandatory items", () => {
+  const workspace = fixture();
+  workspace.sections.forEach((section) => { section.content = ""; });
+  workspace.finalReview.readyForHumanReview = false;
+  workspace.finalReview.blockingIssues = [
+    { code: "mandatory_requirement_incomplete", message: "Bid response missing", requirementId: "source-1" },
+    { code: "section_incomplete", message: "Technical response is empty", sectionId: "section-0" },
+  ];
+  const guidance = deriveBidGuidance(workspace);
+  assert.equal(guidance.nextAction.stepId, "sections");
+  assert.equal(guidance.nextAction.href, "#response-section-section-0");
+});
+
 test("compliance blockers link to the exact requirement and are not double-counted", () => {
   const workspace = fixture();
   workspace.finalReview.blockingIssues = [

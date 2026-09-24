@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
+import { responseEvidenceIsCurrent } from "@/lib/bids/response-proof";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
@@ -157,8 +158,17 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       issue("requiredness_unverified", `Verify whether this source requirement is mandatory: ${requirement.text}`,
         { requirementId: requirement.id });
     }
-    if (mandatory && (!response || response.effectiveStatus !== "complete")) {
-      issue("mandatory_requirement_incomplete", `Mandatory requirement is not complete and current: ${requirement.text}`,
+    const responseCurrent = response && responseEvidenceIsCurrent(
+      response.responseEvidence, workspace.sections, input.confirmedOriginalForms ?? [],
+      requirement.type, requirement.id, {
+        snapshotId: snapshot.pursuitSnapshotId,
+        fingerprint: snapshot.documentSetFingerprint,
+        understandingId: source!.understandingId,
+      },
+    );
+    if (mandatory && (!response || response.effectiveStatus !== "complete" || !responseCurrent)) {
+      issue("mandatory_requirement_incomplete",
+        `Mandatory requirement needs current saved bid-response evidence or a confirmed original form: ${requirement.text}`,
         { requirementId: requirement.id });
     }
     if ((mandatory || submissionTypes.has(requirement.type)) &&
@@ -252,7 +262,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       req.evidence.map((evidence) => evidence.opportunityDocumentVersionId),
       req.listingEvidence ? [req.listingEvidence.sourceRecordId,req.listingEvidence.payloadHash,
         req.listingEvidence.field,req.listingEvidence.excerpt] : null]) ?? [],
-    requirements: workspace.requirements.map((req) => [req.id, req.status, req.effectiveStatus, req.responseNotes, req.evidence]),
+    requirements: workspace.requirements.map((req) => [req.id, req.status, req.effectiveStatus, req.responseNotes, req.evidence, req.responseEvidence]),
     sections: workspace.sections.map((section) => [section.id, section.title, section.instructions,
       section.content, section.requirementLinks, section.metadata]),
     confirmedOriginalForms: [...confirmed].sort(),

@@ -213,12 +213,25 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     nextAction = action("sections", `Review and save ${section.title}`,
       `Compare preserved ${section.title} text and instructions with current originals, check its review box, then Save section. Other sections remain independently actionable.`,
       `#response-section-${section.id}`);
-  } else if (complianceMissing || count("compliance")) {
+  } else if (complianceMissing) {
+    nextAction = action("compliance", "Generate compliance checklist",
+      "Create a requirements checklist from the current solicitation, then prepare your bid response before marking items Complete.",
+      anchors.compliance);
+  } else if (sectionsMissing) {
+    nextAction = action("sections", "Generate response outline",
+      "Build the bid outline from the saved solicitation requirements; then draft and save the response before verifying compliance.",
+      anchors.sections);
+  } else if (count("compliance") && workspace.sections.every((section) => !section.content?.trim())) {
+    const first = workspace.sections[0]!;
+    nextAction = action("sections", "Draft and save a bid response",
+      "The buyer's requirements are listed, but no bid response text is saved yet. Draft the matching section before trying to mark any requirement Complete.",
+      `#response-section-${first.id}`);
+  } else if (count("compliance")) {
     const first = groups.find((group) => group.stepId === "compliance")!.issues[0];
-    nextAction = action("compliance", complianceMissing ? "Generate compliance matrix" : "Resolve next compliance check",
-      first?.message ?? "Generate the deterministic compliance matrix from current source requirements.",
+    nextAction = action("compliance", "Verify next requirement against your saved bid",
+      first?.message ?? "Review the matching saved response and record how your bid meets this source requirement.",
       first?.href ?? anchors.compliance);
-  } else if (sectionsMissing || sectionIds.size) {
+  } else if (sectionIds.size) {
     const section = workspace.sections.find((item) => sectionIds.has(item.id));
     nextAction = action("sections", sectionsMissing ? "Generate response outline" : "Review next response section",
       sectionsMissing ? "Create and review the source-derived outline; no AI request is required."
