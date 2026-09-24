@@ -14,11 +14,13 @@ export type ResponseProofSource = {
   snapshotId: string | null;
   fingerprint: string | null;
   understandingId: string | null;
+  requirementKey?: string | null;
 };
 export type ResponseProofSection = {
   id: string;
   content: string | null;
   metadata: Record<string, unknown>;
+  requirementLinks?: Record<string, unknown>;
 };
 
 /**
@@ -31,6 +33,10 @@ function contentFingerprint(content: string) {
 
 function sectionReadiness(section: ResponseProofSection | undefined, source: ResponseProofSource): string | null {
   if (!section) return "Select a response section belonging to this bid.";
+  if (source.requirementKey && (!Array.isArray(section.requirementLinks?.sourceRequirementKeys) ||
+      !section.requirementLinks.sourceRequirementKeys.includes(source.requirementKey))) {
+    return "The chosen response heading is not linked to this buyer requirement; review its source-key mapping.";
+  }
   if (!section.content?.trim()) return "Save a non-empty bid response in the selected section first.";
   if (/\[(?:NEEDS\s+INPUT|TODO|TBD|INSERT|PLACEHOLDER)[^\]]*\]|\b(?:TODO|TBD)\s*[:\-]|\{\{[^}]+\}\}|<<[^>]+>>/i.test(section.content)) {
     return "Resolve the placeholder in the selected bid response before completing the requirement.";
