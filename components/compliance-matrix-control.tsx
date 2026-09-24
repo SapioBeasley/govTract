@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { COMPLIANCE_STATUSES, isComplianceEvidence, type ComplianceStatus } from "@/lib/bids/compliance";
 import { explainComplianceRequirement, type ComplianceGuidanceContext } from "@/lib/bids/compliance-guidance";
 import type { BidWorkspaceRequirement } from "@/lib/bids/workspace";
+import { BidSourceReviewAction } from "@/components/bid-source-review-action";
 
 const LABELS: Record<ComplianceStatus, string> = {
   missing: "Not addressed",
@@ -119,6 +120,19 @@ export function ComplianceRow({
         </p>
       ) : null}
 
+      {evidence?.references.filter((reference) => reference.excerpt?.trim()).slice(0, 2).map((reference, index) => (
+        <blockquote key={`${reference.opportunityDocumentVersionId}-${index}`}
+          className="mt-2 min-w-0 border-l-2 pl-3 text-xs leading-5 text-[var(--muted-foreground)]">
+          <p className="font-semibold">Pinned original excerpt {index + 1}{reference.filename ? ` · ${reference.filename}` : ""}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words">{reference.excerpt}</p>
+        </blockquote>
+      ))}
+      {evidence?.listingEvidence?.excerpt ? (
+        <blockquote className="mt-2 border-l-2 pl-3 text-xs leading-5">Original listing excerpt: {evidence.listingEvidence.excerpt}</blockquote>
+      ) : null}
+      {requirement.sourceReview && requirement.canMarkComplete ? (
+        <p className="mt-2 text-xs font-medium">Source determination recorded against the current original. Bid-response review remains separate.</p>
+      ) : null}
       <div role={guidance.kind === "blocked" ? "status" : undefined}
         className="mt-3 min-w-0 rounded-lg border bg-[var(--muted)]/35 p-3 text-sm leading-6">
         <p className="font-semibold">
@@ -139,6 +153,11 @@ export function ComplianceRow({
         ) : null}
       </div>
 
+      {!requirement.canMarkComplete && evidence && (evidence.requirementLevel === "unknown" ||
+        evidence.issues.some((issue) => ["requirement_requiredness_unknown", "requirement_evidence_missing",
+          "requirement_set_incomplete"].includes(issue))) ? (
+        <BidSourceReviewAction requirement={requirement} context={context} />
+      ) : null}
       <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
         <label className="min-w-0 text-xs font-semibold">
           My bid response
