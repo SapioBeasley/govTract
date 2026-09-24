@@ -10,6 +10,9 @@ export type ComplianceGuidanceContext = {
   currentUnderstandingId: string | null;
   sections: Array<{ id: string; title: string; ready: boolean }>;
   confirmedOriginalForms: string[];
+  sourceReviewAllowed?: boolean;
+  documents?: Array<{ id: string; opportunityDocumentVersionId: string; filename: string;
+    status: string; checksumSha256: string | null }>;
 };
 export type ComplianceGuidance = {
   kind: "blocked" | "actionable" | "addressed";
