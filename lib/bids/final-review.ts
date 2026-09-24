@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
 import { responseEvidenceIsCurrent } from "@/lib/bids/response-proof";
+import { isComplianceEvidence } from "@/lib/bids/compliance";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
@@ -115,7 +116,14 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   if (snapshot.documents.length !== snapshot.totalDocumentCount) {
     issue("source_document_inventory_incomplete", "The source document inventory does not match the captured package.");
   }
-  if (!source || source.completenessStatus !== "complete" || source.isStale ||
+  const currentChecks = source?.requirements.map((requirement) => workspace.requirements.find((row) =>
+    row.sourceRequirementKey === `${source.understandingId}:${requirement.id}`)) ?? [];
+  const reviewedSourceSet = Boolean(source && source.requirements.length > 0 &&
+    source.completenessStatus === "partial" &&
+    source.incompleteReasons.length > 0 &&
+    source.incompleteReasons.every((reason) => reason === "requirement_evidence_missing") &&
+    currentChecks.every((row) => row?.canMarkComplete));
+  if (!source || (source.completenessStatus !== "complete" && !reviewedSourceSet) || source.isStale ||
       !source.requirements.length) {
     issue("source_requirements_unverified", "A complete current structured solicitation requirement set is unavailable.");
   }
@@ -141,9 +149,15 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   const sourceChecks: FinalReviewSourceCheck[] = [];
   const submissionInstructions: string[] = [];
   for (const requirement of source?.requirements ?? []) {
-    const mandatory = requirement.level === "required";
     const response = byKey.get(`${source!.understandingId}:${requirement.id}`);
-    const references = requirement.evidence.map((evidence) => {
+    const effectiveEvidence = response && isComplianceEvidence(response.evidence) &&
+      response.evidence.understandingId === source!.understandingId &&
+      response.evidence.sourceRequirementId === requirement.id
+        ? response.evidence : null;
+    const level = effectiveEvidence?.requirementLevel ?? requirement.level;
+    const mandatory = level === "required";
+    const references = (effectiveEvidence?.references.length
+      ? effectiveEvidence.references : requirement.evidence).map((evidence) => {
       const document = byVersion.get(evidence.opportunityDocumentVersionId);
       return {
         snapshotDocumentId: document?.id ?? null,
@@ -154,7 +168,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         excerpt: evidence.excerpt,
       };
     });
-    if (requirement.level === "unknown") {
+    if (level === "unknown") {
       issue("requiredness_unverified", `Verify whether this source requirement is mandatory: ${requirement.text}`,
         { requirementId: requirement.id });
     }
@@ -173,7 +187,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     }
     if ((mandatory || submissionTypes.has(requirement.type)) &&
         ((!references.length && !requirement.listingEvidence) || references.some((reference) =>
-          !reference.snapshotDocumentId || !reference.checksumSha256 ||
+          !reference.snapshotDocumentId || !reference.checksumSha256 || !reference.excerpt?.trim() ||
           byVersion.get(reference.opportunityDocumentVersionId)?.status !== "stored"))) {
       issue("source_evidence_unverified", `Source evidence cannot be verified against the retained version: ${requirement.text}`,
         { requirementId: requirement.id });
