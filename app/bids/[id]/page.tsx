@@ -368,7 +368,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
                   snapshot.documents.every((document) => document.status === "stored")
                 ),
-                understandingCurrent: sourceEligible,
+                understandingCurrent: Boolean(sourceEligible),
                 sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
                   snapshot.snapshotStatus === "complete" && !snapshot.stale),
                 documents: snapshot.documents,
