@@ -250,10 +250,18 @@ export function BidOutlineControl({
   useEffect(() => setSections(initialSections), [initialSections]);
   useEffect(() => {
     const openLinkedSection = () => {
-      const id = decodeURIComponent(window.location.hash.slice(1));
+      const id = decodeURIComponent(window.location.hash.slice(1).split("#")[0] ?? "");
       const target = id ? document.getElementById(id) : null;
       const details = target?.closest("details");
-      if (details) details.open = true;
+      if (details) {
+        details.open = true;
+        let parent = details.parentElement?.closest("details") ?? null;
+        while (parent) {
+          parent.open = true;
+          parent = parent.parentElement?.closest("details") ?? null;
+        }
+        target?.scrollIntoView({ block: "start" });
+      }
     };
     openLinkedSection();
     window.addEventListener("hashchange", openLinkedSection);
