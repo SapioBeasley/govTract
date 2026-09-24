@@ -219,8 +219,8 @@ export function ComplianceRow({
             <select value={advancedStatus} onChange={(event) => setAdvancedStatus(event.target.value as ComplianceStatus)}
               className="min-h-11 w-full rounded-lg border bg-white p-2 text-sm">
               {COMPLIANCE_STATUSES.map((value) => (
-                <option key={value} value={value} disabled={value === "complete" && !guidance.canComplete}>
-                  {LABELS[value]}
+                <option key={value} value={value} disabled={value === "complete"}>
+                  {value === "complete" ? "Addressed — use Review saved response above" : LABELS[value]}
                 </option>
               ))}
             </select>
