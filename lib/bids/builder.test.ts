@@ -76,3 +76,12 @@ test("prescribed submission response is authorable but a generic submission fall
   assert.equal(result.bySection.cover?.length, 1);
   assert.equal(result.unassigned.length, 0);
 });
+
+test("persisted outline requirementKey maps through source ID to compliance understanding:id key", () => {
+  const row = requirement("current", 7);
+  const sections = [section("technical", ["deliverables:assembled_unit_delivery"])];
+  const source = [{ id: "source-7", requirementKey: "deliverables:assembled_unit_delivery" }];
+  const result = groupBidBuilderRequirements([row], sections, "current", source);
+  assert.deepEqual(result.bySection.technical?.map((item) => item.id), [row.id]);
+  assert.equal(result.unassigned.length, 0);
+});
