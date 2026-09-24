@@ -153,7 +153,7 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
       <div className="grid min-w-0 gap-3">
         <h3 className="font-semibold">Cited forms, attachments, signatures, and submission instructions</h3>
         {review.sourceChecks.length ? review.sourceChecks.map((check) => (
-          <article key={check.requirementId} className="min-w-0 rounded-xl border p-4">
+          <article key={check.requirementId} id={`original-form-${check.requirementId}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border px-2 py-1 capitalize">{check.kind.replaceAll("_", " ")}</span>
               <span className="rounded-full border px-2 py-1">{check.mandatory ? "Mandatory" : "Review requiredness"}</span>

@@ -58,7 +58,7 @@ function ComplianceRow({
   const changed = status !== requirement.status || notes !== (requirement.responseNotes ?? "");
 
   return (
-    <article className="min-w-0 rounded-xl border p-4">
+    <article id={`compliance-requirement-${requirement.id}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium">
         <span className="rounded-full bg-[var(--muted)] px-2.5 py-1 capitalize">
           {requirement.requirementType.replaceAll("_", " ")}

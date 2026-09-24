@@ -17,6 +17,7 @@ import { BidWorkspaceControl } from "@/components/bid-workspace-control";
 import { BidOutlineControl } from "@/components/bid-outline-control";
 import { ComplianceMatrixControl } from "@/components/compliance-matrix-control";
 import { BidFinalReview } from "@/components/bid-final-review";
+import { GuidedBidProgress } from "@/components/guided-bid-progress";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
 import { BidSourceReconciliationAction } from "@/components/bid-source-reconciliation-action";
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
@@ -40,16 +41,18 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 function Section({
+  id,
   title,
   icon,
   children,
 }: {
+  id?: string;
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
+    <section id={id} className="min-w-0 scroll-mt-5 overflow-hidden rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
       <div className="mb-4 flex min-w-0 items-center gap-2">
         <span className="shrink-0 text-[var(--primary)]">{icon}</span>
         <h2 className="min-w-0 break-words text-lg font-semibold tracking-tight [overflow-wrap:anywhere]">
@@ -198,6 +201,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
         </header>
 
         <div className="mt-5 grid min-w-0 gap-5">
+          <GuidedBidProgress workspace={workspace} />
           <BidWorkspaceControl
             workspaceId={workspace.id}
             initialStatus={workspace.status}
@@ -205,7 +209,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             initialNotes={workspace.notes}
           />
 
-          <Section title="Source snapshot" icon={<ShieldCheck className="size-5" />}>
+          <Section id="source-snapshot" title="Source snapshot" icon={<ShieldCheck className="size-5" />}>
             {snapshot.stale ? (
               <div className="mb-4 flex min-w-0 gap-3 rounded-xl border p-4 text-sm leading-6">
                 <AlertTriangle className="mt-0.5 size-5 shrink-0" />
@@ -244,6 +248,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   .map((document) => (
                     <div
                       key={document.id}
+                      id={`source-document-${document.id}`}
                       className="flex min-w-0 flex-col gap-1 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
                     >
                       <span className="min-w-0 break-words [overflow-wrap:anywhere]">
@@ -280,7 +285,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             ) : null}
           </Section>
 
-          <Section title="Source requirements" icon={<ClipboardCheck className="size-5" />}>
+          <Section id="source-requirements" title="Source requirements" icon={<ClipboardCheck className="size-5" />}>
             {workspace.sourceRequirements ? (
               <div className="grid min-w-0 gap-4">
                 <div className="flex min-w-0 flex-wrap gap-2 text-xs font-medium">
@@ -322,7 +327,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             )}
           </Section>
 
-          <Section title="Compliance requirements" icon={<CheckCircle2 className="size-5" />}>
+          <Section id="compliance-requirements" title="Compliance requirements" icon={<CheckCircle2 className="size-5" />}>
             <ComplianceMatrixControl
               workspaceId={workspace.id}
               requirements={workspace.requirements}
@@ -336,7 +341,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             />
           </Section>
 
-          <Section title="Response sections" icon={<FileText className="size-5" />}>
+          <Section id="response-sections" title="Response sections" icon={<FileText className="size-5" />}>
             <BidOutlineControl
               workspaceId={workspace.id}
               initialSections={workspace.sections}
@@ -353,7 +358,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             />
           </Section>
           
-          <Section title="Final review and external submission" icon={<ClipboardCheck className="size-5" />}>
+          <Section id="final-review" title="Final review and external submission" icon={<ClipboardCheck className="size-5" />}>
             <BidFinalReview
               workspaceId={workspace.id}
               opportunityId={workspace.opportunityId}
