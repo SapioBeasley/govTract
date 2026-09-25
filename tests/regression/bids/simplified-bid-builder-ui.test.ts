@@ -40,3 +40,15 @@ test("source verification uses an explicitly confirmed current original with a p
   assert.match(service, /documentExtractions\.checksumSha256/);
   assert.match(service, /bidRequirementSourceReviews/);
 });
+
+
+test("shared agency boilerplate is shown once outside response drafting and keeps original-form safeguards", () => {
+  const outline = read("components/bid-outline-control.tsx");
+  const finalReview = read("lib/bids/final-review.ts");
+  assert.match(outline, /Standard agency terms/);
+  assert.match(outline, /I reviewed these standard agency terms/);
+  assert.match(outline, /does not turn this boilerplate\s+into repeated Technical or Pricing response text/);
+  assert.match(outline, /Complete this original form in Final review/);
+  assert.match(finalReview, /agency_baseline_terms_unreviewed/);
+  assert.match(finalReview, /original_form_unconfirmed/);
+});
