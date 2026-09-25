@@ -228,6 +228,7 @@ export function BidOutlineControl({
   workspaceId,
   initialSections,
   groups,
+  agencyBaselineReviewCurrent,
   context,
   sourceAvailable,
   sourceReady,
@@ -237,6 +238,7 @@ export function BidOutlineControl({
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
   groups: BidBuilderGroups;
+  agencyBaselineReviewCurrent: boolean;
   context: ComplianceGuidanceContext;
   sourceAvailable: boolean;
   sourceReady: boolean;
@@ -278,6 +280,28 @@ export function BidOutlineControl({
       else router.refresh();
     } catch {
       setMessage("Buyer requirements could not be updated; your saved work was preserved.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function reviewAgencyBaselineTerms() {
+    setPending(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/bids/${workspaceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agencyBaselineReviewed: true }),
+      });
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) setMessage(payload.error?.message ?? "Standard agency terms review could not be saved.");
+      else {
+        setMessage("Standard agency terms reviewed for the current source package.");
+        router.refresh();
+      }
+    } catch {
+      setMessage("Standard agency terms review could not be saved.");
     } finally {
       setPending(false);
     }
@@ -333,7 +357,11 @@ export function BidOutlineControl({
         are suggestions to verify and edit. Preparing headings or checking requirements does not invoke AI.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-[var(--muted-foreground)]">{groups.current.length} current buyer requirements · {groups.historical.length} from previous source versions</p>
+        <p className="text-xs text-[var(--muted-foreground)]">
+          {groups.current.length - groups.baseline.length} opportunity-specific requirement{groups.current.length - groups.baseline.length === 1 ? "" : "s"} ·
+          {" "}{groups.baseline.length} standard agency term{groups.baseline.length === 1 ? "" : "s"} ·
+          {" "}{groups.historical.length} from previous source versions
+        </p>
         <button type="button" onClick={refreshRequirements} disabled={pending || !sourceAvailable}
           className="min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50">
           {pending ? "Updating…" : groups.current.length ? "Add newly extracted requirements" : "Build buyer requirements"}
@@ -368,6 +396,12 @@ export function BidOutlineControl({
                 {section.title}
               </a>
             ))}
+            {groups.baseline.length ? (
+              <a href="#standard-agency-terms"
+                className="inline-flex min-h-11 items-center rounded-lg border px-3 py-2 text-xs font-semibold underline underline-offset-2">
+                Standard agency terms
+              </a>
+            ) : null}
             <a href="#submission-source-checks"
               className="inline-flex min-h-11 items-center rounded-lg border px-3 py-2 text-xs font-semibold underline underline-offset-2">
               Submission & source checks
@@ -397,6 +431,46 @@ export function BidOutlineControl({
           })}
         </>
       )}
+      {groups.baseline.length ? (
+        <details id="standard-agency-terms" className="min-w-0 scroll-mt-5 rounded-xl border p-4">
+          <summary className="cursor-pointer text-sm font-semibold">
+            Standard agency terms ({groups.baseline.length}) ·
+            {" "}{agencyBaselineReviewCurrent ? "Reviewed for current source" : "Review once"}
+          </summary>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+            These requirements come only from an exact agency document reused across multiple opportunities.
+            govTract keeps the original citations and final-review protections, but does not turn this boilerplate
+            into repeated Technical or Pricing response text and does not send it to manual AI drafting.
+          </p>
+          <div className="mt-3 grid gap-2">
+            {groups.baseline.map((requirement) => (
+              <div key={requirement.id} className="rounded-lg bg-[var(--muted)]/35 p-3 text-xs leading-5">
+                <div className="flex flex-wrap gap-2 font-semibold">
+                  <span className="capitalize">{requirement.requirementType.replaceAll("_", " ")}</span>
+                  <span>·</span>
+                  <span>{requirement.isRequired ? "Required" : "Check applicability"}</span>
+                </div>
+                <p className="mt-1 break-words">{requirement.text}</p>
+                {requirement.requirementType === "form" ? (
+                  <a href="#final-review" className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+                    Complete this original form in Final review
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={reviewAgencyBaselineTerms}
+              disabled={pending || agencyBaselineReviewCurrent}
+              className="min-h-11 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
+              {agencyBaselineReviewCurrent ? "Standard terms reviewed" : pending ? "Saving review…" : "I reviewed these standard agency terms"}
+            </button>
+            <span className="text-xs text-[var(--muted-foreground)]">
+              This review is tied to the current source package and resets if the source or classified terms change.
+            </span>
+          </div>
+        </details>
+      ) : null}
       <details id="submission-source-checks" className="min-w-0 scroll-mt-5 rounded-xl border p-4">
         <summary className="cursor-pointer text-sm font-semibold">
           Submission & source checks ({groups.unassigned.length})
