@@ -57,7 +57,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     if (code.startsWith("section_") || code === "response_sections_missing" ||
         code === "ai_vendor_facts_unverified") return "sections";
     if (code === "compliance_matrix_missing" || code === "requiredness_unverified" ||
-        code === "mandatory_requirement_incomplete") return "compliance";
+        code === "mandatory_requirement_incomplete" || code === "agency_baseline_terms_unreviewed") return "compliance";
     if (code.startsWith("source_")) return "sources";
     return "handoff";
   }
@@ -65,6 +65,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
   function linkTo(issue: FinalReviewIssue, id: GuidanceStepId): string {
     if (id === "sections" && issue.sectionId) return `#response-section-${issue.sectionId}`;
     if (id === "originals" && issue.requirementId) return `#original-form-${issue.requirementId}`;
+    if (issue.code === "agency_baseline_terms_unreviewed") return "#standard-agency-terms";
     if (id === "compliance" && issue.requirementId) {
       const row = workspace.requirements.find((item) =>
         item.sourceRequirementKey === `${source?.understandingId}:${issue.requirementId}`);
