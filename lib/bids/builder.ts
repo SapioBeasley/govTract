@@ -35,6 +35,10 @@ export function groupBidBuilderRequirements(
   const baselineComplianceKeys = new Set([...sourceByComplianceKey]
     .filter(([, source]) => isAgencyBaselineRequirement(source))
     .map(([key]) => key));
+  const baselineOutlineKeys = new Set(sourceRequirements
+    .filter(isAgencyBaselineRequirement)
+    .map((source) => source.requirementKey));
+  const baselineOnlySectionIds: string[] = [];
   const bySection: Record<string, BidWorkspaceRequirement[]> = Object.fromEntries(
     sections.map((section) => [section.id, []]),
   );
@@ -50,6 +54,10 @@ export function groupBidBuilderRequirements(
           )
         : [],
     );
+    if (keys.size > 0 && [...keys].every((key) =>
+      baselineOutlineKeys.has(key) || baselineComplianceKeys.has(key))) {
+      baselineOnlySectionIds.push(section.id);
+    }
     for (const row of current) {
       const prescribedResponse = row.requirementType === "submission_instruction" &&
         section.metadata.source === "solicitation_heading";
@@ -66,7 +74,7 @@ export function groupBidBuilderRequirements(
     if (row.sourceRequirementKey && baselineComplianceKeys.has(row.sourceRequirementKey)) baseline.push(row);
     else unassigned.push(row);
   }
-  return { current, historical, bySection, unassigned, baseline };
+  return { current, historical, bySection, unassigned, baseline, baselineOnlySectionIds };
 }
 
 export type BidBuilderGroups = ReturnType<typeof groupBidBuilderRequirements>;
