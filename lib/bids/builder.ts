@@ -54,14 +54,15 @@ export function groupBidBuilderRequirements(
           )
         : [],
     );
-    if (keys.size > 0 && [...keys].every((key) =>
+    if (section.metadata.source !== "solicitation_heading" && keys.size > 0 && [...keys].every((key) =>
       baselineOutlineKeys.has(key) || baselineComplianceKeys.has(key))) {
       baselineOnlySectionIds.push(section.id);
     }
     for (const row of current) {
       const prescribedResponse = row.requirementType === "submission_instruction" &&
         section.metadata.source === "solicitation_heading";
-      if (!row.sourceRequirementKey || baselineComplianceKeys.has(row.sourceRequirementKey) ||
+      const baseline = baselineComplianceKeys.has(row.sourceRequirementKey);
+      if (!row.sourceRequirementKey || (baseline && !prescribedResponse) ||
           (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
           claimed.has(row.id) || (!keys.has(row.sourceRequirementKey) &&
             !keys.has(outlineKeyByComplianceKey.get(row.sourceRequirementKey) ?? ""))) continue;
