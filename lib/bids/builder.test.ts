@@ -121,3 +121,22 @@ test("saved sections whose only linked requirements are agency boilerplate are p
   assert.deepEqual(result.bySection.pricing, []);
   assert.deepEqual(result.baseline.map((row) => row.id), [baseline.id]);
 });
+
+
+test("an explicit solicitation response heading from a baseline document stays active instead of being collapsed", () => {
+  const ask = requirement("current", 12, "submission_instruction");
+  const prescribed = {
+    ...section("cover", ["submissionComponents:cover"]),
+    metadata: { source: "solicitation_heading" },
+  };
+  const result = groupBidBuilderRequirements(
+    [ask],
+    [prescribed],
+    "current",
+    [{ id: "source-12", requirementKey: "submissionComponents:cover",
+      details: { sourceDocumentRole: "agency_baseline", responseHeading: "Section 1: Cover Letter" } }],
+  );
+  assert.deepEqual(result.bySection.cover?.map((row) => row.id), [ask.id]);
+  assert.deepEqual(result.baseline, []);
+  assert.deepEqual(result.baselineOnlySectionIds, []);
+});
