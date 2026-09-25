@@ -43,7 +43,7 @@ function fixture() {
     evidence: [{ opportunityDocumentVersionId: version, documentExtractionSegmentId: null,
       locator: { page: 3 }, excerpt: "Upload signed form to portal." }],
   };
-  const requirements = [sourceRequirement, submission];
+  const requirements: PersistedSolicitationRequirement[] = [sourceRequirement, submission];
   const workspaceRequirements = requirements.map((requirement) => ({
     id: requirement.id, sourceRequirementKey: `${sourceId}:${requirement.id}`,
     requirementType: requirement.type, text: requirement.text, isRequired: true,
