@@ -60,6 +60,7 @@ function fixture() {
   return {
     workspace: {
       dueAt: new Date("2026-10-15T22:00:00Z") as Date | null,
+      agencyBaselineReviewCurrent: false,
       sourceSnapshot: snapshot,
       sourceRequirements: { understandingId: sourceId, completenessStatus: "complete" as const,
         incompleteReasons: [], isStale: false, requirements },
