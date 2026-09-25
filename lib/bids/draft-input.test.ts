@@ -288,3 +288,26 @@ test("manual AI drafting excludes agency baseline boilerplate even when an older
   assert.doesNotMatch(result.packet.sectionInstructions, /patient lift|90 days/i);
   assert.match(result.packet.sectionInstructions, /Page limit: 5 pages/);
 });
+
+
+test("manual drafting keeps a baseline requirement when the solicitation explicitly prescribes that response section", () => {
+  const s = section();
+  s.title = "Section 1: Cover Letter";
+  s.metadata.source = "solicitation_heading";
+  s.requirementLinks.sourceRequirementKeys = ["submission:cover"];
+  const requirements: SolicitationRequirementSet = {
+    ...source(),
+    requirements: [{
+      ...fixtureRequirement("submission:cover", "submission_instruction",
+        "Acknowledge all City terms in the cover letter.", "cover-segment",
+        { sourceDocumentRole: "agency_baseline", responseHeading: "Section 1: Cover Letter" }),
+      text: "Acknowledge all City terms in the cover letter.",
+      sourceSection: "submissionComponents",
+    }],
+  };
+  const result = prepareBidDraftInput({ snapshot: snapshot(), section: s, requirements, company: null });
+  assert.equal(result.state, "ready");
+  if (result.state !== "ready") return;
+  assert.deepEqual(result.packet.requirementKeys, ["submission:cover"]);
+  assert.match(result.packet.sourceEvidence, /Acknowledge all City terms/);
+});

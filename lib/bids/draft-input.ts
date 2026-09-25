@@ -138,7 +138,9 @@ export function prepareBidDraftInput(input: {
     reasons.push("One or more linked solicitation requirements no longer exist in the current understanding.");
   }
   const allLinked = savedLinked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement));
-  const selectedLinked = allLinked.filter((requirement) => !isAgencyBaselineRequirement(requirement));
+  const baselineResponseExplicitlyPrescribed = section.metadata.source === "solicitation_heading";
+  const selectedLinked = allLinked.filter((requirement) =>
+    !isAgencyBaselineRequirement(requirement) || baselineResponseExplicitlyPrescribed);
   const keys = selectedLinked.map((requirement) => requirement.requirementKey);
   if (keys.length === 0) reasons.push("This bid section has no opportunity-specific, evidence-backed requirements.");
 
