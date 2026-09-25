@@ -22,6 +22,7 @@ import {
   getPursuitSnapshot,
 } from "@/lib/procurement/pursuits/snapshot";
 import { loadLatestSolicitationRequirements } from "@/lib/procurement/requirements/persistence";
+import { agencyBaselineReviewFingerprint } from "@/lib/procurement/documents/roles";
 
 import {
   BID_WORKSPACE_REVIEW_STATES,
@@ -105,6 +106,7 @@ export type BidWorkspaceRecord = {
   confirmedOriginalForms: string[];
   finalReview: ReturnType<typeof evaluateBidFinalReview>;
   finalReviewApprovalCurrent: boolean;
+  agencyBaselineReviewCurrent: boolean;
   sourceSnapshot: BidWorkspaceSourceSnapshot;
   sourceRequirements: Awaited<ReturnType<typeof loadLatestSolicitationRequirements>>;
   requirements: BidWorkspaceRequirement[];
@@ -134,6 +136,7 @@ export type UpdateBidWorkspaceInput = {
   notes?: string | null;
   confirmedOriginalForms?: string[];
   humanReviewConfirmed?: boolean;
+  agencyBaselineReviewed?: boolean;
 };
 
 function metadataState(metadata: Record<string, unknown>) {
@@ -310,6 +313,17 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
       (sourceRequirements.completenessStatus === "partial" &&
         sourceRequirements.incompleteReasons.length > 0 &&
         sourceRequirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing"))));
+  const agencyBaselineFingerprint = agencyBaselineReviewFingerprint(
+    sourceRequirements?.requirements ?? [],
+    sourceSnapshot.documentSetFingerprint,
+  );
+  const agencyBaselineReviewCurrent = Boolean(
+    agencyBaselineFingerprint &&
+    row.metadata?.agencyBaselineReviewFingerprint === agencyBaselineFingerprint &&
+    !sourceSnapshot.stale &&
+    sourceRequirements &&
+    !sourceRequirements.isStale
+  );
   const workspace = {
     ...row,
     status: row.status,
@@ -317,6 +331,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     notes: state.notes,
     sourceSnapshot,
     sourceRequirements,
+    agencyBaselineReviewCurrent,
     requirements: requirements.map((requirement) => {
       const originalEvidence = requirement.evidence;
       const effectiveEvidence = isComplianceEvidence(originalEvidence)
@@ -520,6 +535,10 @@ export async function updateBidWorkspace(
   if (input.notes !== undefined && input.notes !== null && input.notes.length > 20_000) {
     throw new Error("Bid workspace notes are too long");
   }
+  if (input.agencyBaselineReviewed !== undefined &&
+      typeof input.agencyBaselineReviewed !== "boolean") {
+    throw new Error("Standard agency terms review confirmation must be a boolean");
+  }
   if (input.confirmedOriginalForms !== undefined && (
     !Array.isArray(input.confirmedOriginalForms) ||
     input.confirmedOriginalForms.some((id) => typeof id !== "string") ||
@@ -566,6 +585,22 @@ export async function updateBidWorkspace(
   if (input.confirmedOriginalForms !== undefined) {
     metadata.confirmedOriginalForms = input.confirmedOriginalForms;
     metadata.originalFormsFingerprint = loaded.sourceSnapshot.documentSetFingerprint;
+    delete metadata.finalReviewApprovalFingerprint;
+    if (metadata.reviewState === "approved") metadata.reviewState = "needs_changes";
+  }
+  if (input.agencyBaselineReviewed !== undefined) {
+    if (input.agencyBaselineReviewed) {
+      const fingerprint = agencyBaselineReviewFingerprint(
+        loaded.sourceRequirements?.requirements ?? [],
+        loaded.sourceSnapshot.documentSetFingerprint,
+      );
+      if (!fingerprint || loaded.sourceSnapshot.stale || loaded.sourceRequirements?.isStale) {
+        throw new Error("Current standard agency terms are unavailable or stale");
+      }
+      metadata.agencyBaselineReviewFingerprint = fingerprint;
+    } else {
+      delete metadata.agencyBaselineReviewFingerprint;
+    }
     delete metadata.finalReviewApprovalFingerprint;
     if (metadata.reviewState === "approved") metadata.reviewState = "needs_changes";
   }
