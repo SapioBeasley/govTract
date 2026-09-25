@@ -1,4 +1,5 @@
 import type { PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
+import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 
 export type PlannedBidOutlineSection = {
   title: string;
@@ -106,6 +107,7 @@ export function planBidOutline(requirements: PersistedSolicitationRequirement[])
 
   requirements.forEach((requirement, index) => {
     const heading = explicitHeading(requirement);
+    if (isAgencyBaselineRequirement(requirement) && !heading) return;
     if (!heading && excludedTypes.has(requirement.type)) return;
     const title = heading ?? fallbackTitle(requirement);
     if (!title) return;
