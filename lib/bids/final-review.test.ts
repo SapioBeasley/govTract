@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
 import type { RequirementResponseEvidence } from "@/lib/bids/response-proof";
+import type { PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 
 const version = "version-1";
 const checksum = "a".repeat(64);
@@ -217,7 +218,7 @@ test("audited original-source decision changes effective mandatory status and pr
 
 test("shared agency baseline terms require one current aggregate review instead of prose response proof for every boilerplate rule", () => {
   const input = fixture();
-  const baseline = {
+  const baseline: PersistedSolicitationRequirement = {
     id: "source-standard-terms",
     requirementKey: "pricing:standard-terms",
     type: "pricing",
@@ -237,7 +238,7 @@ test("shared agency baseline terms require one current aggregate review instead 
     text: baseline.text,
     isRequired: true,
     status: "missing",
-    effectiveStatus: "missing",
+    effectiveStatus: "needs_review",
     canMarkComplete: true,
     evidence: {},
     responseNotes: null,
