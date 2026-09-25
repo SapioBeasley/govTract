@@ -212,3 +212,49 @@ test("audited original-source decision changes effective mandatory status and pr
   assert.equal(checked.sourceChecks[1]?.mandatory, true);
   assert.deepEqual(instruction, original, "stored source understanding is not rewritten");
 });
+
+
+test("shared agency baseline terms require one current aggregate review instead of prose response proof for every boilerplate rule", () => {
+  const input = fixture();
+  const baseline = {
+    id: "source-standard-terms",
+    requirementKey: "pricing:standard-terms",
+    type: "pricing",
+    level: "required",
+    text: "Hold pricing contained within the informal bid for a minimum of 90 days.",
+    sourceSection: "pricingInstructions",
+    sourceFindingKey: "standard-terms",
+    details: { sourceDocumentRole: "agency_baseline" },
+    evidence: [{ opportunityDocumentVersionId: version, documentExtractionSegmentId: "segment-terms",
+      locator: { page: 1 }, excerpt: "Hold pricing contained within the informal bid for a minimum of 90 days." }],
+  };
+  input.workspace.sourceRequirements.requirements.push(baseline);
+  input.workspace.requirements.push({
+    id: baseline.id,
+    sourceRequirementKey: sourceId + ":" + baseline.id,
+    requirementType: baseline.type,
+    text: baseline.text,
+    isRequired: true,
+    status: "missing",
+    effectiveStatus: "missing",
+    canMarkComplete: true,
+    evidence: {},
+    responseNotes: null,
+    sortOrder: 2,
+    responseEvidence: null,
+  });
+
+  input.workspace.agencyBaselineReviewCurrent = false;
+  const pending = evaluateBidFinalReview(input);
+  assert.equal(pending.blockingIssues.filter((issue) =>
+    issue.code === "agency_baseline_terms_unreviewed").length, 1);
+  assert.equal(pending.blockingIssues.some((issue) =>
+    issue.code === "mandatory_requirement_incomplete" && issue.requirementId === baseline.id), false);
+
+  input.workspace.agencyBaselineReviewCurrent = true;
+  const reviewed = evaluateBidFinalReview(input);
+  assert.equal(reviewed.blockingIssues.some((issue) =>
+    issue.code === "agency_baseline_terms_unreviewed"), false);
+  assert.equal(reviewed.blockingIssues.some((issue) =>
+    issue.code === "mandatory_requirement_incomplete" && issue.requirementId === baseline.id), false);
+});
