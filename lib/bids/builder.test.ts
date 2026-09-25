@@ -105,3 +105,19 @@ test("agency baseline requirements are separated from response writing and unmat
   assert.deepEqual(result.baseline.map((row) => row.id), [baseline.id]);
   assert.deepEqual(result.unassigned, []);
 });
+
+
+test("saved sections whose only linked requirements are agency boilerplate are preserved but removed from the active response flow", () => {
+  const baseline = requirement("current", 20, "pricing");
+  const pricing = section("pricing", ["pricing:agency-standard"]);
+  const result = groupBidBuilderRequirements(
+    [baseline],
+    [pricing],
+    "current",
+    [{ id: "source-20", requirementKey: "pricing:agency-standard",
+      details: { sourceDocumentRole: "agency_baseline" } }],
+  );
+  assert.deepEqual(result.baselineOnlySectionIds, ["pricing"]);
+  assert.deepEqual(result.bySection.pricing, []);
+  assert.deepEqual(result.baseline.map((row) => row.id), [baseline.id]);
+});
