@@ -61,7 +61,7 @@ export function groupBidBuilderRequirements(
     for (const row of current) {
       const prescribedResponse = row.requirementType === "submission_instruction" &&
         section.metadata.source === "solicitation_heading";
-      const baseline = baselineComplianceKeys.has(row.sourceRequirementKey);
+      const baseline = Boolean(row.sourceRequirementKey && baselineComplianceKeys.has(row.sourceRequirementKey));
       if (!row.sourceRequirementKey || (baseline && !prescribedResponse) ||
           (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
           claimed.has(row.id) || (!keys.has(row.sourceRequirementKey) &&
