@@ -5,6 +5,7 @@ import { inspectBidDraft, redactUnverifiedClaims } from "@/lib/bids/draft-guardr
 import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
+import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 
 export const BID_DRAFT_PROMPT_VERSION = "5";
 const MAX_SOURCE_CHARS = 48_000;
@@ -129,19 +130,22 @@ export function prepareBidDraftInput(input: {
   }
 
   const rawKeys = section.requirementLinks.sourceRequirementKeys;
-  const keys = Array.isArray(rawKeys) && rawKeys.every((value) => typeof value === "string") ?
+  const savedKeys = Array.isArray(rawKeys) && rawKeys.every((value) => typeof value === "string") ?
     [...new Set(rawKeys as string[])] : [];
-  if (keys.length === 0) reasons.push("This bid section has no linked, evidence-backed requirements.");
-
   const requirementMap = new Map(requirements?.requirements.map((requirement) => [requirement.requirementKey, requirement]));
-  const linked = keys.map((key) => requirementMap.get(key));
-  if (linked.some((requirement) => !requirement)) {
+  const savedLinked = savedKeys.map((key) => requirementMap.get(key));
+  if (savedLinked.some((requirement) => !requirement)) {
     reasons.push("One or more linked solicitation requirements no longer exist in the current understanding.");
   }
+  const allLinked = savedLinked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement));
+  const selectedLinked = allLinked.filter((requirement) => !isAgencyBaselineRequirement(requirement));
+  const keys = selectedLinked.map((requirement) => requirement.requirementKey);
+  if (keys.length === 0) reasons.push("This bid section has no opportunity-specific, evidence-backed requirements.");
+
   const snapshotDocuments = new Map(snapshot.documents.map((document) => [document.opportunityDocumentVersionId, document]));
-  const selectedLinked = linked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement));
   const governing = requirements?.requirements.filter((requirement) =>
-    !keys.includes(requirement.requirementKey) &&
+    !savedKeys.includes(requirement.requirementKey) &&
+    !isAgencyBaselineRequirement(requirement) &&
     explicitlyGovernsSection(requirement, section.title)) ?? [];
   const selected = [...selectedLinked, ...governing];
 
@@ -254,7 +258,7 @@ export function prepareBidDraftInput(input: {
   ])];
   const packetWithoutFingerprint = {
     sectionTitle: section.title,
-    sectionInstructions: uniqueSectionInstructions(section.instructions, selectedLinked),
+    sectionInstructions: uniqueSectionInstructions(section.instructions, allLinked),
     snapshotId: snapshot.pursuitSnapshotId!,
     understandingId: requirements!.understandingId,
     documentSetFingerprint: snapshot.documentSetFingerprint!,
