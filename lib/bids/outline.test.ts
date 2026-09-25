@@ -89,3 +89,43 @@ test("anchored Section headings and page limits are retained rather than replace
   ]);
   assert.deepEqual(sections.map((section) => section.metadata.pageLimit), [5, 15]);
 });
+
+
+test("agency baseline boilerplate never creates a generic bid response section unless the source explicitly prescribes one", () => {
+  const baseline = requirement(
+    "terms:fob",
+    "scope",
+    "Furnish and deliver bid items FOB destination point.",
+    { sourceDocumentRole: "agency_baseline" },
+    "scope",
+  );
+  const signature = requirement(
+    "terms:signature",
+    "form",
+    "Submit the completed Official Signature Page.",
+    { sourceDocumentRole: "agency_baseline" },
+    "submissionComponents",
+  );
+  const specific = requirement(
+    "spec:chair",
+    "deliverable",
+    "Provide the specified patient lift and manufacturer documentation.",
+    {},
+    "deliverables",
+  );
+  const prescribed = requirement(
+    "terms:cover",
+    "submission_instruction",
+    "Section 1: Cover Letter — acknowledge all terms.",
+    { sourceDocumentRole: "agency_baseline", responseHeading: "Section 1: Cover Letter", responseOrder: 1 },
+    "submissionComponents",
+  );
+  const sections = planBidOutline([baseline, signature, specific, prescribed]);
+  assert.deepEqual(sections.map((section) => section.title), [
+    "Section 1: Cover Letter",
+    "Technical response",
+  ]);
+  assert.deepEqual(sections[1]?.requirementLinks.sourceRequirementKeys, ["spec:chair"]);
+  assert.equal(sections.some((section) => section.requirementLinks.sourceRequirementKeys.includes("terms:fob")), false);
+  assert.equal(sections.some((section) => section.requirementLinks.sourceRequirementKeys.includes("terms:signature")), false);
+});

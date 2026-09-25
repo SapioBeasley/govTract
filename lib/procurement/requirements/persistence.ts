@@ -12,6 +12,10 @@ import {
 } from "@/lib/db/solicitation-understandings-schema";
 import { deriveSolicitationRequirements } from "./derive";
 import { isSolicitationUnderstandingContent } from "../understanding/types";
+import {
+  AGENCY_BASELINE_MIN_OPPORTUNITIES,
+  classifyRepeatedDocumentRole,
+} from "@/lib/procurement/documents/roles";
 
 export type SolicitationRequirementEvidence = {
   opportunityDocumentVersionId: string;
@@ -43,6 +47,72 @@ export type SolicitationRequirementSet = {
 };
 
 const MAX_EVIDENCE_EXCERPT_CHARS = 480;
+
+async function loadAgencyBaselineVersionIds(input: {
+  db: ReturnType<typeof getDb>;
+  source: string;
+  agencySlug: string | null;
+  evidenceVersionIds: string[];
+}) {
+  if (!input.evidenceVersionIds.length) return new Set<string>();
+  const evidenceDocuments = await input.db.select({
+    versionId: opportunityDocumentVersions.id,
+    sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
+    checksumSha256: opportunityDocumentVersions.checksumSha256,
+  }).from(opportunityDocumentVersions)
+    .innerJoin(opportunityDocuments,
+      eq(opportunityDocuments.id, opportunityDocumentVersions.opportunityDocumentId))
+    .where(inArray(opportunityDocumentVersions.id, input.evidenceVersionIds));
+
+  const keys = [...new Set(evidenceDocuments.map((row) => row.sourceDocumentKey).filter(Boolean))];
+  const checksums = [...new Set(evidenceDocuments.map((row) => row.checksumSha256)
+    .filter((value): value is string => Boolean(value)))];
+  if (!keys.length || !checksums.length) return new Set<string>();
+
+  const candidates = await input.db.select({
+    documentId: opportunityDocuments.id,
+    opportunityId: opportunityDocuments.opportunityId,
+    sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
+    versionNumber: opportunityDocumentVersions.versionNumber,
+    checksumSha256: opportunityDocumentVersions.checksumSha256,
+  }).from(opportunityDocuments)
+    .innerJoin(opportunityDocumentVersions,
+      eq(opportunityDocumentVersions.opportunityDocumentId, opportunityDocuments.id))
+    .innerJoin(opportunities, eq(opportunities.id, opportunityDocuments.opportunityId))
+    .where(and(
+      eq(opportunityDocuments.isActive, true),
+      eq(opportunities.isActive, true),
+      eq(opportunities.source, input.source),
+      sql`${opportunities.agencySlug} IS NOT DISTINCT FROM ${input.agencySlug}`,
+      inArray(opportunityDocuments.sourceDocumentKey, keys),
+      inArray(opportunityDocumentVersions.checksumSha256, checksums),
+    ))
+    .orderBy(asc(opportunityDocuments.id), desc(opportunityDocumentVersions.versionNumber));
+
+  const latestByDocument = new Map<string, (typeof candidates)[number]>();
+  for (const row of candidates) {
+    if (!latestByDocument.has(row.documentId)) latestByDocument.set(row.documentId, row);
+  }
+  const opportunitiesByIdentity = new Map<string, Set<string>>();
+  for (const row of latestByDocument.values()) {
+    if (!row.checksumSha256) continue;
+    const identity = JSON.stringify([row.sourceDocumentKey, row.checksumSha256]);
+    const matches = opportunitiesByIdentity.get(identity) ?? new Set<string>();
+    matches.add(row.opportunityId);
+    opportunitiesByIdentity.set(identity, matches);
+  }
+
+  return new Set(evidenceDocuments.flatMap((row) => {
+    const count = row.checksumSha256
+      ? opportunitiesByIdentity.get(JSON.stringify([row.sourceDocumentKey, row.checksumSha256]))?.size ?? 0
+      : 0;
+    return classifyRepeatedDocumentRole({
+      sourceDocumentKey: row.sourceDocumentKey,
+      checksumSha256: row.checksumSha256,
+      distinctOpportunityCount: count,
+    }) === "agency_baseline" ? [row.versionId] : [];
+  }));
+}
 
 /** Extract a bounded, verbatim passage from the referenced segment, favoring words in the requirement. */
 function relevantSourcePassage(content: string, requirementText: string): string | null {
@@ -238,6 +308,7 @@ export async function loadLatestSolicitationRequirements(
     description: opportunities.description,
     dueAt: opportunities.dueAt,
     agencyName: opportunities.agencyName,
+    agencySlug: opportunities.agencySlug,
     location: opportunities.location,
     fieldProvenance: opportunities.fieldProvenance,
   }).from(opportunities)
@@ -256,6 +327,15 @@ export async function loadLatestSolicitationRequirements(
       location: sourceContextRow.location, fieldProvenance: sourceContextRow.fieldProvenance,
     },
   } : null;
+
+  const agencyBaselineVersionIds = sourceContextRow
+    ? await loadAgencyBaselineVersionIds({
+        db,
+        source: sourceContextRow.source,
+        agencySlug: sourceContextRow.agencySlug,
+        evidenceVersionIds: [...new Set(evidenceRows.map((row) => row.opportunityDocumentVersionId))],
+      })
+    : new Set<string>();
 
   // In case a META finding quotes an *existing* source document rather than a
   // listing field, recover only a substantial verbatim clause from a checksum-
@@ -326,7 +406,20 @@ export async function loadLatestSolicitationRequirements(
         }] : [];
       }).slice(0,1)
       : [];
-    return {...row,evidence:existing.length ? existing : documentRecovery,listingEvidence};
+    const evidence = existing.length ? existing : documentRecovery;
+    const agencyBaseline = !listingEvidence && evidence.length > 0 &&
+      evidence.every((item) => agencyBaselineVersionIds.has(item.opportunityDocumentVersionId));
+    return {
+      ...row,
+      details: agencyBaseline ? {
+        ...row.details,
+        sourceDocumentRole: "agency_baseline",
+        sourceDocumentRoleBasis: "exact_source_key_checksum_reused",
+        sourceDocumentReuseMinOpportunities: AGENCY_BASELINE_MIN_OPPORTUNITIES,
+      } : row.details,
+      evidence,
+      listingEvidence,
+    };
   });
   const lineItemRequirements = sourceContextRow &&
     sourceContextRow.source === sourceContextRow.sourceRecordSource

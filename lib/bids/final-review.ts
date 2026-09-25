@@ -6,6 +6,7 @@ import { isComplianceEvidence } from "@/lib/bids/compliance";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
+import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 
 export type FinalReviewIssue = {
   code: string;
@@ -46,7 +47,7 @@ export type FinalReviewSourceCheck = {
 type ReviewWorkspace = Pick<
   BidWorkspaceRecord,
   "sourceSnapshot" | "sourceRequirements" | "requirements" | "sections" | "dueAt"
->;
+> & { agencyBaselineReviewCurrent?: boolean };
 
 export type FinalReviewInput = {
   workspace: ReviewWorkspace;
@@ -145,10 +146,18 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   if (!workspace.requirements.length) {
     issue("compliance_matrix_missing", "Generate and review the bid compliance matrix.");
   }
+  const agencyBaselineRequirements = source?.requirements.filter(isAgencyBaselineRequirement) ?? [];
+  if (agencyBaselineRequirements.length && !workspace.agencyBaselineReviewCurrent) {
+    issue(
+      "agency_baseline_terms_unreviewed",
+      "Review the current standard agency terms once before final bid approval.",
+    );
+  }
 
   const sourceChecks: FinalReviewSourceCheck[] = [];
   const submissionInstructions: string[] = [];
   for (const requirement of source?.requirements ?? []) {
+    const agencyBaseline = isAgencyBaselineRequirement(requirement);
     const response = byKey.get(`${source!.understandingId}:${requirement.id}`);
     const effectiveEvidence = response && isComplianceEvidence(response.evidence) &&
       response.evidence.understandingId === source!.understandingId &&
@@ -180,7 +189,8 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         understandingId: source!.understandingId,
       },
     );
-    if (mandatory && (!response || response.effectiveStatus !== "complete" || !responseCurrent)) {
+    if (!agencyBaseline && mandatory &&
+        (!response || response.effectiveStatus !== "complete" || !responseCurrent)) {
       issue("mandatory_requirement_incomplete",
         `Mandatory requirement needs current saved bid-response evidence or a confirmed original form: ${requirement.text}`,
         { requirementId: requirement.id });
@@ -193,11 +203,17 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         { requirementId: requirement.id });
     }
 
-    if (requirement.type === "submission_instruction") submissionInstructions.push(requirement.text);
+    if (requirement.type === "submission_instruction" && !agencyBaseline) {
+      submissionInstructions.push(requirement.text);
+    }
     if (!submissionTypes.has(requirement.type)) continue;
 
     const originalRequired = mandatory &&
       originalFormRequired(requirement.type, requirement.text, requirement.details);
+    // Standard agency boilerplate is reviewed once in the builder. Keep an
+    // individual final-review card only when an original source form/template
+    // must actually be completed and included.
+    if (agencyBaseline && !originalRequired) continue;
     const identifiedNames = originalRequired
       ? explicitOriginalFileNames(requirement.details, requirement.text,
           snapshot.documents.map((document) => document.filename))
@@ -225,7 +241,9 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       text: requirement.text,
       kind: requirement.type,
       mandatory,
-      responseStatus: response?.effectiveStatus ?? "missing",
+      responseStatus: agencyBaseline
+        ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
+        : response?.effectiveStatus ?? "missing",
       originalRequired,
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
@@ -272,6 +290,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     documents: snapshot.documents.map((doc) => [doc.id, doc.opportunityDocumentVersionId, doc.status, doc.checksumSha256]),
     understandingId: source?.understandingId ?? null,
     understandingStale: source?.isStale ?? null,
+    agencyBaselineReviewCurrent: workspace.agencyBaselineReviewCurrent ?? false,
     sourceRequirements: source?.requirements.map((req) => [req.id, req.level, req.type, req.text,
       req.evidence.map((evidence) => evidence.opportunityDocumentVersionId),
       req.listingEvidence ? [req.listingEvidence.sourceRecordId,req.listingEvidence.payloadHash,

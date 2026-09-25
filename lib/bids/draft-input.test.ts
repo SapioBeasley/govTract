@@ -252,3 +252,39 @@ test("reconciled but human-edited response remains blocked until the user review
   assert.equal(result.state,"blocked");
   if (result.state==="blocked") assert.match(result.reasons.join(" "),/review.*preserved|preserved.*review/i);
 });
+
+
+test("manual AI drafting excludes agency baseline boilerplate even when an older saved section still links it", () => {
+  const s = section();
+  s.title = "Technical response";
+  s.requirementLinks.sourceRequirementKeys = ["scope:specific", "pricing:agency-standard"];
+  s.instructions = [
+    "Provide the patient lift and manufacturer documentation.",
+    "Hold pricing for 90 days.",
+    "Page limit: 5 pages.",
+  ].join("\n");
+  const requirements: SolicitationRequirementSet = {
+    ...source(),
+    requirements: [
+      {
+        ...fixtureRequirement("scope:specific", "deliverable",
+          "Provide the patient lift and manufacturer documentation.", "specific-segment"),
+        text: "Provide the patient lift and manufacturer documentation.",
+      },
+      {
+        ...fixtureRequirement("pricing:agency-standard", "pricing",
+          "Hold pricing for a minimum of 90 days.", "terms-segment",
+          { sourceDocumentRole: "agency_baseline" }),
+        text: "Hold pricing for 90 days.",
+        sourceSection: "pricingInstructions",
+      },
+    ],
+  };
+  const result = prepareBidDraftInput({ snapshot: snapshot(), section: s, requirements, company: null });
+  assert.equal(result.state, "ready");
+  if (result.state !== "ready") return;
+  assert.deepEqual(result.packet.requirementKeys, ["scope:specific"]);
+  assert.doesNotMatch(result.packet.sourceEvidence, /90 days|pricing:agency-standard/);
+  assert.doesNotMatch(result.packet.sectionInstructions, /patient lift|90 days/i);
+  assert.match(result.packet.sectionInstructions, /Page limit: 5 pages/);
+});

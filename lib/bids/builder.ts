@@ -1,4 +1,5 @@
 import type { BidWorkspaceRequirement, BidWorkspaceSection } from "./workspace";
+import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 
 /** These buyer checks must not be silently converted into prose coverage by a fallback heading. */
 const nonWritingTypes = new Set([
@@ -14,7 +15,7 @@ export function groupBidBuilderRequirements(
   requirements: BidWorkspaceRequirement[],
   sections: BidWorkspaceSection[],
   currentUnderstandingId: string | null,
-  sourceRequirements: Array<{ id: string; requirementKey: string }> = [],
+  sourceRequirements: Array<{ id: string; requirementKey: string; details?: Record<string, unknown> }> = [],
 ) {
   const current = currentUnderstandingId
     ? requirements.filter((row) =>
@@ -25,13 +26,24 @@ export function groupBidBuilderRequirements(
   const historical = requirements.filter((row) => !activeIds.has(row.id));
   // Outline links store the source requirementKey while compliance rows store
   // understandingId:source UUID. Join through the actual persisted source ID.
-  const outlineKeyByComplianceKey = new Map(sourceRequirements.map((source) => [
-    `${currentUnderstandingId}:${source.id}`, source.requirementKey,
+  const sourceByComplianceKey = new Map(sourceRequirements.map((source) => [
+    `${currentUnderstandingId}:${source.id}`, source,
   ]));
+  const outlineKeyByComplianceKey = new Map([...sourceByComplianceKey].map(([key, source]) => [
+    key, source.requirementKey,
+  ]));
+  const baselineComplianceKeys = new Set([...sourceByComplianceKey]
+    .filter(([, source]) => isAgencyBaselineRequirement(source))
+    .map(([key]) => key));
+  const baselineOutlineKeys = new Set(sourceRequirements
+    .filter(isAgencyBaselineRequirement)
+    .map((source) => source.requirementKey));
+  const baselineOnlySectionIds: string[] = [];
   const bySection: Record<string, BidWorkspaceRequirement[]> = Object.fromEntries(
     sections.map((section) => [section.id, []]),
   );
   const unassigned: BidWorkspaceRequirement[] = [];
+  const baseline: BidWorkspaceRequirement[] = [];
   const claimed = new Set<string>();
 
   for (const section of sections) {
@@ -42,10 +54,15 @@ export function groupBidBuilderRequirements(
           )
         : [],
     );
+    if (keys.size > 0 && [...keys].every((key) =>
+      baselineOutlineKeys.has(key) || baselineComplianceKeys.has(key))) {
+      baselineOnlySectionIds.push(section.id);
+    }
     for (const row of current) {
       const prescribedResponse = row.requirementType === "submission_instruction" &&
         section.metadata.source === "solicitation_heading";
-      if (!row.sourceRequirementKey || (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
+      if (!row.sourceRequirementKey || baselineComplianceKeys.has(row.sourceRequirementKey) ||
+          (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
           claimed.has(row.id) || (!keys.has(row.sourceRequirementKey) &&
             !keys.has(outlineKeyByComplianceKey.get(row.sourceRequirementKey) ?? ""))) continue;
       bySection[section.id]!.push(row);
@@ -53,9 +70,11 @@ export function groupBidBuilderRequirements(
     }
   }
   for (const row of current) {
-    if (!claimed.has(row.id)) unassigned.push(row);
+    if (claimed.has(row.id)) continue;
+    if (row.sourceRequirementKey && baselineComplianceKeys.has(row.sourceRequirementKey)) baseline.push(row);
+    else unassigned.push(row);
   }
-  return { current, historical, bySection, unassigned };
+  return { current, historical, bySection, unassigned, baseline, baselineOnlySectionIds };
 }
 
 export type BidBuilderGroups = ReturnType<typeof groupBidBuilderRequirements>;

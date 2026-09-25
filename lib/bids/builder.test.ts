@@ -85,3 +85,39 @@ test("persisted outline requirementKey maps through source ID to compliance unde
   assert.deepEqual(result.bySection.technical?.map((item) => item.id), [row.id]);
   assert.equal(result.unassigned.length, 0);
 });
+
+
+test("agency baseline requirements are separated from response writing and unmatched opportunity checks", () => {
+  const baseline = requirement("current", 10, "pricing");
+  const specific = requirement("current", 11, "deliverable");
+  const sections = [section("technical", ["deliverables:item", "pricing:standard-terms"])];
+  const result = groupBidBuilderRequirements(
+    [baseline, specific],
+    sections,
+    "current",
+    [
+      { id: "source-10", requirementKey: "pricing:standard-terms",
+        details: { sourceDocumentRole: "agency_baseline" } },
+      { id: "source-11", requirementKey: "deliverables:item", details: {} },
+    ],
+  );
+  assert.deepEqual(result.bySection.technical?.map((row) => row.id), [specific.id]);
+  assert.deepEqual(result.baseline.map((row) => row.id), [baseline.id]);
+  assert.deepEqual(result.unassigned, []);
+});
+
+
+test("saved sections whose only linked requirements are agency boilerplate are preserved but removed from the active response flow", () => {
+  const baseline = requirement("current", 20, "pricing");
+  const pricing = section("pricing", ["pricing:agency-standard"]);
+  const result = groupBidBuilderRequirements(
+    [baseline],
+    [pricing],
+    "current",
+    [{ id: "source-20", requirementKey: "pricing:agency-standard",
+      details: { sourceDocumentRole: "agency_baseline" } }],
+  );
+  assert.deepEqual(result.baselineOnlySectionIds, ["pricing"]);
+  assert.deepEqual(result.bySection.pricing, []);
+  assert.deepEqual(result.baseline.map((row) => row.id), [baseline.id]);
+});

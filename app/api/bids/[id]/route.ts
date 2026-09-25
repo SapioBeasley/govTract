@@ -51,6 +51,12 @@ async function parsePatch(request: Request): Promise<UpdateBidWorkspaceInput | N
     }
     patch.humanReviewConfirmed = body.humanReviewConfirmed;
   }
+  if (Object.prototype.hasOwnProperty.call(body, "agencyBaselineReviewed")) {
+    if (typeof body.agencyBaselineReviewed !== "boolean") {
+      return invalid("Standard agency terms review confirmation must be a boolean.");
+    }
+    patch.agencyBaselineReviewed = body.agencyBaselineReviewed;
+  }
   if (Object.prototype.hasOwnProperty.call(body, "confirmedOriginalForms")) {
     if (!Array.isArray(body.confirmedOriginalForms) ||
         body.confirmedOriginalForms.length > 200 ||
