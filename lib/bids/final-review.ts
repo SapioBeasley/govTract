@@ -235,7 +235,9 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       text: requirement.text,
       kind: requirement.type,
       mandatory,
-      responseStatus: response?.effectiveStatus ?? "missing",
+      responseStatus: agencyBaseline
+        ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
+        : response?.effectiveStatus ?? "missing",
       originalRequired,
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
