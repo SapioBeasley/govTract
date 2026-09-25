@@ -250,6 +250,9 @@ export function BidOutlineControl({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => setSections(initialSections), [initialSections]);
+  const baselineOnlySectionIds = new Set(groups.baselineOnlySectionIds);
+  const activeSections = sections.filter((section) => !baselineOnlySectionIds.has(section.id));
+  const preservedBaselineSections = sections.filter((section) => baselineOnlySectionIds.has(section.id));
   useEffect(() => {
     const openLinkedSection = () => {
       const id = decodeURIComponent(window.location.hash.slice(1).split("#")[0] ?? "");
@@ -373,7 +376,7 @@ export function BidOutlineControl({
           solicitation documents, required sections, formatting and page limits before submission.
         </p>
       ) : null}
-      {!sections.length ? (
+      {!activeSections.length ? (
         <div className="grid gap-3 rounded-xl border border-dashed p-4 text-sm">
           <p>{sourceAvailable
             ? "No response outline exists yet. Generate one from the saved solicitation requirements."
@@ -386,11 +389,11 @@ export function BidOutlineControl({
       ) : (
         <>
           <p className="text-xs text-[var(--muted-foreground)]">
-            {sections.length} saved response section{sections.length === 1 ? "" : "s"}.
+            {activeSections.length} active response section{activeSections.length === 1 ? "" : "s"}.
             Editing or reopening will not regenerate or overwrite the outline.
           </p>
           <nav aria-label="Bid response headings" className="flex min-w-0 flex-wrap gap-2">
-            {sections.map((section) => (
+            {activeSections.map((section) => (
               <a key={section.id} href={`#response-section-${section.id}`}
                 className="inline-flex min-h-11 max-w-full items-center rounded-lg border px-3 py-2 text-xs font-semibold underline underline-offset-2 [overflow-wrap:anywhere]">
                 {section.title}
@@ -407,7 +410,7 @@ export function BidOutlineControl({
               Submission & source checks
             </a>
           </nav>
-          {sections.map((section, index) => {
+          {activeSections.map((section, index) => {
             const rows = groups.bySection[section.id] ?? [];
             return (
               <details key={section.id} id={`response-section-${section.id}`}
@@ -424,7 +427,7 @@ export function BidOutlineControl({
                 </summary>
                 <SectionEditor workspaceId={workspaceId} section={section}
                   linkedRequirements={rows} context={context} onMove={move}
-                  first={index === 0 || pending} last={index === sections.length - 1 || pending}
+                  first={index === 0 || pending} last={index === activeSections.length - 1 || pending}
                   sourceReady={sourceReady} sourceBlockers={sourceBlockers} generations={generations} />
               </details>
             );
@@ -442,6 +445,18 @@ export function BidOutlineControl({
             govTract keeps the original citations and final-review protections, but does not turn this boilerplate
             into repeated Technical or Pricing response text and does not send it to manual AI drafting.
           </p>
+          {preservedBaselineSections.length ? (
+            <div className="mt-3 rounded-lg border border-dashed p-3 text-xs leading-5">
+              <p className="font-semibold">
+                {preservedBaselineSections.length} older response section{preservedBaselineSections.length === 1 ? "" : "s"} moved out of the active bid
+              </p>
+              <p className="mt-1 text-[var(--muted-foreground)]">
+                These saved sections were generated only from reusable agency boilerplate. Their text is preserved
+                in the workspace database, but they no longer count as active response sections or AI drafting input.
+              </p>
+              <p className="mt-2">{preservedBaselineSections.map((section) => section.title).join("; ")}</p>
+            </div>
+          ) : null}
           <div className="mt-3 grid gap-2">
             {groups.baseline.map((requirement) => (
               <div key={requirement.id} className="rounded-lg bg-[var(--muted)]/35 p-3 text-xs leading-5">
