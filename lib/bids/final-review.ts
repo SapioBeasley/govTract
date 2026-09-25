@@ -203,11 +203,17 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         { requirementId: requirement.id });
     }
 
-    if (requirement.type === "submission_instruction") submissionInstructions.push(requirement.text);
+    if (requirement.type === "submission_instruction" && !agencyBaseline) {
+      submissionInstructions.push(requirement.text);
+    }
     if (!submissionTypes.has(requirement.type)) continue;
 
     const originalRequired = mandatory &&
       originalFormRequired(requirement.type, requirement.text, requirement.details);
+    // Standard agency boilerplate is reviewed once in the builder. Keep an
+    // individual final-review card only when an original source form/template
+    // must actually be completed and included.
+    if (agencyBaseline && !originalRequired) continue;
     const identifiedNames = originalRequired
       ? explicitOriginalFileNames(requirement.details, requirement.text,
           snapshot.documents.map((document) => document.filename))
