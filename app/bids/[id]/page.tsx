@@ -104,9 +104,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
     section.metadata.understandingId !== workspace.sourceRequirements?.understandingId ||
     section.metadata.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
     section.metadata.documentSetFingerprint !== snapshot.documentSetFingerprint);
-  const showSourceReconciliation = Boolean(snapshot.stale || workspace.sourceRequirements?.isStale ||
-    workspace.sourceRequirements?.completenessStatus !== "complete" ||
-    outlineNeedsReconciliation);
+  const showSourceReconciliation = Boolean(snapshot.stale || !sourceEligible || outlineNeedsReconciliation);
   const missingEvidence = sourceRequirements.filter((requirement) =>
     !requirement.listingEvidence &&
     (!requirement.evidence.length || requirement.evidence.some((proof) => !proof.excerpt?.trim())));

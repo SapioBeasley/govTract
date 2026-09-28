@@ -21,3 +21,10 @@ test("missing evidence remains explicit review work rather than silently verifie
   assert.match(page,/sourceBlockers/);
   assert.match(page,/Restore authoritative document or listing provenance/);
 });
+
+
+test("reviewable evidence-only partial state exits recovery after outline reconciliation",()=>{
+  const page=read("app/bids/[id]/page.tsx");
+  assert.match(page,/showSourceReconciliation = Boolean\(snapshot\.stale \|\| !sourceEligible \|\| outlineNeedsReconciliation\)/);
+  assert.doesNotMatch(page,/sourceRequirements\?\.completenessStatus !== "complete" \|\|\s*outlineNeedsReconciliation/);
+});
