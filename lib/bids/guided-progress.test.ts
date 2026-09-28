@@ -179,7 +179,7 @@ test("reviewable evidence-only partial understanding proceeds to actionable bid 
   workspace.sourceRequirements!.requirements = [
     { id: "source-1", evidence: [] },
     { id: "source-2", evidence: [{ excerpt: "Pinned source text" }] },
-  ] as BidWorkspaceRecord["sourceRequirements"]["requirements"];
+  ] as NonNullable<BidWorkspaceRecord["sourceRequirements"]>["requirements"];
   workspace.requirements = [{
     id: "compliance-1", sourceRequirementKey: "understanding-1:source-1",
     effectiveStatus: "needs_review", status: "needs_review", isRequired: true,
