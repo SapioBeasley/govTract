@@ -13,7 +13,7 @@ import { nextRequirementAction } from "@/lib/bids/builder-actions";
 const LABELS: Record<ComplianceStatus, string> = {
   missing: "Not addressed",
   drafting: "Working on it",
-  complete: "Complete — addressed in my bid",
+  complete: "Addressed in bid",
   needs_review: "Needs clarification or review",
   not_applicable: "Not applicable (verify against source)",
 };
@@ -89,16 +89,22 @@ export function ComplianceRow({
     }
   }
 
-  const pill = action.kind === "done" ? "Addressed" :
-    action.kind === "source" ? "Check buyer instruction" :
+  const pill = action.kind === "done" ? "Addressed in bid" :
+    action.kind === "source" ? "Check original buyer instruction" :
     action.kind === "response" ? "Write response" :
     action.kind === "form" ? "Complete original form" : "Review your response";
 
+  const pillTone = action.kind === "done"
+    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+    : action.kind === "source" || action.kind === "form"
+      ? "border-amber-300 bg-amber-50 text-amber-900"
+      : "border-blue-300 bg-blue-50 text-blue-800";
+
   return (
     <article id={"compliance-requirement-" + requirement.id}
-      className="min-w-0 scroll-mt-5 rounded-xl border p-4">
+      className={"min-w-0 scroll-mt-5 rounded-xl border " + (action.kind === "done" ? "p-3" : "p-4")}>
       <div className="flex min-w-0 flex-wrap gap-2 text-xs font-semibold">
-        <span className="rounded-full border px-2.5 py-1">{pill}</span>
+        <span className={"rounded-full border px-2.5 py-1 " + pillTone}>{pill}</span>
         {evidence?.requirementLevel !== "unknown" ? (
           <span className="rounded-full bg-[var(--muted)] px-2.5 py-1">
             {evidence?.requirementLevel === "required" ? "Buyer requires" : "Buyer says optional"}
