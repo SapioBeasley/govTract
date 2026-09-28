@@ -6,6 +6,7 @@ type ReconciliationInput = {
   requirements: {
     isStale:boolean;
     completenessStatus:"complete" | "partial";
+    incompleteReasons:string[];
     requirements:Array<Pick<PersistedSolicitationRequirement,"requirementKey" | "evidence" | "listingEvidence">>;
   } | null;
   previousDocumentVersionIds: string[];
