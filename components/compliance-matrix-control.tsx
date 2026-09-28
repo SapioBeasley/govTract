@@ -13,7 +13,7 @@ import { nextRequirementAction } from "@/lib/bids/builder-actions";
 const LABELS: Record<ComplianceStatus, string> = {
   missing: "Not addressed",
   drafting: "Working on it",
-  complete: "Complete — addressed in my bid",
+  complete: "Addressed in bid",
   needs_review: "Needs clarification or review",
   not_applicable: "Not applicable (verify against source)",
 };
@@ -89,14 +89,14 @@ export function ComplianceRow({
     }
   }
 
-  const pill = action.kind === "done" ? "Addressed" :
-    action.kind === "source" ? "Check buyer instruction" :
+  const pill = action.kind === "done" ? "Addressed in bid" :
+    action.kind === "source" ? "Check original buyer instruction" :
     action.kind === "response" ? "Write response" :
     action.kind === "form" ? "Complete original form" : "Review your response";
 
   return (
     <article id={"compliance-requirement-" + requirement.id}
-      className="min-w-0 scroll-mt-5 rounded-xl border p-4">
+      className={"min-w-0 scroll-mt-5 rounded-xl border " + (action.kind === "done" ? "p-3" : "p-4")}>
       <div className="flex min-w-0 flex-wrap gap-2 text-xs font-semibold">
         <span className="rounded-full border px-2.5 py-1">{pill}</span>
         {evidence?.requirementLevel !== "unknown" ? (
@@ -187,7 +187,7 @@ export function ComplianceRow({
       </div>
       {message ? <p role="status" className="mt-3 break-words text-sm">{message}</p> : null}
       <details className="mt-3 min-w-0 rounded-lg border p-3">
-        <summary className="min-h-11 cursor-pointer text-xs font-semibold">Original source and other options</summary>
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold">Advanced details: source, notes, and other options</summary>
         <div className="mt-3 grid min-w-0 gap-3 text-xs leading-5">
           <p><strong>Source verification:</strong> {requirement.canMarkComplete && context.snapshotCurrent &&
             context.understandingCurrent ? "Current original confirmed." : "Needs source review."}</p>
