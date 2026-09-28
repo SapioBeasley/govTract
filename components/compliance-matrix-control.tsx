@@ -94,6 +94,12 @@ export function ComplianceRow({
     action.kind === "response" ? "Write response" :
     action.kind === "form" ? "Complete original form" : "Review your response";
 
+  const pillTone = action.kind === "done"
+    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+    : action.kind === "source" || action.kind === "form"
+      ? "border-amber-300 bg-amber-50 text-amber-900"
+      : "border-blue-300 bg-blue-50 text-blue-800";
+
   return (
     <article id={"compliance-requirement-" + requirement.id}
       className={"min-w-0 scroll-mt-5 rounded-xl border " + (action.kind === "done" ? "p-3" : "p-4")}>
