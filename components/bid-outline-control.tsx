@@ -26,7 +26,7 @@ function SectionEditor({
   workspaceId: string;
   section: BidWorkspaceSection;
   linkedRequirements: BidWorkspaceRequirement[];
-  context: ComplianceGuidanceContext & { finalReviewBlockers?: number };
+  context: ComplianceGuidanceContext;
   onMove: (id: string, offset: number) => Promise<void>;
   first: boolean;
   last: boolean;
@@ -247,6 +247,8 @@ export function BidOutlineControl({
   sourceReady,
   sourceBlockers,
   generations,
+  finalReviewBlockers,
+  sourceChecks,
 }: {
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
@@ -257,6 +259,8 @@ export function BidOutlineControl({
   sourceReady: boolean;
   sourceBlockers: string[];
   generations: BidDraftGenerationSummary[];
+  finalReviewBlockers: number;
+  sourceChecks: Array<{ requirementId?: string | null }>;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState(initialSections);
@@ -273,12 +277,13 @@ export function BidOutlineControl({
     activeRequirements: activeRequirements.map((requirement) => ({
       id: requirement.id,
       effectiveStatus: requirement.effectiveStatus,
-      sourceResolutionStatus: requirement.sourceResolutionStatus,
     })),
     baselineExists: groups.baseline.length > 0,
     baselineReviewed: agencyBaselineReviewCurrent,
     sourceReady,
-    finalReviewBlockers: context.finalReviewBlockers ?? 0,
+    sourceCheckCount: sourceChecks.length,
+    sourceCheckRequirementId: sourceChecks.find((check) => check.requirementId)?.requirementId ?? null,
+    finalReviewBlockers,
   });
   useEffect(() => {
     const openLinkedSection = () => {
@@ -392,7 +397,7 @@ export function BidOutlineControl({
           <a href="#compliance-requirements" className="font-medium underline underline-offset-2">{progress.addressedRequirements}/{progress.totalRequirements} requirements addressed</a>
           <a href="#source-documents-and-technical-details" className="font-medium underline underline-offset-2">{progress.unresolvedSourceChecks} source checks remaining</a>
           {groups.baseline.length ? <a href="#standard-agency-terms" className="font-medium underline underline-offset-2">Standard agency terms {agencyBaselineReviewCurrent ? "reviewed" : "need review"}</a> : null}
-          <a href="#final-review" className="font-medium underline underline-offset-2">{context.finalReviewBlockers ?? 0} final-review blockers</a>
+          <a href="#final-review" className="font-medium underline underline-offset-2">{finalReviewBlockers} final-review blockers</a>
         </div>
         <p className="text-sm"><span className="font-semibold">Next action:</span>{" "}
           <a href={progress.nextAction.href} className="font-semibold underline underline-offset-2">{progress.nextAction.label}</a>
