@@ -248,6 +248,8 @@ export function BidOutlineControl({
   sourceBlockers,
   generations,
   finalReviewBlockers,
+  needsSourceRecovery,
+  historicalRequirementCount,
 }: {
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
@@ -259,6 +261,8 @@ export function BidOutlineControl({
   sourceBlockers: string[];
   generations: BidDraftGenerationSummary[];
   finalReviewBlockers: number;
+  needsSourceRecovery: boolean;
+  historicalRequirementCount: number;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState(initialSections);
@@ -388,6 +392,30 @@ export function BidOutlineControl({
         the matching saved response. Solicitation-prescribed headings are identified; other headings
         are suggestions to verify and edit. Preparing headings or checking requirements does not invoke AI.
       </p>
+      {needsSourceRecovery ? (
+        <div className="grid gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+          <div>
+            <p className="font-semibold">Bid needs to be refreshed</p>
+            <p className="mt-1 leading-6">
+              The solicitation source changed or is incomplete, so govTract cannot reliably tell you which current buyer requirements to answer yet.
+              Your saved response text will be preserved.
+            </p>
+            {historicalRequirementCount ? (
+              <p className="mt-1 text-xs leading-5">
+                {historicalRequirementCount} requirement{historicalRequirementCount === 1 ? "" : "s"} from previous source versions are retained as history and do not count toward current completion.
+              </p>
+            ) : null}
+          </div>
+          <a href="#source-reconciliation"
+            className="w-fit rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)]">
+            Refresh bid from current solicitation
+          </a>
+          <p className="text-xs leading-5">
+            Review the current originals in the recovery control, then use deterministic reconciliation. AI understanding refresh remains a separate manual action only when the current understanding itself is stale.
+          </p>
+        </div>
+      ) : (
+        <>
       <div className="grid gap-3 rounded-xl border bg-[var(--muted)]/25 p-4" aria-label="Bid progress summary">
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
           <a href="#response-sections" className="font-medium underline underline-offset-2">{progress.savedSections}/{progress.totalSections} drafts saved</a>
@@ -411,12 +439,6 @@ export function BidOutlineControl({
           {pending ? "Updating…" : groups.current.length ? "Add newly extracted requirements" : "Build buyer requirements"}
         </button>
       </div>
-      {!sourceReady ? (
-        <p className="rounded-xl border p-3 text-xs leading-5">
-          Source evidence is incomplete or has changed. You may prepare an outline, but review current
-          solicitation documents, required sections, formatting and page limits before submission.
-        </p>
-      ) : null}
       {!activeSections.length ? (
         <div className="grid gap-3 rounded-xl border border-dashed p-4 text-sm">
           <p>{sourceAvailable
@@ -546,6 +568,8 @@ export function BidOutlineControl({
         </div>
       </details>
       {message ? <p role="status" className="text-sm">{message}</p> : null}
+        </>
+      )}
     </div>
   );
 }
