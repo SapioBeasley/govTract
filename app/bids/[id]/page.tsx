@@ -223,6 +223,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               groups={builderGroups}
               agencyBaselineReviewCurrent={workspace.agencyBaselineReviewCurrent}
               generations={generations}
+              finalReviewBlockers={workspace.finalReview.blockingIssues.length}
+              sourceChecks={workspace.finalReview.sourceChecks}
               sourceBlockers={sourceBlockers}
               sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
               sourceReady={
