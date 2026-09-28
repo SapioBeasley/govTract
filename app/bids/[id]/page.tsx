@@ -144,9 +144,6 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
       ? "No completed solicitation understanding is available." : null,
     workspace.sourceRequirements?.isStale
       ? "The latest understanding is still stale. Review any newly changed original files before a manual refresh." : null,
-    missingEvidence.length
-      ? `${missingEvidence.length} requirement(s) lack verifiable evidence: ${missingEvidence.slice(0,5).map((requirement) =>
-          `${requirement.requirementKey} — ${requirement.text}`).join("; ")}. A repeated AI refresh is not a substitute for verified original-source evidence.` : null,
     workspace.sourceRequirements && workspace.sourceRequirements.completenessStatus !== "complete" && !missingEvidence.length
       ? `The current understanding remains partial: ${workspace.sourceRequirements.incompleteReasons.join(", ") || "source coverage incomplete"}.` : null,
   ].filter((reason): reason is string => Boolean(reason));
@@ -383,9 +380,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
                   changed:!previousVersionIds.has(document.opportunityDocumentVersionId),
                 }))}
                 blockingReasons={reconciliationBlockers}
-                requiresUnderstanding={Boolean(workspace.sourceRequirements?.isStale ||
-                  workspace.sourceRequirements?.completenessStatus !== "complete")}
-                canReconcile={reconciliationBlockers.length === 0}
+                requiresUnderstanding={Boolean(workspace.sourceRequirements?.isStale || !sourceEligible)}
+                canReconcile={reconciliationBlockers.length === 0 && sourceEligible}
               />
             ) : null}
           </Section>
