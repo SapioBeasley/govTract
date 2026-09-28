@@ -83,6 +83,8 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     });
   }
   const count = (id: GuidanceStepId) => groups.find((group) => group.stepId === id)?.issues.length ?? 0;
+  const actionableSourceIssues = groups.find((group) => group.stepId === "sources")!.issues
+    .filter((issue) => issue.code !== "source_evidence_unverified");
   const filesUnavailable = snapshot.documents.filter((document) => document.status !== "stored");
   const snapshotCurrent = Boolean(snapshot.pursuitSnapshotId &&
     snapshot.snapshotStatus === "complete" && !snapshot.stale &&
@@ -99,7 +101,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
   const understandingCurrent = Boolean(source && !source.isStale &&
     source.requirements.length > 0 &&
     (source.completenessStatus === "complete" || reviewableMissingEvidence));
-  const sourcesReady = snapshotCurrent && understandingCurrent && count("sources") === 0;
+  const sourcesReady = snapshotCurrent && understandingCurrent && actionableSourceIssues.length === 0;
 
   const staleSections = workspace.sections.filter((section) =>
     section.metadata.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
@@ -136,7 +138,7 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
           : !snapshotCurrent ? "Verify the current snapshot and amendments before preparing a response."
             : "Verify incomplete or missing understanding and its original-source evidence.",
       href: !snapshotCurrent ? anchors.sources : "#source-requirements",
-      count: count("sources") || filesUnavailable.length,
+      count: actionableSourceIssues.length || filesUnavailable.length,
     },
     {
       id: "reconcile", title: titles.reconcile,
@@ -206,11 +208,10 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
       : action("sources", "Review current source snapshot",
         snapshot.stale ? "An authoritative amendment changed; refresh and inspect the original package."
           : "The complete current source package has not been retained.", anchors.sources, "Source processing");
-  } else if (!understandingCurrent || count("sources")) {
+  } else if (!understandingCurrent || actionableSourceIssues.length) {
     nextAction = action("sources", "Verify current understanding",
-      source?.incompleteReasons.length ? source.incompleteReasons.join("; ")
-        : count("sources") ? groups.find((group) => group.stepId === "sources")!.issues[0]!.message
-          : "A complete current understanding with pinned source evidence is required.",
+      source?.incompleteReasons.length && !understandingCurrent ? source.incompleteReasons.join("; ")
+        : actionableSourceIssues[0]?.message ?? "A complete current understanding is required.",
       "#source-requirements");
   } else if (reconcileNeeded) {
     nextAction = action("reconcile", "Review originals, then reconcile",
