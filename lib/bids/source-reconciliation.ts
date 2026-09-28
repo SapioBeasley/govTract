@@ -30,9 +30,13 @@ export function assessBidSourceReconciliation(input:ReconciliationInput):BidSour
   if (!snapshot.documentSetFingerprint || snapshot.documentSetFingerprint!==snapshot.currentDocumentSetFingerprint) {
     return {state:"blocked",reason:"The authoritative source inventory changed again. Refresh the immutable snapshot first."};
   }
-  if (!requirements || requirements.isStale || requirements.completenessStatus!=="complete" ||
+  const reviewablePartial=Boolean(requirements && requirements.completenessStatus==="partial" &&
+    requirements.incompleteReasons.length>0 &&
+    requirements.incompleteReasons.every((reason)=>reason==="requirement_evidence_missing"));
+  if (!requirements || requirements.isStale ||
+    (requirements.completenessStatus!=="complete" && !reviewablePartial) ||
     !requirements.requirements.length) {
-    return {state:"blocked",reason:"Explicitly regenerate and review a complete current solicitation understanding before reconciling this bid."};
+    return {state:"blocked",reason:"Explicitly regenerate and review a current solicitation understanding before reconciling this bid."};
   }
   const inputs=new Set(understandingInputVersionIds);
   if (inputs.size!==current.length || current.some((id)=>!inputs.has(id))) {
@@ -41,6 +45,7 @@ export function assessBidSourceReconciliation(input:ReconciliationInput):BidSour
   const ids=new Set(current);
   for (const requirement of requirements.requirements) {
     if (!requirement.evidence.length && !requirement.listingEvidence) {
+      if (reviewablePartial) continue;
       return {state:"blocked",reason:`Source requirement ${requirement.requirementKey} lacks verified authoritative evidence.`};
     }
     if (requirement.evidence.some((evidence)=>!ids.has(evidence.opportunityDocumentVersionId) ||
