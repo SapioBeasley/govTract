@@ -248,7 +248,6 @@ export function BidOutlineControl({
   sourceBlockers,
   generations,
   finalReviewBlockers,
-  sourceChecks,
 }: {
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
@@ -260,7 +259,6 @@ export function BidOutlineControl({
   sourceBlockers: string[];
   generations: BidDraftGenerationSummary[];
   finalReviewBlockers: number;
-  sourceChecks: Array<{ requirementId?: string | null }>;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState(initialSections);
@@ -277,12 +275,11 @@ export function BidOutlineControl({
     activeRequirements: activeRequirements.map((requirement) => ({
       id: requirement.id,
       effectiveStatus: requirement.effectiveStatus,
+      sourceVerified: requirement.canMarkComplete,
     })),
     baselineExists: groups.baseline.length > 0,
     baselineReviewed: agencyBaselineReviewCurrent,
     sourceReady,
-    sourceCheckCount: sourceChecks.length,
-    sourceCheckRequirementId: sourceChecks.find((check) => check.requirementId)?.requirementId ?? null,
     finalReviewBlockers,
   });
   useEffect(() => {
