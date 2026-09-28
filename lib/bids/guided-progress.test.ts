@@ -170,3 +170,29 @@ test("original forms, stale approval, and human handoff never imply automatic su
   assert.equal(approved.steps.find((step) => step.id === "handoff")?.status, "Complete");
   assert.match(approved.steps.find((step) => step.id === "handoff")!.description, /external portal/i);
 });
+
+
+test("reviewable evidence-only partial understanding proceeds to actionable bid work after reconciliation", () => {
+  const workspace = fixture();
+  workspace.sourceRequirements!.completenessStatus = "partial";
+  workspace.sourceRequirements!.incompleteReasons = ["requirement_evidence_missing"];
+  workspace.sourceRequirements!.requirements = [
+    { id: "source-1", evidence: [] },
+    { id: "source-2", evidence: [{ excerpt: "Pinned source text" }] },
+  ] as BidWorkspaceRecord["sourceRequirements"]["requirements"];
+  workspace.requirements = [{
+    id: "compliance-1", sourceRequirementKey: "understanding-1:source-1",
+    effectiveStatus: "needs_review", status: "needs_review", isRequired: true,
+  }] as BidWorkspaceRecord["requirements"];
+  workspace.sections.forEach((section) => { section.content = ""; });
+  workspace.finalReview.readyForHumanReview = false;
+  workspace.finalReview.blockingIssues = [
+    { code: "mandatory_requirement_incomplete", message: "Bid response missing", requirementId: "source-1" },
+    { code: "section_incomplete", message: "Technical response is empty", sectionId: "section-0" },
+  ];
+
+  const guidance = deriveBidGuidance(workspace);
+  assert.equal(guidance.steps.find((step) => step.id === "sources")?.status, "Complete");
+  assert.equal(guidance.nextAction.stepId, "sections");
+  assert.equal(guidance.nextAction.href, "#response-section-section-0");
+});
