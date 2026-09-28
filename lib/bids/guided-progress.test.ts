@@ -202,9 +202,7 @@ test("source evidence warnings do not replace an actionable response-section tas
   const workspace = fixture();
   workspace.sourceRequirements!.completenessStatus = "partial";
   workspace.sourceRequirements!.incompleteReasons = ["requirement_evidence_missing"];
-  workspace.sourceRequirements!.requirements = [
-    { id: "source-1", evidence: [] },
-  ] as NonNullable<BidWorkspaceRecord["sourceRequirements"]>["requirements"];
+  workspace.sourceRequirements!.requirements[0]!.evidence = [];
   workspace.requirements[0]!.canMarkComplete = false;
   workspace.requirements[0]!.status = "needs_review";
   workspace.requirements[0]!.effectiveStatus = "needs_review";
