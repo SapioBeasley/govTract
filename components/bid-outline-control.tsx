@@ -9,6 +9,7 @@ import { BidDraftAction } from "@/components/bid-draft-action";
 import { ComplianceRow } from "@/components/compliance-matrix-control";
 import type { ComplianceGuidanceContext } from "@/lib/bids/compliance-guidance";
 import type { BidBuilderGroups } from "@/lib/bids/builder";
+import { deriveBidBuilderProgress, deriveSaveState, saveStateLabel } from "@/lib/bids/builder-ux";
 
 function SectionEditor({
   workspaceId,
@@ -25,7 +26,7 @@ function SectionEditor({
   workspaceId: string;
   section: BidWorkspaceSection;
   linkedRequirements: BidWorkspaceRequirement[];
-  context: ComplianceGuidanceContext;
+  context: ComplianceGuidanceContext & { finalReviewBlockers?: number };
   onMove: (id: string, offset: number) => Promise<void>;
   first: boolean;
   last: boolean;
@@ -39,6 +40,7 @@ function SectionEditor({
   const [content, setContent] = useState(section.content ?? "");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [verifyVendorFacts, setVerifyVendorFacts] = useState(false);
   const [reviewedCurrentSource, setReviewedCurrentSource] = useState(false);
   useEffect(() => {
@@ -67,6 +69,7 @@ function SectionEditor({
 
   async function save() {
     setPending(true);
+    setSaveFailed(false);
     setMessage(null);
     try {
       const response = await fetch(`/api/bids/${workspaceId}/outline/${section.id}`, {
@@ -78,20 +81,32 @@ function SectionEditor({
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
+        setSaveFailed(true);
         setMessage(payload.error?.message ?? "Response section could not be saved.");
       } else {
-        setMessage("Section saved.");
+        setMessage("Saved draft.");
         router.refresh();
       }
     } catch {
+      setSaveFailed(true);
       setMessage("Response section could not be saved.");
     } finally {
       setPending(false);
     }
   }
 
+  const saveState = deriveSaveState({ changed: changed || verifyVendorFacts || reviewedCurrentSource, pending, failed: saveFailed });
+  const addressedCount = linkedRequirements.filter((requirement) => requirement.effectiveStatus === "complete").length;
+  const attentionCount = linkedRequirements.filter((requirement) => requirement.effectiveStatus !== "complete").length;
+
   return (
     <article className="grid min-w-0 gap-3 border-t p-4 sm:p-5">
+      <div className="flex flex-wrap items-center gap-2 text-xs" role="status" aria-live="polite">
+        <span className="rounded-full border px-2.5 py-1 font-semibold">{saveStateLabel(saveState)}</span>
+        <span>{section.wordCount} saved words</span>
+        <span>{addressedCount}/{linkedRequirements.length} addressed</span>
+        {attentionCount ? <span>{attentionCount} need attention</span> : null}
+      </div>
       <h4 className="text-base font-semibold">Step 1: Write your response</h4>
       <p className="text-xs leading-5 text-[var(--muted-foreground)]">
         Describe what you will actually supply and how you meet the buyer's instructions.
@@ -193,11 +208,9 @@ function SectionEditor({
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={save} disabled={(!changed && !verifyVendorFacts && !reviewedCurrentSource) || pending || !title.trim()}
           className="rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
-          {pending ? "Saving…" : "Save section"}
+          {pending ? "Saving…" : changed || verifyVendorFacts || reviewedCurrentSource ? "Save changes" : "Saved"}
         </button>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          {section.wordCount} saved words
-        </span>
+
         {message ? <span role="status" className="break-words text-xs">{message}</span> : null}
       </div>
       <div className="grid min-w-0 gap-3 border-t pt-4" aria-label={`Buyer requirements linked to ${section.title}`}>
@@ -253,6 +266,20 @@ export function BidOutlineControl({
   const baselineOnlySectionIds = new Set(groups.baselineOnlySectionIds);
   const activeSections = sections.filter((section) => !baselineOnlySectionIds.has(section.id));
   const preservedBaselineSections = sections.filter((section) => baselineOnlySectionIds.has(section.id));
+  const baselineIds = new Set(groups.baseline.map((requirement) => requirement.id));
+  const activeRequirements = groups.current.filter((requirement) => !baselineIds.has(requirement.id));
+  const progress = deriveBidBuilderProgress({
+    activeSections: activeSections.map((section) => ({ id: section.id, content: section.content })),
+    activeRequirements: activeRequirements.map((requirement) => ({
+      id: requirement.id,
+      effectiveStatus: requirement.effectiveStatus,
+      sourceResolutionStatus: requirement.sourceResolutionStatus,
+    })),
+    baselineExists: groups.baseline.length > 0,
+    baselineReviewed: agencyBaselineReviewCurrent,
+    sourceReady,
+    finalReviewBlockers: context.finalReviewBlockers ?? 0,
+  });
   useEffect(() => {
     const openLinkedSection = () => {
       const id = decodeURIComponent(window.location.hash.slice(1).split("#")[0] ?? "");
@@ -359,6 +386,18 @@ export function BidOutlineControl({
         the matching saved response. Solicitation-prescribed headings are identified; other headings
         are suggestions to verify and edit. Preparing headings or checking requirements does not invoke AI.
       </p>
+      <div className="grid gap-3 rounded-xl border bg-[var(--muted)]/25 p-4" aria-label="Bid progress summary">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+          <a href="#response-sections" className="font-medium underline underline-offset-2">{progress.savedSections}/{progress.totalSections} drafts saved</a>
+          <a href="#compliance-requirements" className="font-medium underline underline-offset-2">{progress.addressedRequirements}/{progress.totalRequirements} requirements addressed</a>
+          <a href="#source-documents-and-technical-details" className="font-medium underline underline-offset-2">{progress.unresolvedSourceChecks} source checks remaining</a>
+          {groups.baseline.length ? <a href="#standard-agency-terms" className="font-medium underline underline-offset-2">Standard agency terms {agencyBaselineReviewCurrent ? "reviewed" : "need review"}</a> : null}
+          <a href="#final-review" className="font-medium underline underline-offset-2">{context.finalReviewBlockers ?? 0} final-review blockers</a>
+        </div>
+        <p className="text-sm"><span className="font-semibold">Next action:</span>{" "}
+          <a href={progress.nextAction.href} className="font-semibold underline underline-offset-2">{progress.nextAction.label}</a>
+        </p>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-[var(--muted-foreground)]">
           {groups.current.length - groups.baseline.length} opportunity-specific requirement{groups.current.length - groups.baseline.length === 1 ? "" : "s"} ·
