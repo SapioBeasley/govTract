@@ -20,7 +20,7 @@ test("requirement cards use explicit user-facing states and keep technical contr
   const row = read("components/compliance-matrix-control.tsx");
   assert.match(row, /Addressed in bid/);
   assert.match(row, /Check original buyer instruction/);
-  assert.match(row, /Advanced details: source, notes, and other options/);
+  assert.match(row, /Original source and other options/);\n  assert.match(row, /border-emerald-300 bg-emerald-50/);\n  assert.match(row, /border-amber-300 bg-amber-50/);\n  assert.match(row, /border-blue-300 bg-blue-50/);
   assert.match(row, /Complete and confirm the original form/);
   assert.doesNotMatch(row, /complete: "Complete — addressed in my bid"/);
 });
