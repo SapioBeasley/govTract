@@ -59,7 +59,7 @@ export function BidSourceReconciliationAction({
     }
   }
 
-  return <div className="mt-4 grid min-w-0 gap-3 rounded-lg border p-4">
+  return <div id="source-reconciliation" className="mt-4 grid min-w-0 scroll-mt-5 gap-3 rounded-lg border p-4">
     <p className="text-sm font-semibold">Review the current original source package</p>
     <p className="text-xs leading-5 text-[var(--muted-foreground)]">
       A newer source document or stale understanding blocks drafting. Review each original document and any new signature form or amendment before rebinding the saved bid. Previously saved response text is preserved. No understanding or bid draft is regenerated on page load.
