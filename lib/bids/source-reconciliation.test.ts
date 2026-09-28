@@ -65,6 +65,17 @@ test("missing or prior-version citation never becomes source-ready just because 
   }).state,"blocked");
 });
 
+
+test("reviewable partial understanding can reconcile while keeping missing evidence unresolved",()=>{
+  const partial={...source,completenessStatus:"partial" as const,incompleteReasons:["requirement_evidence_missing"],
+    requirements:[...source.requirements,{requirementKey:"schedule:due",listingEvidence:null,evidence:[]}]};
+  assert.deepEqual(assessBidSourceReconciliation({
+    snapshot:{...snapshot,stale:false,supersedesSnapshotId:null},
+    previousDocumentVersionIds:["terms","specs","signature"],requirements:partial,
+    understandingInputVersionIds:["terms","specs","signature"],
+  }),{state:"ready",addedDocumentVersionIds:[],removedDocumentVersionIds:[]});
+});
+
 test("already reconciled state is idempotent, and a new amendment blocks any older understanding",()=>{
   assert.equal(assessBidSourceReconciliation({
     snapshot:{...snapshot,stale:false,supersedesSnapshotId:null},
