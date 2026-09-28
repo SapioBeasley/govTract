@@ -11,7 +11,7 @@ test("reconciliation does not deadlock when only reviewable requirement evidence
   assert.match(page,/sourceEligible/);
   assert.match(page,/canReconcile=\{reconciliationBlockers\.length === 0 && sourceEligible\}/);
   assert.doesNotMatch(page,/missingEvidence\.length\s*\?\s*`\$\{missingEvidence\.length\} requirement\(s\) lack verifiable evidence/);
-  assert.match(reconcile,/requirements\.completenessStatus === "partial"/);
+  assert.match(reconcile,/requirements\.completenessStatus===\"partial\"/);
   assert.match(reconcile,/requirement_evidence_missing/);
 });
 
