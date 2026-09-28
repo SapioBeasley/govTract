@@ -12,9 +12,9 @@ test("save state makes dirty, saving, failure, and persisted draft explicit", ()
 test("progress excludes history supplied by callers and chooses deterministic next work", () => {
   const base = {
     activeSections: [{ id: "a", content: "saved" }, { id: "b", content: "" }],
-    activeRequirements: [{ id: "r1", effectiveStatus: "complete", },
-      { id: "r2", effectiveStatus: "drafting" }],
-    baselineExists: true, baselineReviewed: false, sourceReady: true, sourceCheckCount: 1, sourceCheckRequirementId: "r2", finalReviewBlockers: 2,
+    activeRequirements: [{ id: "r1", effectiveStatus: "complete", sourceVerified: true },
+      { id: "r2", effectiveStatus: "drafting", sourceVerified: false }],
+    baselineExists: true, baselineReviewed: false, sourceReady: true, finalReviewBlockers: 2,
   };
   const progress = deriveBidBuilderProgress(base);
   assert.deepEqual([progress.savedSections, progress.totalSections, progress.addressedRequirements, progress.totalRequirements], [1, 2, 1, 2]);
