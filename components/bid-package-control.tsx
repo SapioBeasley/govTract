@@ -34,7 +34,7 @@ export function BidPackageControl({
     if (!sourceReady || pending || inFlight.current) return;
     const replace = Boolean(fullBid?.content?.trim());
     const understandingNote = requiresUnderstandingRefresh
-      ? " The current solicitation understanding also needs refresh and will be regenerated from the retained source package first; this may incur additional model cost."
+      ? " This will refresh the solicitation understanding from the retained source package first because the current understanding is stale or incomplete; this may incur additional model cost."
       : "";
     if (!window.confirm((replace
       ? "Regenerate the full bid? This is an explicit AI action that may incur model cost and replace the saved generated response. Your prior generation remains in audit history."
