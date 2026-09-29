@@ -49,6 +49,12 @@ export async function getBidSupportingChecklist(workspaceId: string) {
       workspace.sourceSnapshot.documentSetFingerprint,
   });
   const state = parseState(metadata?.supportingChecklist);
+  const sourceCurrent = Boolean(
+    workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
+    !workspace.sourceSnapshot.stale &&
+    workspace.sourceSnapshot.documentSetFingerprint &&
+    workspace.sourceSnapshot.documentSetFingerprint === workspace.sourceSnapshot.currentDocumentSetFingerprint
+  );
   const evaluation = evaluateSupportingChecklist(items, state, fingerprint);
   const ready = new Set(evaluation.readyItemIds);
   const applicable = new Set(evaluation.applicableItemIds);
@@ -56,7 +62,8 @@ export async function getBidSupportingChecklist(workspaceId: string) {
   return {
     fingerprint,
     stateCurrent: evaluation.stateCurrent,
-    readyForPackage: evaluation.readyForPackage,
+    sourceCurrent,
+    readyForPackage: sourceCurrent && evaluation.readyForPackage,
     blockingItemIds: evaluation.blockingItemIds,
     readyItemIds: evaluation.readyItemIds,
     applicableItemIds: evaluation.applicableItemIds,
@@ -80,6 +87,9 @@ export async function updateBidSupportingItem(
     throw new Error("Invalid supporting checklist update.");
   }
   const current = await getBidSupportingChecklist(workspaceId);
+  if (!current.sourceCurrent) {
+    throw new Error("Supporting checklist is unavailable until the current solicitation sources are refreshed.");
+  }
   const item = current.items.find((candidate) => candidate.id === itemId);
   if (!item) throw new Error("Supporting checklist item was not found.");
   if (input.applicable !== undefined && !item.conditional) {
