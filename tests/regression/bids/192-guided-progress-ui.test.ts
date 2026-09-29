@@ -28,7 +28,11 @@ test("guide uses persisted evidence only and preserves manual model and human ha
   assert.match(model, /workspace\.finalReview\.blockingIssues/);
   assert.match(model, /workspace\.finalReviewApprovalCurrent/);
   assert.doesNotMatch(model, /generateSolicitationUnderstanding|generateBidSectionDraft|fetch\(|useEffect|writeFile/);
-  assert.match(ui, /aria-label="Bid preparation steps"/);
+  assert.match(ui, /Current step/);
+  assert.match(ui, /Workflow status and diagnostics/);
+  assert.doesNotMatch(ui, /aria-label="Bid preparation steps"/);
+  assert.doesNotMatch(ui, /guidance\.steps\.map/);
+  assert.doesNotMatch(ui, /guidance\.groupedIssues\.map/);
   assert.match(ui, /external procurement portal/i);
   assert.match(sourceAction, /window\.confirm/);
   assert.match(finalReview, /!review\.readyForHumanReview/);
