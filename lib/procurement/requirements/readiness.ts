@@ -9,9 +9,9 @@ export type RequirementReadiness = {
  * Evidence-only partiality is allowed because draft preparation independently verifies
  * every selected requirement has readable, pinned source evidence before model input.
  */
-export function isSolicitationRequirementSetDraftable(
-  requirements: RequirementReadiness | null | undefined,
-) {
+export function isSolicitationRequirementSetDraftable<T extends RequirementReadiness>(
+  requirements: T | null | undefined,
+): requirements is T {
   if (!requirements || requirements.isStale) return false;
   if (requirements.completenessStatus === "complete") return true;
   return requirements.incompleteReasons.length > 0 &&
