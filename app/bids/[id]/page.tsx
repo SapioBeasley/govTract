@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Building2, CalendarDays, FileText, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, CalendarDays, FileText, Paperclip, ShieldCheck } from "lucide-react";
 
 import { BidFullDraftControl } from "@/components/bid-full-draft-control";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
+import { BidSupportingChecklist } from "@/components/bid-supporting-checklist";
 import { assessFullBidGenerationReadiness } from "@/lib/bids/full-bid";
 import { getFullBidArtifact } from "@/lib/bids/full-bid-persistence";
+import { getBidSupportingChecklist } from "@/lib/bids/supporting-items-persistence";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +61,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const { id } = await params;
   const workspace = await getBidWorkspace(id);
   if (!workspace) notFound();
-  const artifact = await getFullBidArtifact(workspace.id);
+  const [artifact, supportingChecklist] = await Promise.all([
+    getFullBidArtifact(workspace.id),
+    getBidSupportingChecklist(workspace.id),
+  ]);
   const readiness = assessFullBidGenerationReadiness({
     snapshot: workspace.sourceSnapshot,
     requirements: workspace.sourceRequirements,
@@ -127,6 +132,13 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               initialContent={artifact?.content ?? null}
               sourceBlocker={sourceBlocker}
+            />
+          </Section>
+
+          <Section id="supporting-materials" title="Supporting documents" icon={<Paperclip className="size-5" />}>
+            <BidSupportingChecklist
+              workspaceId={workspace.id}
+              initialChecklist={supportingChecklist}
             />
           </Section>
 
