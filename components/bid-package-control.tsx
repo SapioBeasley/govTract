@@ -10,11 +10,13 @@ export function BidPackageControl({
   initialSections,
   sourceReady,
   sourceBlockers,
+  requiresUnderstandingRefresh,
 }: {
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
   sourceReady: boolean;
   sourceBlockers: string[];
+  requiresUnderstandingRefresh: boolean;
 }) {
   const router = useRouter();
   const fullBid = useMemo(
@@ -31,9 +33,12 @@ export function BidPackageControl({
   async function generate() {
     if (!sourceReady || pending || inFlight.current) return;
     const replace = Boolean(fullBid?.content?.trim());
-    if (!window.confirm(replace
+    const understandingNote = requiresUnderstandingRefresh
+      ? " The current solicitation understanding also needs refresh and will be regenerated from the retained source package first; this may incur additional model cost."
+      : "";
+    if (!window.confirm((replace
       ? "Regenerate the full bid? This is an explicit AI action that may incur model cost and replace the saved generated response. Your prior generation remains in audit history."
-      : "Generate the full bid from the retained solicitation package? This is an explicit AI action that may incur model cost. Unknown vendor/company/product facts will remain marked Needs your input.",
+      : "Generate the full bid from the retained solicitation package? This is an explicit AI action that may incur model cost. Unknown vendor/company/product facts will remain marked Needs your input.") + understandingNote,
     )) return;
     inFlight.current = true;
     setPending(true);
