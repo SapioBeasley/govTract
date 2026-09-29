@@ -51,7 +51,7 @@ export function createVercelBlobSnapshotArtifactStore(input: {
       ? { oidcToken, storeId }
       : legacyToken
         ? { token: legacyToken }
-        : null;
+        : {};
 
   const state = {
     oidc: Boolean(oidcToken),
@@ -71,7 +71,7 @@ export function createVercelBlobSnapshotArtifactStore(input: {
       (error instanceof Error && /\\b(unauthorized|forbidden|not authorized|invalid token|expired token|oidc is not|permission denied)\\b/i.test(error.message));
   };
   const upload=(file:Parameters<SnapshotArtifactStore["putFile"]>[0],
-    options:NonNullable<typeof authOptions>) =>
+    options:typeof authOptions) =>
     putBlob(file.storageKey,createReadStream(file.filePath),{
       access:"private",
       ...options,addRandomSuffix:false,allowOverwrite:true,multipart:true,
@@ -80,12 +80,13 @@ export function createVercelBlobSnapshotArtifactStore(input: {
   return {
     provider:"vercel_blob",
     async putFile(file) {
-      if (!authOptions) {
-        console.error(`PURSUIT_BLOB_STORE_ERROR code=storage_unavailable reason=storage_unconfigured oidc=${state.oidc} store=${state.store} token=${state.token}`);
-        throw new SnapshotRetrievalError("storage_unavailable",
-          "Private pursuit artifact storage is not configured.");
-      }
-      let mode=explicitToken?"explicit_token":oidcToken && storeId?"oidc":"token";
+      let mode=explicitToken
+        ?"explicit_token"
+        :oidcToken && storeId
+          ?"oidc"
+          :legacyToken
+            ?"token"
+            :"sdk_auto_oidc";
       try {
         let blob;
         try {
