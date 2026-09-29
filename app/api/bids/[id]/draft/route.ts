@@ -8,6 +8,7 @@ import { ensureBidWorkspaceSnapshotPrepared } from "@/lib/procurement/pursuits/s
 import { generateSolicitationUnderstanding } from "@/lib/procurement/understanding/generation";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
