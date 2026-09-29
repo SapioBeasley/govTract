@@ -216,7 +216,7 @@ test("audited original-source decision changes effective mandatory status and pr
 });
 
 
-test("shared agency baseline terms require one current aggregate review instead of prose response proof for every boilerplate rule", () => {
+test("shared agency baseline terms do not create a separate user-facing completion gate", () => {
   const input = fixture();
   const baseline: PersistedSolicitationRequirement = {
     id: "source-standard-terms",
@@ -246,17 +246,9 @@ test("shared agency baseline terms require one current aggregate review instead 
     responseEvidence: null,
   });
 
-  input.workspace.agencyBaselineReviewCurrent = false;
-  const pending = evaluateBidFinalReview(input);
-  assert.equal(pending.blockingIssues.filter((issue) =>
-    issue.code === "agency_baseline_terms_unreviewed").length, 1);
-  assert.equal(pending.blockingIssues.some((issue) =>
-    issue.code === "mandatory_requirement_incomplete" && issue.requirementId === baseline.id), false);
-
-  input.workspace.agencyBaselineReviewCurrent = true;
-  const reviewed = evaluateBidFinalReview(input);
-  assert.equal(reviewed.blockingIssues.some((issue) =>
+  const result = evaluateBidFinalReview(input);
+  assert.equal(result.blockingIssues.some((issue) =>
     issue.code === "agency_baseline_terms_unreviewed"), false);
-  assert.equal(reviewed.blockingIssues.some((issue) =>
+  assert.equal(result.blockingIssues.some((issue) =>
     issue.code === "mandatory_requirement_incomplete" && issue.requirementId === baseline.id), false);
 });
