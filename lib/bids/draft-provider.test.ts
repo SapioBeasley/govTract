@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {\n  BidDraftProviderFailure,\n  createGeminiBidAnswerProvider,\n  createGeminiBidDraftProvider,\n  makeBidAnswerRevisionPrompt,\n  makeBidDraftPrompt,\n} from "@/lib/bids/draft-provider";
+import {
+  BidDraftProviderFailure,
+  createGeminiBidAnswerProvider,
+  createGeminiBidDraftProvider,
+  makeBidAnswerRevisionPrompt,
+  makeBidDraftPrompt,
+} from "@/lib/bids/draft-provider";
 import type { BidDraftPacket } from "@/lib/bids/draft-input";
 
 const packet: BidDraftPacket = {
