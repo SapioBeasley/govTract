@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Building2, CalendarDays, FileText, Paperclip, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, CalendarDays, FileCheck2, FileText, Paperclip, ShieldCheck } from "lucide-react";
 
 import { BidFullDraftControl } from "@/components/bid-full-draft-control";
+import { BidPackageControl } from "@/components/bid-package-control";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
 import { BidSupportingChecklist } from "@/components/bid-supporting-checklist";
 import { assessFullBidGenerationReadiness } from "@/lib/bids/full-bid";
 import { getFullBidArtifact } from "@/lib/bids/full-bid-persistence";
+import { getBidPackageStatus } from "@/lib/bids/package-persistence";
 import { getBidSupportingChecklist } from "@/lib/bids/supporting-items-persistence";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 
@@ -61,9 +63,10 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const { id } = await params;
   const workspace = await getBidWorkspace(id);
   if (!workspace) notFound();
-  const [artifact, supportingChecklist] = await Promise.all([
+  const [artifact, supportingChecklist, packageStatus] = await Promise.all([
     getFullBidArtifact(workspace.id),
     getBidSupportingChecklist(workspace.id),
+    getBidPackageStatus(workspace.id),
   ]);
   const readiness = assessFullBidGenerationReadiness({
     snapshot: workspace.sourceSnapshot,
@@ -139,6 +142,13 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             <BidSupportingChecklist
               workspaceId={workspace.id}
               initialChecklist={supportingChecklist}
+            />
+          </Section>
+
+          <Section id="final-package" title="Finalize and submit" icon={<FileCheck2 className="size-5" />}>
+            <BidPackageControl
+              workspaceId={workspace.id}
+              initialStatus={packageStatus}
             />
           </Section>
 
