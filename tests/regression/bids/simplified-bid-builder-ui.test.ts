@@ -5,50 +5,21 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("bid builder leads with a write-then-review flow, not source metadata and a giant checklist", () => {
+test("bid preparation leads with one full-bid generation and editable response", () => {
   const page = read("app/bids/[id]/page.tsx");
-  const outline = read("components/bid-outline-control.tsx");
-  assert.match(outline, /Step 1: Write your response/);
-  assert.match(outline, /Step 2: Check what the buyer asked for/);
-  assert.match(outline, /<details[^>]*>\s*<summary[^>]*>Edit heading and source instructions/);
-  assert.match(page, /id="source-documents-and-technical-details"[\s\S]*?<summary[^>]*>\s*Source documents and technical details/);
-  assert.match(page, /<GuidedBidProgress workspace=\{workspace\}/);
+  const control = read("components/bid-package-control.tsx");
   assert.match(page, /id="prepare-bid"/);
+  assert.match(page, /<BidPackageControl/);
+  assert.match(control, /Generate the bid/);
+  assert.match(control, /Full bid response/);
+  assert.match(control, /Save bid/);
+  assert.doesNotMatch(control, /Step 1:|Step 2:|Mark addressed in my bid|Draft with AI/);
 });
 
-test("each buyer ask has one primary action and preserves source details in an optional drawer", () => {
-  const row = read("components/compliance-matrix-control.tsx");
-  assert.match(row, /nextRequirementAction\(/);
-  assert.match(row, /What the buyer wants/);
-  assert.match(row, /What you need to do next/);
-  assert.match(row, /Mark addressed in my bid/);
-  assert.match(row, /Review saved response/);
-  assert.match(row, /<summary[^>]*>Original source and other options/);
-  assert.match(row, /BidSourceReviewAction/);
-  assert.match(row, /responseReviewed: true/);
-  assert.match(row, /responseSelection:/);
-  assert.match(row, /<ComplianceRow/);
-});
-
-test("source verification uses an explicitly confirmed current original with a preselected pinned excerpt", () => {
-  const review = read("components/bid-source-review-action.tsx");
-  const service = read("lib/bids/source-review-persistence.ts");
-  assert.match(review, /pinnedReviewChoice/);
-  assert.match(review, /Confirm this original/);
-  assert.match(review, /I checked the original buyer instruction/);
-  assert.match(review, /Review a different passage/);
-  assert.match(service, /documentExtractions\.checksumSha256/);
-  assert.match(service, /bidRequirementSourceReviews/);
-});
-
-
-test("shared agency boilerplate is shown once outside response drafting and keeps original-form safeguards", () => {
-  const outline = read("components/bid-outline-control.tsx");
-  const finalReview = read("lib/bids/final-review.ts");
-  assert.match(outline, /Standard agency terms/);
-  assert.match(outline, /I reviewed these standard agency terms/);
-  assert.match(outline, /does not turn this boilerplate\s+into repeated Technical or Pricing response text/);
-  assert.match(outline, /Complete this original form in Final review/);
-  assert.match(finalReview, /agency_baseline_terms_unreviewed/);
-  assert.match(finalReview, /original_form_unconfirmed/);
+test("supporting checkboxes represent submission items rather than buyer-source verification", () => {
+  const review = read("components/bid-final-review.tsx");
+  assert.match(review, /Supporting documents/);
+  assert.match(review, /I have completed this required supporting item and included it in my submission package/);
+  assert.doesNotMatch(review, /I checked the original buyer instruction|Confirm this original|source verification/i);
+  assert.match(read("lib/bids/final-review.ts"), /original_form_unconfirmed/);
 });
