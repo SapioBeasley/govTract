@@ -93,22 +93,22 @@ test("Vercel Blob pursuit artifacts keep an explicit legacy token fallback", asy
   assert.equal(calls[0]?.options.storeId, undefined);
 });
 
-test("Vercel Blob pursuit artifacts fail closed when neither OIDC nor a legacy token is configured", async () => {
+test("Vercel Blob pursuit artifacts delegate automatic OIDC resolution to the SDK when no explicit credential is visible", async () => {
   const calls: PutCall[] = [];
   const store = createVercelBlobSnapshotArtifactStore({
-    env: {},
+    env: {
+      BLOB_STORE_ID: "store_123",
+    },
     putBlob: createPutBlobMock(calls),
   });
 
-  await assert.rejects(
-    () => store.putFile(artifact),
-    (error: unknown) => {
-      assert.ok(error instanceof SnapshotRetrievalError);
-      assert.equal(error.code, "storage_unavailable");
-      return true;
-    },
-  );
-  assert.equal(calls.length, 0);
+  const result = await store.putFile(artifact);
+
+  assert.equal(result.etag, "etag-1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.options.token, undefined);
+  assert.equal(calls[0]?.options.oidcToken, undefined);
+  assert.equal(calls[0]?.options.storeId, undefined);
 });
 
 test("Vercel Blob SDK failures are blocked as storage unavailable and logged without credentials", async () => {
