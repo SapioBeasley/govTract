@@ -110,9 +110,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const unavailableFiles = snapshot.documents.filter((document) =>
     document.status !== "stored" && document.status !== "pending");
   const generationActionReady =
-    snapshot.snapshotStatus === "complete" &&
-    snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
-    snapshot.documents.every((document) => document.status === "stored");
+    snapshot.totalDocumentCount > 0 &&
+    snapshot.documents.length === snapshot.totalDocumentCount;
   const requiresUnderstandingRefresh =
     !workspace.sourceRequirements ||
     workspace.sourceRequirements.isStale ||
