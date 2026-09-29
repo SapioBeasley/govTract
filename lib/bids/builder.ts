@@ -7,6 +7,10 @@ const nonWritingTypes = new Set([
   "schedule", "evaluation", "location",
 ]);
 
+export function isBidWritingRequirementType(type: string) {
+  return !nonWritingTypes.has(type);
+}
+
 /**
  * A read-only projection. Never rebind old responses to a new understanding by
  * matching text or type, and never duplicate completion controls across headings.
@@ -63,7 +67,7 @@ export function groupBidBuilderRequirements(
         section.metadata.source === "solicitation_heading";
       const baseline = Boolean(row.sourceRequirementKey && baselineComplianceKeys.has(row.sourceRequirementKey));
       if (!row.sourceRequirementKey || (baseline && !prescribedResponse) ||
-          (nonWritingTypes.has(row.requirementType) && !prescribedResponse) ||
+          (!isBidWritingRequirementType(row.requirementType) && !prescribedResponse) ||
           claimed.has(row.id) || (!keys.has(row.sourceRequirementKey) &&
             !keys.has(outlineKeyByComplianceKey.get(row.sourceRequirementKey) ?? ""))) continue;
       bySection[section.id]!.push(row);
