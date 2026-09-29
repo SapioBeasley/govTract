@@ -109,6 +109,13 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const pendingFiles = snapshot.documents.filter((document) => document.status === "pending");
   const unavailableFiles = snapshot.documents.filter((document) =>
     document.status !== "stored" && document.status !== "pending");
+  const generationActionReady =
+    snapshot.totalDocumentCount > 0 &&
+    snapshot.documents.length === snapshot.totalDocumentCount;
+  const requiresUnderstandingRefresh =
+    !workspace.sourceRequirements ||
+    workspace.sourceRequirements.isStale ||
+    workspace.sourceRequirements.completenessStatus !== "complete";
   const sourceBlockers = [
     pendingFiles.length
       ? `${pendingFiles.length} original source file(s) are queued but not stored: ${pendingFiles.map((file) => file.filename).join(", ")}. Use Retrieve source files in the Source snapshot section; if unavailable, use the bounded Beacon snapshot batch in GitHub Actions.`
@@ -214,12 +221,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               initialSections={workspace.sections}
               sourceBlockers={sourceBlockers}
-              sourceReady={
-                snapshot.snapshotStatus === "complete" &&
-                !snapshot.stale &&
-                workspace.sourceRequirements?.completenessStatus === "complete" &&
-                !workspace.sourceRequirements.isStale
-              }
+              sourceReady={generationActionReady}
+              requiresUnderstandingRefresh={requiresUnderstandingRefresh}
             />
             <details id="previous-source-requirements" className="mt-5 min-w-0 scroll-mt-5 rounded-xl border p-4">
               <summary className="cursor-pointer text-sm font-semibold">

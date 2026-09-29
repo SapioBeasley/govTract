@@ -239,6 +239,7 @@ async function updateWorkspaceSnapshotReference(input: {
   documentSetFingerprint: string;
   snapshotStatus: "incomplete" | "complete" | "blocked";
   markStale?: boolean;
+  clearStale?: boolean;
 }) {
   const db = getDb();
   const [workspace] = await db
@@ -249,7 +250,9 @@ async function updateWorkspaceSnapshotReference(input: {
   if (!workspace) throw new Error("Bid workspace was not found");
 
   const existing = workspace.sourceSnapshot ?? {};
-  const stale = input.markStale === true || existing.stale === true;
+  const stale = input.clearStale === true
+    ? false
+    : input.markStale === true || existing.stale === true;
   const sourceSnapshot: Record<string, unknown> = {
     ...existing,
     pursuitSnapshotId: input.snapshotId,
@@ -279,7 +282,24 @@ async function ensureSnapshotPrepared(context: SnapshotContext) {
     .from(pursuitDocumentSnapshots)
     .where(and(predicate, eq(pursuitDocumentSnapshots.documentSetFingerprint, fingerprint)))
     .limit(1);
-  if (existing) return (await loadSnapshot(existing.id))!;
+  if (existing) {
+    const prepared = (await loadSnapshot(existing.id))!;
+    if (context.bidWorkspaceId) {
+      await updateWorkspaceSnapshotReference({
+        bidWorkspaceId: context.bidWorkspaceId,
+        snapshotId: prepared.id,
+        documentSetFingerprint: prepared.documentSetFingerprint,
+        snapshotStatus:
+          prepared.status === "complete" || prepared.status === "blocked"
+            ? prepared.status
+            : "incomplete",
+        clearStale:
+          prepared.status === "complete" &&
+          prepared.documentSetFingerprint === fingerprint,
+      });
+    }
+    return prepared;
+  }
 
   const [previous] = await db
     .select({ id: pursuitDocumentSnapshots.id })
@@ -430,6 +450,49 @@ function storageKeyForChecksum(checksumSha256: string) {
   return `pursuit-source/${checksumSha256.slice(0, 2)}/${checksumSha256}`;
 }
 
+async function ensureSnapshotArtifact(input: {
+  filePath: string;
+  checksumSha256: string;
+  byteCount: number;
+  mimeType: string | null;
+  artifactStore: SnapshotArtifactStore;
+}) {
+  const db = getDb();
+  let [artifact] = await db
+    .select({ id: sourceBinaryArtifacts.id })
+    .from(sourceBinaryArtifacts)
+    .where(eq(sourceBinaryArtifacts.checksumSha256, input.checksumSha256))
+    .limit(1);
+  if (artifact) return artifact.id;
+
+  const storageKey = storageKeyForChecksum(input.checksumSha256);
+  const stored = await input.artifactStore.putFile({
+    filePath: input.filePath,
+    storageKey,
+    mimeType: input.mimeType,
+    checksumSha256: input.checksumSha256,
+    byteCount: input.byteCount,
+  });
+  await db
+    .insert(sourceBinaryArtifacts)
+    .values({
+      checksumSha256: input.checksumSha256,
+      storageProvider: input.artifactStore.provider,
+      storageKey: stored.storageKey,
+      byteCount: input.byteCount,
+      mimeType: input.mimeType,
+      etag: stored.etag ?? null,
+    })
+    .onConflictDoNothing();
+  [artifact] = await db
+    .select({ id: sourceBinaryArtifacts.id })
+    .from(sourceBinaryArtifacts)
+    .where(eq(sourceBinaryArtifacts.checksumSha256, input.checksumSha256))
+    .limit(1);
+  if (!artifact) throw new Error("Stored pursuit artifact could not be resolved");
+  return artifact.id;
+}
+
 async function reconcileChangedDocumentVersion(input: {
   snapshot: PursuitSnapshot;
   document: PursuitSnapshotDocument;
@@ -458,7 +521,7 @@ async function reconcileChangedDocumentVersion(input: {
     .orderBy(desc(opportunityDocumentVersions.versionNumber))
     .limit(1);
   if (!latest) throw new Error("Current source document version could not be resolved");
-  if (latest.checksumSha256?.toLowerCase() === input.checksumSha256.toLowerCase()) return false;
+  if (latest.checksumSha256?.toLowerCase() === input.checksumSha256.toLowerCase()) return null;
 
   const inserted = await db
     .insert(opportunityDocumentVersions)
@@ -502,7 +565,7 @@ async function reconcileChangedDocumentVersion(input: {
         ),
       );
   }
-  return inserted.length > 0;
+  return inserted[0]?.id ?? null;
 }
 
 function retrievalFailure(error: unknown): { status: "blocked" | "missing" | "failed"; code: string } {
@@ -541,7 +604,12 @@ export async function processPursuitSnapshot(
   const workDir = join(options.tempRoot, `snapshot-${snapshot.id}`);
   await mkdir(workDir, { recursive: true });
   let snapshotBytes = 0;
-  let sourceChanged = 0;
+  const sourceChanges: Array<{
+    opportunityDocumentVersionId: string;
+    artifactId: string;
+    checksumSha256: string;
+    retrievedAt: Date;
+  }> = [];
 
   try {
     for (const document of snapshot.documents) {
@@ -579,7 +647,7 @@ export async function processPursuitSnapshot(
           checksumSha256.toLowerCase() !== document.checksumSha256.toLowerCase()
         ) {
           if (options.reconcileChecksumMismatch) {
-            const changed = await reconcileChangedDocumentVersion({
+            const versionId = await reconcileChangedDocumentVersion({
               snapshot,
               document,
               checksumSha256,
@@ -587,7 +655,21 @@ export async function processPursuitSnapshot(
               retrievedAt: retrieval.retrievedAt,
               mimeType: retrieval.mimeType ?? document.mimeType,
             });
-            if (changed) sourceChanged += 1;
+            if (versionId) {
+              const artifactId = await ensureSnapshotArtifact({
+                filePath: destinationPath,
+                checksumSha256,
+                byteCount: file.size,
+                mimeType: retrieval.mimeType ?? document.mimeType,
+                artifactStore: options.artifactStore,
+              });
+              sourceChanges.push({
+                opportunityDocumentVersionId: versionId,
+                artifactId,
+                checksumSha256,
+                retrievedAt: retrieval.retrievedAt,
+              });
+            }
           }
           throw new SnapshotRetrievalError(
             "checksum_mismatch",
@@ -595,45 +677,19 @@ export async function processPursuitSnapshot(
           );
         }
 
-        let [artifact] = await db
-          .select({ id: sourceBinaryArtifacts.id })
-          .from(sourceBinaryArtifacts)
-          .where(eq(sourceBinaryArtifacts.checksumSha256, checksumSha256))
-          .limit(1);
-
-        if (!artifact) {
-          const storageKey = storageKeyForChecksum(checksumSha256);
-          const stored = await options.artifactStore.putFile({
-            filePath: destinationPath,
-            storageKey,
-            mimeType: retrieval.mimeType ?? document.mimeType,
-            checksumSha256,
-            byteCount: file.size,
-          });
-          await db
-            .insert(sourceBinaryArtifacts)
-            .values({
-              checksumSha256,
-              storageProvider: options.artifactStore.provider,
-              storageKey: stored.storageKey,
-              byteCount: file.size,
-              mimeType: retrieval.mimeType ?? document.mimeType,
-              etag: stored.etag ?? null,
-            })
-            .onConflictDoNothing();
-          [artifact] = await db
-            .select({ id: sourceBinaryArtifacts.id })
-            .from(sourceBinaryArtifacts)
-            .where(eq(sourceBinaryArtifacts.checksumSha256, checksumSha256))
-            .limit(1);
-        }
-        if (!artifact) throw new Error("Stored pursuit artifact could not be resolved");
+        const artifactId = await ensureSnapshotArtifact({
+          filePath: destinationPath,
+          checksumSha256,
+          byteCount: file.size,
+          mimeType: retrieval.mimeType ?? document.mimeType,
+          artifactStore: options.artifactStore,
+        });
 
         snapshotBytes += file.size;
         await db
           .update(pursuitSnapshotDocuments)
           .set({
-            sourceBinaryArtifactId: artifact.id,
+            sourceBinaryArtifactId: artifactId,
             checksumSha256,
             status: "stored",
             failureCode: null,
@@ -696,11 +752,16 @@ export async function processPursuitSnapshot(
       .where(eq(savedOpportunities.id, snapshot.savedOpportunityId));
   }
   if (snapshot.bidWorkspaceId) {
+    const currentDocumentSetFingerprint =
+      await getCurrentOpportunityDocumentSetFingerprint(snapshot.opportunityId);
     await updateWorkspaceSnapshotReference({
       bidWorkspaceId: snapshot.bidWorkspaceId,
       snapshotId: snapshot.id,
       documentSetFingerprint: snapshot.documentSetFingerprint,
       snapshotStatus: status,
+      clearStale:
+        status === "complete" &&
+        snapshot.documentSetFingerprint === currentDocumentSetFingerprint,
     });
   }
 
@@ -711,6 +772,7 @@ export async function processPursuitSnapshot(
     stored,
     blocked,
     failed,
-    sourceChanged,
+    sourceChanged: sourceChanges.length,
+    sourceChanges,
   };
 }

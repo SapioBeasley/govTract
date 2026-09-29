@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { generateFullBidDraft } from "@/lib/bids/draft-persistence";
+import { getBidWorkspace } from "@/lib/bids/workspace";
+import { materializeRequirementsForUnderstanding } from "@/lib/procurement/requirements/persistence";
+import { ensureStoredSnapshotExtractions } from "@/lib/procurement/pursuits/extraction-recovery";
+import { refreshBidSourceSnapshot } from "@/lib/procurement/pursuits/manual-refresh";
+import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
+import { generateSolicitationUnderstanding } from "@/lib/procurement/understanding/generation";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -27,6 +34,50 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   }
   try {
+    const source = await refreshBidSourceSnapshot(id);
+    if (source.state !== "complete") {
+      throw new Error("The current solicitation package could not be fully retained.");
+    }
+    const refreshedWorkspace = await getBidWorkspace(id);
+    const snapshotId = refreshedWorkspace?.sourceSnapshot.pursuitSnapshotId;
+    const snapshot = snapshotId ? await getPursuitSnapshot(snapshotId) : null;
+    if (!snapshot || snapshot.status !== "complete" ||
+        snapshot.documents.some((document) => document.status !== "stored")) {
+      throw new Error("The retained solicitation package is incomplete after source recovery.");
+    }
+
+    const extraction = await ensureStoredSnapshotExtractions(snapshot);
+    if (extraction.failed > 0) {
+      throw new Error("One or more retained source documents could not be extracted for bid generation.");
+    }
+    let workspace = await getBidWorkspace(id);
+    if (!workspace) throw new Error("Bid workspace was not found.");
+
+    if (
+      !workspace.sourceRequirements ||
+      workspace.sourceRequirements.isStale ||
+      workspace.sourceRequirements.completenessStatus !== "complete"
+    ) {
+      const understanding = await generateSolicitationUnderstanding({
+        opportunityId: workspace.opportunityId,
+        trigger: "manual",
+        explicitManualUserAction: true,
+      });
+      if (understanding.state !== "completed" && understanding.state !== "reused") {
+        const reason = "reason" in understanding ? understanding.reason : "understanding_generation_failed";
+        throw new Error(`Current solicitation understanding could not be refreshed (${reason}). No bid draft was generated.`);
+      }
+      await materializeRequirementsForUnderstanding(understanding.understandingId);
+      workspace = await getBidWorkspace(id);
+      if (
+        !workspace?.sourceRequirements ||
+        workspace.sourceRequirements.isStale ||
+        workspace.sourceRequirements.completenessStatus !== "complete"
+      ) {
+        throw new Error("Current solicitation understanding remains incomplete after the explicit refresh. No bid draft was generated.");
+      }
+    }
+
     const generation = await generateFullBidDraft({
       workspaceId: id,
       requestId: (parsed as { requestId: string }).requestId,

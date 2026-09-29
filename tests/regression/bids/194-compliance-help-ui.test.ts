@@ -14,10 +14,15 @@ test("simplified bid page does not expose requirement-by-requirement completion 
   assert.doesNotMatch(control, /Mark addressed in my bid|I checked the original buyer instruction|responseReviewed/);
 });
 
-test("generation readiness is still derived from the current retained source package", () => {
+test("generation stays grounded in the authoritative inventory while explicit Generate performs recovery", () => {
   const page = read("app/bids/[id]/page.tsx");
-  assert.match(page, /snapshot\.snapshotStatus === "complete"/);
-  assert.match(page, /!snapshot\.stale/);
-  assert.match(page, /workspace\.sourceRequirements\?\.completenessStatus === "complete"/);
+  const route = read("app/api/bids/[id]/draft/route.ts");
+
+  assert.match(page, /snapshot\.totalDocumentCount > 0/);
+  assert.match(page, /snapshot\.documents\.length === snapshot\.totalDocumentCount/);
   assert.match(page, /sourceBlockers=\{sourceBlockers\}/);
+  assert.match(route, /refreshBidSourceSnapshot/);
+  assert.match(route, /ensureStoredSnapshotExtractions/);
+  assert.match(route, /generateSolicitationUnderstanding/);
+  assert.match(route, /explicitManualUserAction:\s*true/);
 });
