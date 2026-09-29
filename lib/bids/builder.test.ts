@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { groupBidBuilderRequirements } from "./builder";
+import { groupBidBuilderRequirements, isBidWritingRequirementType } from "./builder";
 import type { BidWorkspaceRequirement, BidWorkspaceSection } from "./workspace";
 
 const requirement = (understanding: string, index: number, type = "deliverable"): BidWorkspaceRequirement => ({
@@ -139,4 +139,20 @@ test("an explicit solicitation response heading from a baseline document stays a
   assert.deepEqual(result.bySection.cover?.map((row) => row.id), [ask.id]);
   assert.deepEqual(result.baseline, []);
   assert.deepEqual(result.baselineOnlySectionIds, []);
+});
+
+
+test("generic full-bid writing excludes buyer-only administrative and review checks", () => {
+  for (const type of [
+    "submission_instruction", "deadline", "disqualifier", "mandatory_event",
+    "schedule", "evaluation", "location",
+  ]) {
+    assert.equal(isBidWritingRequirementType(type), false, type);
+  }
+  for (const type of [
+    "scope", "deliverable", "work", "quantity", "qualification", "license",
+    "certification", "insurance", "bonding", "insurance_bonding", "pricing", "form",
+  ]) {
+    assert.equal(isBidWritingRequirementType(type), true, type);
+  }
 });
