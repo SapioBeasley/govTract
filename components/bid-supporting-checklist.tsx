@@ -21,6 +21,7 @@ type ChecklistItem = {
 type ChecklistView = {
   fingerprint: string;
   stateCurrent: boolean;
+  sourceCurrent: boolean;
   readyForPackage: boolean;
   blockingItemIds: string[];
   readyItemIds: string[];
@@ -80,6 +81,12 @@ export function BidSupportingChecklist({
         </span>
       </div>
 
+      {!checklist.sourceCurrent ? (
+        <div role="status" className="rounded-xl border p-4 text-sm leading-6">
+          The solicitation source changed. Refresh the current source package before updating supporting material status.
+        </div>
+      ) : null}
+
       {!checklist.items.length ? (
         <div className="rounded-xl border border-dashed p-4 text-sm leading-6 text-[var(--muted-foreground)]">
           No separate supporting attachments were identified in the current solicitation requirements.
@@ -87,7 +94,7 @@ export function BidSupportingChecklist({
       ) : (
         <div className="grid gap-3">
           {checklist.items.map((item) => {
-            const disabled = pendingItem === item.id;
+            const disabled = !checklist.sourceCurrent || pendingItem === item.id;
             return (
               <article key={item.id} className="min-w-0 rounded-xl border p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
