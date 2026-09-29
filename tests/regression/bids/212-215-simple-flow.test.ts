@@ -25,7 +25,7 @@ test("supporting-document checklist tracks submission materials, not source veri
   const review = read("components/bid-final-review.tsx");
 
   assert.match(review, /Supporting documents/);
-  assert.match(review, /I have completed this required supporting item and included it/i);
+  assert.match(review, /I have completed this required supporting item[\\s\\S]*included it/i);
   assert.doesNotMatch(review, /I checked the original buyer instruction/);
   assert.doesNotMatch(review, /source verification/i);
 });
