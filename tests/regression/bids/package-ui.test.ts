@@ -26,3 +26,14 @@ test("package approval and download routes contain no AI invocation path", () =>
   assert.doesNotMatch(route, /Gemini|provider|generate/i);
   assert.doesNotMatch(download, /Gemini|provider|generate/i);
 });
+
+
+test("saved response and supporting-material changes refresh exact-version approval state", () => {
+  const draft = read("components/bid-full-draft-control.tsx");
+  const checklist = read("components/bid-supporting-checklist.tsx");
+
+  assert.match(draft, /useRouter/);
+  assert.match(draft, /router\.refresh\(\)/);
+  assert.match(checklist, /useRouter/);
+  assert.match(checklist, /router\.refresh\(\)/);
+});
