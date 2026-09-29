@@ -68,13 +68,45 @@ export async function refreshBidSourceSnapshot(workspaceId: string) {
   }
   const tempRoot = await mkdtemp(join(tmpdir(),"govtract-manual-snapshot-"));
   try {
-    const result = await processPursuitSnapshot(snapshot.id,{
-      retriever:createBeaconPursuitDocumentRetriever(),
-      artifactStore:createVercelBlobSnapshotArtifactStore(),
+    const retriever = createBeaconPursuitDocumentRetriever();
+    const artifactStore = createVercelBlobSnapshotArtifactStore();
+    const first = await processPursuitSnapshot(snapshot.id,{
+      retriever,
+      artifactStore,
       tempRoot,maxDocumentBytes:MAX_DOCUMENT_BYTES,maxSnapshotBytes:MAX_SNAPSHOT_BYTES,
+      reconcileChecksumMismatch:true,
     });
-    return {state:result.status,stored:result.stored,total:result.total,
-      blocked:result.blocked,failed:result.failed};
+
+    if (first.sourceChanged > 0) {
+      const reconciled = await ensureBidWorkspaceSnapshotPrepared(workspaceId);
+      if (reconciled.id !== snapshot.id) {
+        const reconciledVersions = reconciled.documents.length ? await db.select({
+          id:opportunityDocumentVersions.id,
+          size:opportunityDocumentVersions.fileSizeBytes,
+        }).from(opportunityDocumentVersions).where(inArray(
+          opportunityDocumentVersions.id,
+          reconciled.documents.map((document)=>document.opportunityDocumentVersionId),
+        )) : [];
+        const reconciledSizes = new Map(reconciledVersions.map((version) => [version.id,version.size]));
+        const reconciledDecision = assessManualSnapshotRefresh({
+          snapshot:reconciled,expectedFileSizes:reconciled.documents.map((document) =>
+            reconciledSizes.get(document.opportunityDocumentVersionId) ?? null),
+        });
+        if (reconciledDecision.state === "blocked") throw new Error(reconciledDecision.reason);
+        if (reconciledDecision.state !== "already_complete") {
+          const retry = await processPursuitSnapshot(reconciled.id,{
+            retriever,
+            artifactStore,
+            tempRoot,maxDocumentBytes:MAX_DOCUMENT_BYTES,maxSnapshotBytes:MAX_SNAPSHOT_BYTES,
+          });
+          return {state:retry.status,stored:retry.stored,total:retry.total,
+            blocked:retry.blocked,failed:retry.failed};
+        }
+      }
+    }
+
+    return {state:first.status,stored:first.stored,total:first.total,
+      blocked:first.blocked,failed:first.failed};
   } finally {
     await rm(tempRoot,{recursive:true,force:true}).catch(()=>undefined);
   }
