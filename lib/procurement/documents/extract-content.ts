@@ -1,6 +1,5 @@
 import { parse as parseCsv } from "csv-parse/sync";
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 import * as XLSX from "@e965/xlsx";
 
 import type { ExtractionSegmentInput, ExtractionSegmentType } from "./extractions";
@@ -182,6 +181,7 @@ function stringifyCell(value: unknown) {
 }
 
 async function extractPdf(buffer: Buffer): Promise<DocumentContentExtraction> {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText();
