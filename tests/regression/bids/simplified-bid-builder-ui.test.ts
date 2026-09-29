@@ -5,50 +5,30 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("bid builder leads with a write-then-review flow, not source metadata and a giant checklist", () => {
+test("bid workspace is centered on one generated editable bid", () => {
   const page = read("app/bids/[id]/page.tsx");
-  const outline = read("components/bid-outline-control.tsx");
-  assert.match(outline, /Step 1: Write your response/);
-  assert.match(outline, /Step 2: Check what the buyer asked for/);
-  assert.match(outline, /<details[^>]*>\s*<summary[^>]*>Edit heading and source instructions/);
-  assert.match(page, /id="source-documents-and-technical-details"[\s\S]*?<summary[^>]*>\s*Source documents and technical details/);
-  assert.match(page, /<GuidedBidProgress workspace=\{workspace\}/);
-  assert.match(page, /id="prepare-bid"/);
+  const editor = read("components/full-bid-editor.tsx");
+  assert.match(page, /FullBidEditor/);
+  assert.match(editor, /Generate bid/);
+  assert.match(editor, /Editable full bid/);
+  assert.match(editor, /Editing and saving never calls AI/);
+  assert.doesNotMatch(page, /GuidedBidProgress|BidOutlineControl|compliance-requirements|response-sections/);
 });
 
-test("each buyer ask has one primary action and preserves source details in an optional drawer", () => {
-  const row = read("components/compliance-matrix-control.tsx");
-  assert.match(row, /nextRequirementAction\(/);
-  assert.match(row, /What the buyer wants/);
-  assert.match(row, /What you need to do next/);
-  assert.match(row, /Mark addressed in my bid/);
-  assert.match(row, /Review saved response/);
-  assert.match(row, /<summary[^>]*>Original source and other options/);
-  assert.match(row, /BidSourceReviewAction/);
-  assert.match(row, /responseReviewed: true/);
-  assert.match(row, /responseSelection:/);
-  assert.match(row, /<ComplianceRow/);
+test("supporting checkboxes are bidder-side package items, not buyer-document verification", () => {
+  const editor = read("components/full-bid-editor.tsx");
+  assert.match(editor, /Supporting documents/);
+  assert.match(editor, /bidder-side\s+supporting items/);
+  assert.match(editor, /Required/);
+  assert.match(editor, /Conditional \/ review applicability/);
+  assert.doesNotMatch(editor, /I checked the original buyer instruction|Review a different passage/);
 });
 
-test("source verification uses an explicitly confirmed current original with a preselected pinned excerpt", () => {
-  const review = read("components/bid-source-review-action.tsx");
-  const service = read("lib/bids/source-review-persistence.ts");
-  assert.match(review, /pinnedReviewChoice/);
-  assert.match(review, /Confirm this original/);
-  assert.match(review, /I checked the original buyer instruction/);
-  assert.match(review, /Review a different passage/);
-  assert.match(service, /documentExtractions\.checksumSha256/);
-  assert.match(service, /bidRequirementSourceReviews/);
-});
-
-
-test("shared agency boilerplate is shown once outside response drafting and keeps original-form safeguards", () => {
-  const outline = read("components/bid-outline-control.tsx");
-  const finalReview = read("lib/bids/final-review.ts");
-  assert.match(outline, /Standard agency terms/);
-  assert.match(outline, /I reviewed these standard agency terms/);
-  assert.match(outline, /does not turn this boilerplate\s+into repeated Technical or Pricing response text/);
-  assert.match(outline, /Complete this original form in Final review/);
-  assert.match(finalReview, /agency_baseline_terms_unreviewed/);
-  assert.match(finalReview, /original_form_unconfirmed/);
+test("source safeguards stay internal and source failures expose one recovery path", () => {
+  const page = read("app/bids/[id]/page.tsx");
+  const fullBid = read("lib/bids/full-bid.ts");
+  assert.match(page, /Source package status/);
+  assert.match(page, /BidSourceRefreshAction/);
+  assert.match(page, /Source retention, provenance, amendment detection, and version fingerprints remain internal safeguards/);
+  assert.match(fullBid, /complete solicitation package is not readable/i);
 });
