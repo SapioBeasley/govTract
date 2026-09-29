@@ -12,6 +12,7 @@ import {
   sourceBinaryArtifacts,
 } from "@/lib/db/pursuit-snapshots-schema";
 import { savedOpportunities } from "@/lib/db/saved-opportunities-schema";
+import { solicitationUnderstandings } from "@/lib/db/solicitation-understandings-schema";
 import {
   opportunities,
   opportunityDocuments,
@@ -429,6 +430,81 @@ function storageKeyForChecksum(checksumSha256: string) {
   return `pursuit-source/${checksumSha256.slice(0, 2)}/${checksumSha256}`;
 }
 
+async function reconcileChangedDocumentVersion(input: {
+  snapshot: PursuitSnapshot;
+  document: PursuitSnapshotDocument;
+  checksumSha256: string;
+  fileSizeBytes: number;
+  retrievedAt: Date;
+  mimeType: string | null;
+}) {
+  const db = getDb();
+  const [latest] = await db
+    .select({
+      versionNumber: opportunityDocumentVersions.versionNumber,
+      fingerprint: opportunityDocumentVersions.fingerprint,
+      sourceVersionId: opportunityDocumentVersions.sourceVersionId,
+      sourceModifiedAt: opportunityDocumentVersions.sourceModifiedAt,
+      isAmendment: opportunityDocumentVersions.isAmendment,
+      amendmentLabel: opportunityDocumentVersions.amendmentLabel,
+      checksumSha256: opportunityDocumentVersions.checksumSha256,
+      name: opportunityDocumentVersions.name,
+      url: opportunityDocumentVersions.url,
+      mimeType: opportunityDocumentVersions.mimeType,
+      sourceMetadata: opportunityDocumentVersions.sourceMetadata,
+    })
+    .from(opportunityDocumentVersions)
+    .where(eq(opportunityDocumentVersions.opportunityDocumentId, input.document.opportunityDocumentId))
+    .orderBy(desc(opportunityDocumentVersions.versionNumber))
+    .limit(1);
+  if (!latest) throw new Error("Current source document version could not be resolved");
+  if (latest.checksumSha256?.toLowerCase() === input.checksumSha256.toLowerCase()) return false;
+
+  const inserted = await db
+    .insert(opportunityDocumentVersions)
+    .values({
+      opportunityDocumentId: input.document.opportunityDocumentId,
+      versionNumber: latest.versionNumber + 1,
+      fingerprint: latest.fingerprint,
+      sourceVersionId: latest.sourceVersionId,
+      sourceModifiedAt: latest.sourceModifiedAt,
+      isAmendment: latest.isAmendment,
+      amendmentLabel: latest.amendmentLabel,
+      checksumSha256: input.checksumSha256,
+      retrievedAt: input.retrievedAt,
+      storageMode: "source",
+      storageUri: null,
+      contentPersisted: false,
+      name: latest.name,
+      url: latest.url,
+      mimeType: input.mimeType ?? latest.mimeType,
+      fileSizeBytes: input.fileSizeBytes,
+      sourceMetadata: latest.sourceMetadata,
+    })
+    .onConflictDoNothing()
+    .returning({ id: opportunityDocumentVersions.id });
+
+  if (inserted.length > 0) {
+    const now = new Date();
+    await db
+      .update(solicitationUnderstandings)
+      .set({
+        isStale: true,
+        staleAt: now,
+        staleReason: "source_documents_changed",
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(solicitationUnderstandings.opportunityId, input.snapshot.opportunityId),
+          eq(solicitationUnderstandings.status, "completed"),
+          eq(solicitationUnderstandings.isStale, false),
+        ),
+      );
+  }
+  return inserted.length > 0;
+}
+
 function retrievalFailure(error: unknown): { status: "blocked" | "missing" | "failed"; code: string } {
   if (error instanceof SnapshotRetrievalError) {
     if (
@@ -452,6 +528,7 @@ export async function processPursuitSnapshot(
     tempRoot: string;
     maxDocumentBytes: number;
     maxSnapshotBytes: number;
+    reconcileChecksumMismatch?: boolean;
   },
 ) {
   const db = getDb();
@@ -464,6 +541,7 @@ export async function processPursuitSnapshot(
   const workDir = join(options.tempRoot, `snapshot-${snapshot.id}`);
   await mkdir(workDir, { recursive: true });
   let snapshotBytes = 0;
+  let sourceChanged = 0;
 
   try {
     for (const document of snapshot.documents) {
@@ -500,6 +578,17 @@ export async function processPursuitSnapshot(
           document.checksumSha256 &&
           checksumSha256.toLowerCase() !== document.checksumSha256.toLowerCase()
         ) {
+          if (options.reconcileChecksumMismatch) {
+            const changed = await reconcileChangedDocumentVersion({
+              snapshot,
+              document,
+              checksumSha256,
+              fileSizeBytes: file.size,
+              retrievedAt: retrieval.retrievedAt,
+              mimeType: retrieval.mimeType ?? document.mimeType,
+            });
+            if (changed) sourceChanged += 1;
+          }
           throw new SnapshotRetrievalError(
             "checksum_mismatch",
             "Retrieved source bytes do not match the immutable document version checksum",
@@ -622,5 +711,6 @@ export async function processPursuitSnapshot(
     stored,
     blocked,
     failed,
+    sourceChanged,
   };
 }
