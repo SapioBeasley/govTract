@@ -86,7 +86,14 @@ export async function updateBidOutlineSection(
   const nextContent = input.content === undefined ? section.content ?? "" : input.content ?? "";
   const metadata = { ...section.metadata };
   const contentChanged = input.content !== undefined && input.content !== section.content;
-  if (contentChanged) delete metadata.verifiedVendorFactsFingerprint;
+  if (contentChanged) {
+    delete metadata.verifiedVendorFactsFingerprint;
+    if (metadata.fullBid === true) {
+      // Editing the generated full bid is the human review step in the simplified flow.
+      // Final readiness still rejects unresolved Needs your input placeholders.
+      delete metadata.aiDraftReview;
+    }
+  }
   if (input.reviewedCurrentSource === true) {
     if (metadata.sourceReviewRequired !== true) throw new Error("This section has no pending source review.");
     if (current.sourceSnapshot.stale || current.sourceSnapshot.snapshotStatus !== "complete" ||
