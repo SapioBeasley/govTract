@@ -338,6 +338,74 @@ test("a changed amendment creates a new immutable snapshot generation and preser
   }
 });
 
+test("explicit checksum reconciliation creates a new immutable document version and allows a fresh snapshot", { skip: !canRun }, async () => {
+  const fixture = await seedOpportunity();
+  const tempRoot = await mkdtemp(join(tmpdir(), "govtract-snapshot-checksum-change-"));
+  try {
+    await saveOpportunity({ opportunityId: fixture.opportunityId });
+    await updateSavedOpportunity(fixture.opportunityId, { status: "pursuing" });
+    const firstPrepared = await ensurePursuitSnapshotPrepared(fixture.opportunityId);
+    const { store, objects } = memoryArtifactStore();
+    const changedSolicitation = "solicitation-v2";
+
+    const first = await processPursuitSnapshot(firstPrepared.id, {
+      retriever: fixtureRetriever(
+        new Map([
+          [fixture.documents[0]!.key, changedSolicitation],
+          [fixture.documents[1]!.key, fixture.documents[1]!.bytes],
+        ]),
+      ),
+      artifactStore: store,
+      tempRoot,
+      maxDocumentBytes: 1024 * 1024,
+      maxSnapshotBytes: 4 * 1024 * 1024,
+      reconcileChecksumMismatch: true,
+    });
+
+    assert.equal(first.sourceChanged, 1);
+    assert.equal(first.failed, 1);
+
+    await closeDb();
+    const verification = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+    try {
+      const versions = await verification<{ versionNumber: number; checksumSha256: string | null }[]>`
+        SELECT odv.version_number AS "versionNumber", odv.checksum_sha256 AS "checksumSha256"
+        FROM opportunity_document_versions odv
+        JOIN opportunity_documents od ON od.id = odv.opportunity_document_id
+        WHERE od.opportunity_id = ${fixture.opportunityId}
+          AND od.source_document_key = ${fixture.documents[0]!.key}
+        ORDER BY odv.version_number ASC
+      `;
+      assert.equal(versions.length, 2);
+      assert.equal(versions[0]?.checksumSha256, sha256(fixture.documents[0]!.bytes));
+      assert.equal(versions[1]?.checksumSha256, sha256(changedSolicitation));
+    } finally {
+      await verification.end({ timeout: 5 });
+    }
+
+    const secondPrepared = await ensurePursuitSnapshotPrepared(fixture.opportunityId);
+    assert.notEqual(secondPrepared.id, firstPrepared.id);
+    const second = await processPursuitSnapshot(secondPrepared.id, {
+      retriever: fixtureRetriever(
+        new Map([
+          [fixture.documents[0]!.key, changedSolicitation],
+          [fixture.documents[1]!.key, fixture.documents[1]!.bytes],
+        ]),
+      ),
+      artifactStore: store,
+      tempRoot,
+      maxDocumentBytes: 1024 * 1024,
+      maxSnapshotBytes: 4 * 1024 * 1024,
+    });
+
+    assert.equal(second.status, "complete");
+    assert.equal(objects.size, 2);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+    await cleanup(fixture.sourceRecordId);
+  }
+});
+
 test("auth-blocked files are explicit and mark the pursuit snapshot blocked instead of silently omitting files", { skip: !canRun }, async () => {
   const fixture = await seedOpportunity();
   const tempRoot = await mkdtemp(join(tmpdir(), "govtract-snapshot-blocked-"));
