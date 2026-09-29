@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 
+import { extractNeedsInputPrompts } from "@/lib/bids/bidder-inputs";
 import type { BidWorkspaceSection } from "@/lib/bids/workspace";
 
 export function BidPackageControl({
@@ -25,10 +26,15 @@ export function BidPackageControl({
   );
   const [content, setContent] = useState(fullBid?.content ?? "");
   const [savedContent, setSavedContent] = useState(fullBid?.content ?? "");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const inFlight = useRef(false);
   const changed = content !== savedContent;
+  const needsInput = useMemo(() => extractNeedsInputPrompts(content), [content]);
+  const completedAnswers = needsInput
+    .map((question) => ({ question, answer: answers[question]?.trim() ?? "" }))
+    .filter((item) => item.answer.length > 0);
 
   async function generate() {
     if (!sourceReady || pending || inFlight.current) return;
@@ -51,18 +57,65 @@ export function BidPackageControl({
       });
       const payload = await response.json() as {
         error?: { message?: string };
-        generation?: { applied?: boolean };
+        generation?: { applied?: boolean; content?: string };
       };
       if (!response.ok) {
         setMessage(payload.error?.message ?? "Bid generation failed.");
       } else if (!payload.generation?.applied) {
         setMessage("The solicitation changed while the bid was generating. No saved response was overwritten.");
       } else {
-        setMessage("Bid generated. Review and edit the saved response, then supply the supporting documents below.");
+        if (typeof payload.generation.content === "string") {
+          setContent(payload.generation.content);
+          setSavedContent(payload.generation.content);
+          setAnswers({});
+        }
+        setMessage("Bid generated. Review the response and answer any Needs your input items below.");
         router.refresh();
       }
     } catch {
       setMessage("Bid generation failed. No saved response was overwritten.");
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  }
+
+  async function updateWithAnswers() {
+    if (!fullBid || changed || pending || inFlight.current || !completedAnswers.length) return;
+    if (!window.confirm(
+      "Use AI to turn the answers you entered into bid wording? This is an explicit manual AI action that may incur model cost. Only answered Needs your input items will be updated.",
+    )) return;
+    inFlight.current = true;
+    setPending(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/bids/${workspaceId}/draft/answers`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          answers: completedAnswers,
+        }),
+      });
+      const payload = await response.json() as {
+        error?: { message?: string };
+        generation?: { applied?: boolean; content?: string; remainingQuestions?: string[] };
+      };
+      if (!response.ok) {
+        setMessage(payload.error?.message ?? "Bid answers could not be applied.");
+      } else if (!payload.generation?.applied) {
+        setMessage("The bid or solicitation changed while AI was drafting. No saved response was overwritten.");
+      } else if (typeof payload.generation.content === "string") {
+        setContent(payload.generation.content);
+        setSavedContent(payload.generation.content);
+        setAnswers({});
+        setMessage(payload.generation.remainingQuestions?.length
+          ? "Your answers were added. Continue with the remaining Needs your input items."
+          : "Your answers were added. Review the updated bid wording before final approval.");
+        router.refresh();
+      }
+    } catch {
+      setMessage("Bid answers could not be applied. No saved response was overwritten.");
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -118,6 +171,48 @@ export function BidPackageControl({
           <p className="mt-3 text-xs text-[var(--muted-foreground)]">Save your current edits before regenerating.</p>
         ) : null}
       </div>
+
+      {fullBid && needsInput.length ? (
+        <div className="rounded-xl border p-4">
+          <h3 className="font-semibold">Needs your input</h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">
+            Answer only what you know and can commit to. govTract will use your words as bidder-provided facts,
+            not as solicitation evidence, and AI will only draft wording after you press the update button.
+          </p>
+          <div className="mt-4 grid gap-3">
+            {needsInput.map((question, index) => (
+              <label key={question} className="grid gap-1.5 rounded-lg border bg-[var(--muted)]/25 p-3">
+                <span className="text-xs font-semibold text-[var(--muted-foreground)]">Input {index + 1}</span>
+                <span className="text-sm font-medium">{question}</span>
+                <textarea
+                  value={answers[question] ?? ""}
+                  onChange={(event) => setAnswers((current) => ({
+                    ...current,
+                    [question]: event.target.value,
+                  }))}
+                  rows={3}
+                  placeholder="Enter the factual answer or commitment you want the bid to use."
+                  className="mt-1 w-full rounded-lg border bg-white p-3 text-sm leading-6"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={updateWithAnswers}
+              disabled={pending || changed || !completedAnswers.length}
+              className="rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
+              {pending ? "Working…" : "Update bid with my answers"}
+            </button>
+            {changed ? (
+              <span className="text-xs text-[var(--muted-foreground)]">Save the bid before applying answers.</span>
+            ) : (
+              <span className="text-xs text-[var(--muted-foreground)]">
+                {completedAnswers.length} of {needsInput.length} answered
+              </span>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {fullBid ? (
         <div className="rounded-xl border p-4">
