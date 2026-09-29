@@ -93,6 +93,13 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   const snapshot = workspace.sourceSnapshot;
   const source = workspace.sourceRequirements;
   const confirmed = new Set(input.confirmedOriginalForms ?? []);
+  const fullBidSection = workspace.sections.find((section) => section.metadata.fullBid === true) ?? null;
+  const fullBidKeys = new Set(
+    fullBidSection && Array.isArray(fullBidSection.requirementLinks.sourceRequirementKeys)
+      ? fullBidSection.requirementLinks.sourceRequirementKeys.filter((value): value is string => typeof value === "string")
+      : [],
+  );
+  const fullBidReady = Boolean(fullBidSection?.content?.trim() && !hasUnresolvedPlaceholder(fullBidSection.content));
   const issues: FinalReviewIssue[] = [];
   const issue = (code: string, message: string, extra: Omit<FinalReviewIssue, "code" | "message"> = {}) => {
     issues.push({ code, message, ...extra });
@@ -146,14 +153,6 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   if (!workspace.requirements.length) {
     issue("compliance_matrix_missing", "Generate and review the bid compliance matrix.");
   }
-  const agencyBaselineRequirements = source?.requirements.filter(isAgencyBaselineRequirement) ?? [];
-  if (agencyBaselineRequirements.length && !workspace.agencyBaselineReviewCurrent) {
-    issue(
-      "agency_baseline_terms_unreviewed",
-      "Review the current standard agency terms once before final bid approval.",
-    );
-  }
-
   const sourceChecks: FinalReviewSourceCheck[] = [];
   const submissionInstructions: string[] = [];
   for (const requirement of source?.requirements ?? []) {
@@ -189,10 +188,11 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         understandingId: source!.understandingId,
       },
     );
-    if (!agencyBaseline && mandatory &&
+    const coveredByFullBid = fullBidReady && fullBidKeys.has(requirement.requirementKey);
+    if (!agencyBaseline && mandatory && !coveredByFullBid &&
         (!response || response.effectiveStatus !== "complete" || !responseCurrent)) {
       issue("mandatory_requirement_incomplete",
-        `Mandatory requirement needs current saved bid-response evidence or a confirmed original form: ${requirement.text}`,
+        `Mandatory requirement is not yet covered by the current saved full bid or a confirmed original form: ${requirement.text}`,
         { requirementId: requirement.id });
     }
     if ((mandatory || submissionTypes.has(requirement.type)) &&
@@ -206,7 +206,9 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     if (requirement.type === "submission_instruction" && !agencyBaseline) {
       submissionInstructions.push(requirement.text);
     }
-    if (!submissionTypes.has(requirement.type)) continue;
+    const supportingItem = ["form", "certification", "bonding", "insurance", "insurance_bonding", "license"].includes(requirement.type) ||
+      /\b(?:attach(?:ment)?|certificate|w-?9|product literature|specification(?:s)?|license|bond|insurance|reference(?:s)?|pricing (?:sheet|worksheet|form))\b/i.test(requirement.text);
+    if (!supportingItem && requirement.type !== "submission_instruction") continue;
 
     const originalRequired = mandatory &&
       originalFormRequired(requirement.type, requirement.text, requirement.details);
@@ -255,10 +257,11 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     issue("submission_method_unverified", "Submission method and file requirements must be reviewed in authoritative instructions.");
   }
 
-  if (!workspace.sections.length) {
-    issue("response_sections_missing", "Generate and review the required response sections.");
+  if (!fullBidSection && !workspace.sections.length) {
+    issue("response_sections_missing", "Generate the full bid response.");
   }
   for (const section of workspace.sections) {
+    if (fullBidSection && section.id !== fullBidSection.id) continue;
     if (section.metadata.aiDraftReview &&
         section.metadata.verifiedVendorFactsFingerprint !== reviewDraftFingerprint(
           section.content ?? "", snapshot.documentSetFingerprint,

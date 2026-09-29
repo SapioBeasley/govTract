@@ -9,6 +9,7 @@ import {
   type BidDraftModelProvider,
 } from "@/lib/bids/draft-provider";
 import { getDefaultCompanyProfile } from "@/lib/company/profile";
+import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 import { bidSections } from "@/lib/db/canonical-schema";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 import { getDb } from "@/lib/db/client";
@@ -89,6 +90,71 @@ function estimatedCost(inputTokens: number, outputTokens: number, provider: BidD
 
 function wordCount(content: string) {
   return content.trim().split(/\s+/).length;
+}
+
+export async function ensureFullBidSection(workspaceId: string) {
+  if (!UUID.test(workspaceId)) throw new Error("Invalid bid workspace id.");
+  const workspace = await getBidWorkspace(workspaceId);
+  if (!workspace) throw new Error("Bid workspace was not found.");
+  if (!workspace.sourceRequirements || workspace.sourceRequirements.isStale ||
+      workspace.sourceRequirements.completenessStatus !== "complete") {
+    throw new Error("Current, complete solicitation understanding is required before generating a bid.");
+  }
+  const snapshot = workspace.sourceSnapshot;
+  if (snapshot.snapshotStatus !== "complete" || snapshot.stale ||
+      snapshot.documentSetFingerprint !== snapshot.currentDocumentSetFingerprint ||
+      snapshot.documents.some((document) => document.status !== "stored")) {
+    throw new Error("The retained solicitation package is incomplete or changed. Refresh the source package before generating a bid.");
+  }
+  const keys = workspace.sourceRequirements.requirements
+    .filter((requirement) => !isAgencyBaselineRequirement(requirement))
+    .map((requirement) => requirement.requirementKey);
+  if (!keys.length) throw new Error("No opportunity-specific solicitation requirements are available for bid generation.");
+
+  const metadata = {
+    fullBid: true,
+    source: "full_bid",
+    understandingId: workspace.sourceRequirements.understandingId,
+    pursuitSnapshotId: snapshot.pursuitSnapshotId,
+    documentSetFingerprint: snapshot.documentSetFingerprint,
+    sourceReviewRequired: false,
+  };
+  const existing = workspace.sections.find((section) => section.metadata.fullBid === true);
+  const db = getDb();
+  if (existing) {
+    await db.update(bidSections).set({
+      title: "Full bid response",
+      instructions: "Prepare one coherent response that addresses the current solicitation requirements. Keep unknown vendor, product, pricing, certification, staffing, insurance, and signature facts visibly unresolved.",
+      requirementLinks: { sourceRequirementKeys: keys },
+      metadata: { ...existing.metadata, ...metadata },
+      updatedAt: new Date(),
+    }).where(and(eq(bidSections.id, existing.id), eq(bidSections.bidWorkspaceId, workspaceId)));
+    return existing.id;
+  }
+
+  const [created] = await db.insert(bidSections).values({
+    bidWorkspaceId: workspaceId,
+    title: "Full bid response",
+    instructions: "Prepare one coherent response that addresses the current solicitation requirements. Keep unknown vendor, product, pricing, certification, staffing, insurance, and signature facts visibly unresolved.",
+    content: null,
+    status: "draft",
+    requirementLinks: { sourceRequirementKeys: keys },
+    sortOrder: 0,
+    metadata,
+  }).returning({ id: bidSections.id });
+  if (!created) throw new Error("Full bid response section could not be created.");
+  return created.id;
+}
+
+export async function generateFullBidDraft(input: {
+  workspaceId: string;
+  requestId: string;
+  replace: boolean;
+  provider?: BidDraftModelProvider;
+  env?: Record<string, string | undefined>;
+}) {
+  const sectionId = await ensureFullBidSection(input.workspaceId);
+  return generateBidSectionDraft({ ...input, sectionId });
 }
 
 /**

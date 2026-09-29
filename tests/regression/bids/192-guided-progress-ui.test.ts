@@ -5,44 +5,22 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("guided actions land on existing original, requirement, section, form, and approval controls", () => {
+test("bid workspace uses one explicit full-bid generation action instead of guided workflow controls", () => {
   const page = read("app/bids/[id]/page.tsx");
-  const opportunity = read("app/opportunities/[id]/page.tsx");
-  assert.match(page, /GuidedBidProgress workspace/);
-  for (const id of ["source-snapshot", "source-requirements", "compliance-requirements", "response-sections", "final-review"]) {
-    assert.ok(page.includes('id="' + id + '"'), id);
-  }
-  assert.match(page, /source-document-/);
-  assert.match(read("components/compliance-matrix-control.tsx"), /compliance-requirement-/);
-  assert.match(read("components/bid-outline-control.tsx"), /response-section-/);
-  assert.match(read("components/bid-final-review.tsx"), /original-form-/);
-  assert.match(opportunity, /Continue preparing your bid/);
-  assert.match(opportunity, /deriveBidGuidance\(existingWorkspace\)\.nextAction\.href/);
+  const control = read("components/bid-package-control.tsx");
+
+  assert.match(page, /<BidPackageControl/);
+  assert.doesNotMatch(page, /<GuidedBidProgress|<BidSourceReconciliationAction|<BidOutlineControl/);
+  assert.match(control, /window\.confirm/);
+  assert.match(control, /may incur model cost/i);
+  assert.match(control, /fetch\(\`\/api\/bids\/\$\{workspaceId\}\/draft\`/);
+  assert.match(control, /Ordinary editing and saving never invoke AI/);
 });
 
-test("guide uses persisted evidence only and preserves manual model and human handoff guards", () => {
-  const model = read("lib/bids/guided-progress.ts");
-  const ui = read("components/guided-bid-progress.tsx");
-  const sourceAction = read("components/bid-source-reconciliation-action.tsx");
+test("final handoff still requires exact-package human approval and never claims submission", () => {
   const finalReview = read("components/bid-final-review.tsx");
-  assert.match(model, /workspace\.finalReview\.blockingIssues/);
-  assert.match(model, /workspace\.finalReviewApprovalCurrent/);
-  assert.doesNotMatch(model, /generateSolicitationUnderstanding|generateBidSectionDraft|fetch\(|useEffect|writeFile/);
-  assert.match(ui, /Current step/);
-  assert.match(ui, /Workflow status and diagnostics/);
-  assert.doesNotMatch(ui, /aria-label="Bid preparation steps"/);
-  assert.match(ui, /<details[^>]*>[\s\S]*Workflow status and diagnostics[\s\S]*guidance\.steps\.map/);
-  assert.doesNotMatch(ui, /Open affected control/);
-  assert.match(ui, /external procurement portal/i);
-  assert.match(sourceAction, /window\.confirm/);
   assert.match(finalReview, /!review\.readyForHumanReview/);
+  assert.match(finalReview, /Approve current package/);
   assert.match(finalReview, /govTract does not submit/);
-});
-
-test("first manual AI draft and replacements both require explicit cost and overwrite confirmation", () => {
-  const action = read("components/bid-draft-action.tsx");
-  assert.match(action, /window\.confirm/);
-  assert.doesNotMatch(action, /if \(replace && !window\.confirm/);
-  assert.match(action, /may incur a paid AI charge/);
-  assert.ok(action.indexOf("window.confirm") < action.indexOf("fetch(`/api/bids/"));
+  assert.match(finalReview, /Download approved package/);
 });

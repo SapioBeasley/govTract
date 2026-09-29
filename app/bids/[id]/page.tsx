@@ -13,11 +13,9 @@ import {
 } from "lucide-react";
 
 import { BidWorkspaceControl } from "@/components/bid-workspace-control";
-import { BidOutlineControl } from "@/components/bid-outline-control";
+import { BidPackageControl } from "@/components/bid-package-control";
 import { BidFinalReview } from "@/components/bid-final-review";
-import { GuidedBidProgress } from "@/components/guided-bid-progress";
 import { BidSourceRefreshAction } from "@/components/bid-source-refresh-action";
-import { BidSourceReconciliationAction } from "@/components/bid-source-reconciliation-action";
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
@@ -212,53 +210,16 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
             <span id="compliance-requirements" className="block scroll-mt-5" />
             <span id="response-sections" className="block scroll-mt-5" />
-            <BidOutlineControl
+            <BidPackageControl
               workspaceId={workspace.id}
               initialSections={workspace.sections}
-              groups={builderGroups}
-              agencyBaselineReviewCurrent={workspace.agencyBaselineReviewCurrent}
-              generations={generations}
-              finalReviewBlockers={workspace.finalReview.blockingIssues.length}
-              needsSourceRecovery={showSourceReconciliation}
-              historicalRequirementCount={builderGroups.historical.length}
               sourceBlockers={sourceBlockers}
-              sourceAvailable={Boolean(workspace.sourceRequirements?.requirements.length)}
               sourceReady={
                 snapshot.snapshotStatus === "complete" &&
                 !snapshot.stale &&
                 workspace.sourceRequirements?.completenessStatus === "complete" &&
                 !workspace.sourceRequirements.isStale
               }
-              context={{
-                workspaceId: workspace.id,
-                sourceReady: Boolean(snapshot.snapshotStatus === "complete" && !snapshot.stale && sourceEligible),
-                snapshotCurrent: Boolean(
-                  snapshot.pursuitSnapshotId &&
-                  snapshot.snapshotStatus === "complete" &&
-                  !snapshot.stale &&
-                  snapshot.documentSetFingerprint &&
-                  snapshot.documentSetFingerprint === snapshot.currentDocumentSetFingerprint &&
-                  snapshot.storedDocumentCount === snapshot.totalDocumentCount &&
-                  snapshot.documents.every((document) => document.status === "stored")
-                ),
-                understandingCurrent: Boolean(sourceEligible),
-                sourceReviewAllowed: Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
-                  snapshot.snapshotStatus === "complete" && !snapshot.stale),
-                documents: snapshot.documents,
-                currentSnapshotId: snapshot.pursuitSnapshotId,
-                currentUnderstandingId: workspace.sourceRequirements?.understandingId ?? null,
-                confirmedOriginalForms: workspace.confirmedOriginalForms,
-                sections: workspace.sections.map((section) => ({
-                  id: section.id,
-                  title: section.title,
-                  content: section.content,
-                  ready: savedSectionCanAddressRequirement(section, {
-                    snapshotId: snapshot.pursuitSnapshotId,
-                    fingerprint: snapshot.documentSetFingerprint,
-                    understandingId: workspace.sourceRequirements?.understandingId ?? null,
-                  }),
-                })),
-              }}
             />
             <details id="previous-source-requirements" className="mt-5 min-w-0 scroll-mt-5 rounded-xl border p-4">
               <summary className="cursor-pointer text-sm font-semibold">
@@ -301,7 +262,6 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               to inspect the detailed progress report. Your work in the bid builder stays saved.
             </p>
             <div className="mt-4 grid min-w-0 gap-5">
-          <GuidedBidProgress workspace={workspace} />
           <BidWorkspaceControl
             workspaceId={workspace.id}
             initialStatus={workspace.status}
@@ -364,23 +324,6 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             ) : null}
             {snapshot.documents.some((document) => document.status !== "stored") ? (
               <BidSourceRefreshAction workspaceId={workspace.id} unavailableCount={snapshot.documents.filter((document) => document.status !== "stored").length} />
-            ) : null}
-            {showSourceReconciliation ? (
-              <BidSourceReconciliationAction
-                key={snapshot.pursuitSnapshotId ?? "no-snapshot"}
-                workspaceId={workspace.id}
-                opportunityId={workspace.opportunityId}
-                documents={snapshot.documents.map((document) => ({
-                  id:document.id,
-                  versionId:document.opportunityDocumentVersionId,
-                  filename:document.filename,
-                  status:document.status,
-                  changed:!previousVersionIds.has(document.opportunityDocumentVersionId),
-                }))}
-                blockingReasons={reconciliationBlockers}
-                requiresUnderstanding={Boolean(workspace.sourceRequirements?.isStale || !sourceEligible)}
-                canReconcile={reconciliationBlockers.length === 0 && sourceEligible}
-              />
             ) : null}
           </Section>
 
