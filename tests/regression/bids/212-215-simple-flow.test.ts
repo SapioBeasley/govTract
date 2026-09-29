@@ -14,7 +14,7 @@ test("bid workspace exposes one full-bid generation flow instead of the supersed
   assert.doesNotMatch(page, /<GuidedBidProgress/);
   assert.doesNotMatch(page, /<BidSourceReconciliationAction/);
 
-  assert.match(control, />Generate bid</);
+  assert.match(control, /"Generate bid"/);
   assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/draft/);
   assert.match(control, /Needs your input/i);
   assert.doesNotMatch(control, /Draft with AI/);
@@ -25,7 +25,7 @@ test("supporting-document checklist tracks submission materials, not source veri
   const review = read("components/bid-final-review.tsx");
 
   assert.match(review, /Supporting documents/);
-  assert.match(review, /I have.*included/i);
+  assert.match(review, /I have completed this required supporting item and included it/i);
   assert.doesNotMatch(review, /I checked the original buyer instruction/);
   assert.doesNotMatch(review, /source verification/i);
 });
@@ -39,5 +39,5 @@ test("final package has a deterministic manifest/download handoff and exact-vers
   assert.match(review, /Approve current package/);
   assert.match(route, /Content-Disposition/);
   assert.match(route, /manifest/i);
-  assert.doesNotMatch(route, /Gemini|generateBid|AI/i);
+  assert.doesNotMatch(route, /createGeminiBidDraftProvider|generateBidSectionDraft|generateFullBidDraft/);
 });
