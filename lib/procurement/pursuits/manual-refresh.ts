@@ -1,9 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { pursuitSnapshotDocuments } from "@/lib/db/pursuit-snapshots-schema";
 import { opportunityDocumentVersions } from "@/lib/db/schema";
 import { createVercelBlobSnapshotArtifactStore } from "./artifact-store";
 import { createBeaconPursuitDocumentRetriever } from "./beacon-retriever";
@@ -80,6 +81,20 @@ export async function refreshBidSourceSnapshot(workspaceId: string) {
     if (first.sourceChanged > 0) {
       const reconciled = await ensureBidWorkspaceSnapshotPrepared(workspaceId);
       if (reconciled.id !== snapshot.id) {
+        for (const change of first.sourceChanges) {
+          await db.update(pursuitSnapshotDocuments).set({
+            sourceBinaryArtifactId: change.artifactId,
+            checksumSha256: change.checksumSha256,
+            status: "stored",
+            failureCode: null,
+            retrievedAt: change.retrievedAt,
+            updatedAt: new Date(),
+          }).where(and(
+            eq(pursuitSnapshotDocuments.pursuitSnapshotId,reconciled.id),
+            eq(pursuitSnapshotDocuments.opportunityDocumentVersionId,
+              change.opportunityDocumentVersionId),
+          ));
+        }
         const reconciledVersions = reconciled.documents.length ? await db.select({
           id:opportunityDocumentVersions.id,
           size:opportunityDocumentVersions.fileSizeBytes,
@@ -88,20 +103,19 @@ export async function refreshBidSourceSnapshot(workspaceId: string) {
           reconciled.documents.map((document)=>document.opportunityDocumentVersionId),
         )) : [];
         const reconciledSizes = new Map(reconciledVersions.map((version) => [version.id,version.size]));
+        const refreshedReconciled = await ensureBidWorkspaceSnapshotPrepared(workspaceId);
         const reconciledDecision = assessManualSnapshotRefresh({
-          snapshot:reconciled,expectedFileSizes:reconciled.documents.map((document) =>
+          snapshot:refreshedReconciled,expectedFileSizes:refreshedReconciled.documents.map((document) =>
             reconciledSizes.get(document.opportunityDocumentVersionId) ?? null),
         });
         if (reconciledDecision.state === "blocked") throw new Error(reconciledDecision.reason);
-        if (reconciledDecision.state !== "already_complete") {
-          const retry = await processPursuitSnapshot(reconciled.id,{
-            retriever,
-            artifactStore,
-            tempRoot,maxDocumentBytes:MAX_DOCUMENT_BYTES,maxSnapshotBytes:MAX_SNAPSHOT_BYTES,
-          });
-          return {state:retry.status,stored:retry.stored,total:retry.total,
-            blocked:retry.blocked,failed:retry.failed};
-        }
+        const retry = await processPursuitSnapshot(refreshedReconciled.id,{
+          retriever,
+          artifactStore,
+          tempRoot,maxDocumentBytes:MAX_DOCUMENT_BYTES,maxSnapshotBytes:MAX_SNAPSHOT_BYTES,
+        });
+        return {state:retry.status,stored:retry.stored,total:retry.total,
+          blocked:retry.blocked,failed:retry.failed};
       }
     }
 
