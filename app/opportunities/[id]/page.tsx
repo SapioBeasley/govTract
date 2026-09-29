@@ -18,7 +18,6 @@ import {
 
 import { OpportunityDocumentList } from "@/components/opportunity-document-list";
 import { StartBidButton } from "@/components/start-bid-button";
-import { deriveBidGuidance } from "@/lib/bids/guided-progress";
 import { UnderstandingActionButton } from "@/components/understanding-action-button";
 import { getBidWorkspaceForOpportunity } from "@/lib/bids/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/detail";
@@ -279,17 +278,17 @@ export default async function OpportunityDetailPage({ params }: OpportunityDetai
             className="mt-5 min-w-0 rounded-xl border bg-white p-4 shadow-sm">
             <p className="text-sm font-semibold">Continue preparing your bid</p>
             <p className="mt-1 break-words text-sm text-[var(--muted-foreground)]">
-              Next: {deriveBidGuidance(existingWorkspace).nextAction.label}.
-              Saved progress is based on current source evidence and your existing bid responses.
+              Open the bid workspace to generate, review, and package the current response.
+              Saved draft content and source-version safeguards are preserved there.
             </p>
-            <Link href={`/bids/${existingWorkspace.id}${deriveBidGuidance(existingWorkspace).nextAction.href}`}
+            <Link href={`/bids/${existingWorkspace.id}`}
               className="mt-3 inline-flex min-h-11 items-center rounded-lg border px-3 py-2 text-sm font-semibold underline underline-offset-2">
-              Open next bid task
+              Open bid
             </Link>
           </section>
         ) : (
           <p className="mt-5 rounded-xl border bg-white p-4 text-sm">
-            Review the original solicitation and understanding, then choose Start bid to open a guided response workspace.
+            Review the original solicitation and understanding, then choose Start bid to generate and edit one complete response.
           </p>
         )}
 
