@@ -15,24 +15,15 @@ test("reused agency documents are classified by exact source identity and checks
   assert.doesNotMatch(roles, /Informal General Terms/i, "classification must not be a filename-specific hack");
 });
 
-test("agency baseline requirements stay out of response outline and manual AI packets", () => {
-  const outline = read("lib/bids/outline.ts");
+test("agency baseline boilerplate remains excluded from generated bidder assertions", () => {
   const draft = read("lib/bids/draft-input.ts");
-  const builder = read("lib/bids/builder.ts");
-  assert.match(outline, /isAgencyBaselineRequirement/);
   assert.match(draft, /isAgencyBaselineRequirement/);
-  assert.match(builder, /baselineOnlySectionIds/);
-  assert.match(builder, /baseline:/);
 });
 
-test("bid UI reviews standard agency terms once while preserving forms and saved historical text", () => {
-  const ui = read("components/bid-outline-control.tsx");
-  const workspace = read("lib/bids/workspace.ts");
-  const finalReview = read("lib/bids/final-review.ts");
-  assert.match(ui, /Standard agency terms/);
-  assert.match(ui, /I reviewed these standard agency terms/);
-  assert.match(ui, /older response section/);
-  assert.match(workspace, /agencyBaselineReviewFingerprint/);
-  assert.match(finalReview, /agency_baseline_terms_unreviewed/);
-  assert.match(finalReview, /original_form_unconfirmed/);
+test("standard agency boilerplate is no longer a separate user-facing completion gate", () => {
+  const page = read("app/bids/[id]/page.tsx");
+  const review = read("lib/bids/final-review.ts");
+  assert.doesNotMatch(page, /Standard agency terms|agencyBaselineReviewed/);
+  assert.doesNotMatch(review, /agency_baseline_terms_unreviewed/);
+  assert.match(page, /source retention, provenance, amendment detection, and version fingerprints remain internal safeguards/i);
 });
