@@ -90,3 +90,13 @@ test("answer revision route and prompt keep bidder answers distinct from solicit
   assert.match(provider, /not (?:buyer|solicitation|source) evidence/i);
   assert.match(provider, /verbatim/i);
 });
+
+
+test("bidder-answer persistence is content-bound and fails closed on in-flight source or draft changes", () => {
+  const persistence = read("lib/bids/bidder-input-persistence.ts");
+  assert.match(persistence, /currentSection\?\.content === section\.content/);
+  assert.match(persistence, /inputFingerprint === packet\.inputFingerprint/);
+  assert.match(persistence, /IS NOT DISTINCT FROM/);
+  assert.match(persistence, /source_or_section_changed/);
+  assert.match(persistence, /generationTrigger:\s*"manual"/);
+});
