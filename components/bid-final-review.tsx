@@ -182,7 +182,7 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
                     event.target.checked
                       ? [...new Set([...current, check.requirementId])]
                       : current.filter((id) => id !== check.requirementId))} />
-                I have inspected and completed the original source form/template and included it for external submission.
+                I have completed this required supporting item and included it in my submission package.
                 This confirmation does not establish that the external portal received it.
               </label>
             ) : null}
