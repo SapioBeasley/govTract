@@ -196,3 +196,28 @@ test("reviewable evidence-only partial understanding proceeds to actionable bid 
   assert.equal(guidance.nextAction.stepId, "sections");
   assert.equal(guidance.nextAction.href, "#response-section-section-0");
 });
+
+
+test("source evidence warnings do not replace an actionable response-section task", () => {
+  const workspace = fixture();
+  workspace.sourceRequirements!.completenessStatus = "partial";
+  workspace.sourceRequirements!.incompleteReasons = ["requirement_evidence_missing"];
+  workspace.sourceRequirements!.requirements[0]!.evidence = [];
+  workspace.requirements[0]!.canMarkComplete = false;
+  workspace.requirements[0]!.status = "needs_review";
+  workspace.requirements[0]!.effectiveStatus = "needs_review";
+  workspace.sections[0]!.metadata.sourceReviewRequired = true;
+  workspace.finalReview.readyForHumanReview = false;
+  workspace.finalReview.blockingIssues = [
+    { code: "source_evidence_unverified", message: "Pinned evidence is unavailable", requirementId: "source-1" },
+    { code: "mandatory_requirement_incomplete", message: "Bid response missing", requirementId: "source-1" },
+    { code: "section_incomplete", message: "Technical response needs review", sectionId: "section-0" },
+  ];
+
+  const guidance = deriveBidGuidance(workspace);
+  assert.equal(guidance.nextAction.stepId, "sections");
+  assert.equal(guidance.nextAction.href, "#response-section-section-0");
+  assert.equal(guidance.steps.find((step) => step.id === "sources")?.status, "Complete");
+  assert.ok(guidance.groupedIssues.find((group) => group.stepId === "sources")?.issues
+    .some((issue) => issue.code === "source_evidence_unverified"));
+});
