@@ -20,6 +20,7 @@ test("full-bid generation excludes agency baseline boilerplate while preserving 
   const finalReview = read("lib/bids/final-review.ts");
   assert.match(draft, /isAgencyBaselineRequirement/);
   assert.match(draft, /filter\(\(requirement\) => !isAgencyBaselineRequirement\(requirement\)\)/);
+  assert.match(draft, /filter\(\(requirement\) => isBidWritingRequirementType\(requirement\.type\)\)/);
   assert.match(finalReview, /original_form_unconfirmed/);
   assert.doesNotMatch(finalReview, /agency_baseline_terms_unreviewed/);
 });

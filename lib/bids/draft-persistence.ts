@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 
+import { isBidWritingRequirementType } from "@/lib/bids/builder";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { BID_DRAFT_PROMPT_VERSION, finalizeBidDraft, prepareBidDraftInput } from "@/lib/bids/draft-input";
 import {
@@ -108,6 +109,7 @@ export async function ensureFullBidSection(workspaceId: string) {
   }
   const keys = workspace.sourceRequirements.requirements
     .filter((requirement) => !isAgencyBaselineRequirement(requirement))
+    .filter((requirement) => isBidWritingRequirementType(requirement.type))
     .map((requirement) => requirement.requirementKey);
   if (!keys.length) throw new Error("No opportunity-specific solicitation requirements are available for bid generation.");
 
