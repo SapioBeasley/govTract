@@ -67,7 +67,7 @@ export function normalizeBidderInputAnswers(
 function stripAuthorizedAnswer(text: string, answer: string) {
   return text
     .split(answer).join(" ")
-    .replace(/\b(?:our|the bidder(?:'s)?)\s+(?:response|commitment|answer)\s+(?:is|will be)\s*:?/gi, " ")
+    .replace(/\b(?:our|the bidder(?:'s)?)\s+(?:(?:[a-z-]+\s+){0,2})?(?:response|commitment|answer)\s+(?:is|will be)\s*:?/gi, " ")
     .replace(/\b(?:bidder response|response)\s*:?/gi, " ")
     .replace(/[\s:,-]+/g, " ")
     .trim();
