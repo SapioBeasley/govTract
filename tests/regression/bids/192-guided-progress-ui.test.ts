@@ -31,8 +31,8 @@ test("guide uses persisted evidence only and preserves manual model and human ha
   assert.match(ui, /Current step/);
   assert.match(ui, /Workflow status and diagnostics/);
   assert.doesNotMatch(ui, /aria-label="Bid preparation steps"/);
-  assert.doesNotMatch(ui, /guidance\.steps\.map/);
-  assert.doesNotMatch(ui, /guidance\.groupedIssues\.map/);
+  assert.match(ui, /<details[^>]*>[\s\S]*Workflow status and diagnostics[\s\S]*guidance\.steps\.map/);
+  assert.doesNotMatch(ui, /Open affected control/);
   assert.match(ui, /external procurement portal/i);
   assert.match(sourceAction, /window\.confirm/);
   assert.match(finalReview, /!review\.readyForHumanReview/);
