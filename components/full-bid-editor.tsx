@@ -79,7 +79,7 @@ export function FullBidEditor({
     setPending("save");
     setMessage(null);
     try {
-      await request(`/api/bids/${workspaceId}/outline/${sectionId}`, "PATCH", { content });
+      await request(`/api/bids/${workspaceId}/draft`, "PATCH", { content });
       setMessage("Draft saved.");
       router.refresh();
     } catch (error) {
