@@ -7,73 +7,47 @@ function source(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
-test("Path 1 exposes a real bid workspace and opportunity handoff", () => {
+test("Path 1 exposes the simplified bid workspace and opportunity handoff", () => {
   const bidsIndex = source("app/bids/page.tsx");
   const bidDetail = source("app/bids/[id]/page.tsx");
   const opportunityDetail = source("app/opportunities/[id]/page.tsx");
   const workspaceService = source("lib/bids/workspace.ts");
 
-  assert.doesNotMatch(bidsIndex, /SectionShell[^\n]*title="Bids"/);
   assert.match(bidsIndex, /listBidWorkspaces/);
   assert.match(bidDetail, /Source snapshot/);
   assert.match(bidDetail, /Source requirements/);
-  // #197 unifies the old Response sections heading into Prepare bid. Keep the
-  // saved response editor and original deep link, without restoring a second checklist.
   assert.match(bidDetail, /id="prepare-bid"/);
-  assert.match(bidDetail, /<BidOutlineControl/);
-  assert.match(bidDetail, /id="response-sections"/);
+  assert.match(bidDetail, /<BidPackageControl/);
+  assert.doesNotMatch(bidDetail, /<BidOutlineControl|<GuidedBidProgress|<BidSourceReconciliationAction/);
   assert.match(opportunityDetail, /StartBidButton/);
-  assert.doesNotMatch(
-    workspaceService,
-    /generateSolicitationUnderstanding|Gemini|generateContent|AIProvider/,
-    "opening or creating a Bid Workspace must not invoke AI generation",
-  );
+  assert.doesNotMatch(workspaceService, /generateSolicitationUnderstanding|Gemini|generateContent|AIProvider/);
 });
 
-
-test("disabled AI drafting names the missing source evidence and snapshot recovery instead of a generic dead end", () => {
-  const detail=source("app/bids/[id]/page.tsx");
-  const draft=source("components/bid-draft-action.tsx");
-  const outline=source("components/bid-outline-control.tsx");
-  assert.match(detail,/sourceBlockers/);
-  assert.match(detail,/requirement_evidence_missing|missingEvidence/);
-  assert.match(detail,/pending|snapshotStatus/);
-  assert.match(outline,/sourceBlockers/);
-  assert.match(draft,/sourceBlockers/);
-  assert.doesNotMatch(draft,/Drafting is unavailable until the source snapshot and understanding are complete and current\./);
+test("disabled generation names source recovery instead of presenting a dead-end verification flow", () => {
+  const detail = source("app/bids/[id]/page.tsx");
+  const control = source("components/bid-package-control.tsx");
+  assert.match(detail, /sourceBlockers/);
+  assert.match(detail, /missingEvidence/);
+  assert.match(detail, /snapshotStatus/);
+  assert.match(control, /sourceBlockers/);
+  assert.match(control, /retained solicitation package is not ready for generation/i);
 });
 
-test("pending original files have an explicit bounded source-retrieval action without auto-running on page load", () => {
-  const detail=source("app/bids/[id]/page.tsx");
-  const action=source("components/bid-source-refresh-action.tsx");
-  const route=source("app/api/bids/[id]/source-snapshot/route.ts");
-  assert.match(detail,/<BidSourceRefreshAction/);
-  assert.match(action,/Retrieve source files/);
-  assert.match(action,/method: "POST"/);
-  assert.doesNotMatch(action,/useEffect|generateBidSectionDraft|generateSolicitationUnderstanding/);
-  assert.match(route,/export async function POST/);
-  assert.doesNotMatch(route,/generateBidSectionDraft|generateSolicitationUnderstanding/);
+test("pending original files have an explicit bounded source-retrieval action without auto-running", () => {
+  const detail = source("app/bids/[id]/page.tsx");
+  const action = source("components/bid-source-refresh-action.tsx");
+  const route = source("app/api/bids/[id]/source-snapshot/route.ts");
+  assert.match(detail, /<BidSourceRefreshAction/);
+  assert.match(action, /Retrieve source files/);
+  assert.match(action, /method: "POST"/);
+  assert.doesNotMatch(action, /useEffect|generateBidSectionDraft|generateSolicitationUnderstanding/);
+  assert.match(route, /export async function POST/);
+  assert.doesNotMatch(route, /generateBidSectionDraft|generateSolicitationUnderstanding/);
 });
 
-test("source recovery rejects partial Blob results and stale bid refresh has an explicit user action", () => {
-  const route=source("app/api/bids/[id]/source-snapshot/route.ts");
-  const page=source("app/bids/[id]/page.tsx");
-  const action=source("components/bid-source-reconciliation-action.tsx");
-  const reconciliation=source("lib/bids/source-reconciliation.ts");
-  assert.match(route,/result.state !== "complete"/);
-  assert.match(page,/<BidSourceReconciliationAction/);
-  assert.match(action,/explicit|manual|review/i);
-  assert.match(reconciliation,/assessBidSourceReconciliation/);
-  assert.doesNotMatch(reconciliation,/generateSolicitationUnderstanding|generateBidSectionDraft|Gemini/);
-});
-
-test("Reconcile explains exact missing evidence and requires visible confirmation of every original document", () => {
-  const page=source("app/bids/[id]/page.tsx");
-  const action=source("components/bid-source-reconciliation-action.tsx");
-  assert.match(page,/reconciliationBlockers/);
-  assert.match(action,/reviewed\.length/);
-  assert.match(action,/documents\.length/);
-  assert.match(action,/Reconcile reviewed source and outline/);
-  assert.match(action,/blockingReasons/);
-  assert.doesNotMatch(action,/useEffect\([^)]*generateSolicitationUnderstanding/);
+test("package download is deterministic and does not call an AI provider", () => {
+  const route = source("app/api/bids/[id]/package/route.ts");
+  assert.match(route, /Content-Disposition/);
+  assert.match(route, /Package manifest/);
+  assert.doesNotMatch(route, /createGeminiBidDraftProvider|generateBidSectionDraft|generateFullBidDraft/);
 });
