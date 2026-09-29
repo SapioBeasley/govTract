@@ -10,6 +10,7 @@ import {
 } from "@/lib/bids/draft-provider";
 import { getDefaultCompanyProfile } from "@/lib/company/profile";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 import { bidSections } from "@/lib/db/canonical-schema";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 import { getDb } from "@/lib/db/client";
@@ -96,9 +97,8 @@ export async function ensureFullBidSection(workspaceId: string) {
   if (!UUID.test(workspaceId)) throw new Error("Invalid bid workspace id.");
   const workspace = await getBidWorkspace(workspaceId);
   if (!workspace) throw new Error("Bid workspace was not found.");
-  if (!workspace.sourceRequirements || workspace.sourceRequirements.isStale ||
-      workspace.sourceRequirements.completenessStatus !== "complete") {
-    throw new Error("Current, complete solicitation understanding is required before generating a bid.");
+  if (!isSolicitationRequirementSetDraftable(workspace.sourceRequirements)) {
+    throw new Error("Current solicitation requirements are not safe for bid generation.");
   }
   const snapshot = workspace.sourceSnapshot;
   if (snapshot.snapshotStatus !== "complete" || snapshot.stale ||

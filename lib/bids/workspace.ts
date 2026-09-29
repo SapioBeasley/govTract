@@ -22,6 +22,7 @@ import {
   getPursuitSnapshot,
 } from "@/lib/procurement/pursuits/snapshot";
 import { loadLatestSolicitationRequirements } from "@/lib/procurement/requirements/persistence";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 import { agencyBaselineReviewFingerprint } from "@/lib/procurement/documents/roles";
 
 import {
@@ -308,11 +309,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
       latestReviewByRequirement.set(review.bidRequirementId, review);
     }
   }
-  const sourceSetEligible = Boolean(sourceRequirements && !sourceRequirements.isStale &&
-    (sourceRequirements.completenessStatus === "complete" ||
-      (sourceRequirements.completenessStatus === "partial" &&
-        sourceRequirements.incompleteReasons.length > 0 &&
-        sourceRequirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing"))));
+  const sourceSetEligible = isSolicitationRequirementSetDraftable(sourceRequirements);
   const agencyBaselineFingerprint = agencyBaselineReviewFingerprint(
     sourceRequirements?.requirements ?? [],
     sourceSnapshot.documentSetFingerprint,

@@ -23,3 +23,13 @@ test("full-bid generation excludes agency baseline boilerplate while preserving 
   assert.match(finalReview, /original_form_unconfirmed/);
   assert.doesNotMatch(finalReview, /agency_baseline_terms_unreviewed/);
 });
+
+
+test("Generate does not globally block on extraction failures before baseline-aware understanding", () => {
+  const route = read("app/api/bids/[id]/draft/route.ts");
+  const understanding = read("lib/procurement/understanding/persistence.ts");
+  assert.match(route, /ensureStoredSnapshotExtractions\(snapshot\)/);
+  assert.doesNotMatch(route, /extraction\.failed\s*>\s*0/);
+  assert.match(understanding, /sourceLocation === "ebid\.eforms\.questions\.attachments"/);
+  assert.match(understanding, /AGENCY_BASELINE_MIN_OPPORTUNITIES/);
+});

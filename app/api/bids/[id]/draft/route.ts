@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { generateFullBidDraft } from "@/lib/bids/draft-persistence";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { materializeRequirementsForUnderstanding } from "@/lib/procurement/requirements/persistence";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 import { ensureStoredSnapshotExtractions } from "@/lib/procurement/pursuits/extraction-recovery";
 import { refreshBidSourceSnapshot } from "@/lib/procurement/pursuits/manual-refresh";
 import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
@@ -46,18 +47,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       throw new Error("The retained solicitation package is incomplete after source recovery.");
     }
 
-    const extraction = await ensureStoredSnapshotExtractions(snapshot);
-    if (extraction.failed > 0) {
-      throw new Error("One or more retained source documents could not be extracted for bid generation.");
-    }
+    // Attempt deterministic extraction for all retained files, then let the
+    // baseline-aware understanding planner decide which extraction failures are
+    // actually relevant to this opportunity. Retained source bytes remain intact.
+    await ensureStoredSnapshotExtractions(snapshot);
     let workspace = await getBidWorkspace(id);
     if (!workspace) throw new Error("Bid workspace was not found.");
 
-    if (
-      !workspace.sourceRequirements ||
-      workspace.sourceRequirements.isStale ||
-      workspace.sourceRequirements.completenessStatus !== "complete"
-    ) {
+    if (!isSolicitationRequirementSetDraftable(workspace.sourceRequirements)) {
       const understanding = await generateSolicitationUnderstanding({
         opportunityId: workspace.opportunityId,
         trigger: "manual",
@@ -69,11 +66,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
       await materializeRequirementsForUnderstanding(understanding.understandingId);
       workspace = await getBidWorkspace(id);
-      if (
-        !workspace?.sourceRequirements ||
-        workspace.sourceRequirements.isStale ||
-        workspace.sourceRequirements.completenessStatus !== "complete"
-      ) {
+      if (!isSolicitationRequirementSetDraftable(workspace?.sourceRequirements)) {
         throw new Error("Current solicitation understanding remains incomplete after the explicit refresh. No bid draft was generated.");
       }
     }

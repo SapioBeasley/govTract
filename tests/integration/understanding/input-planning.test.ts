@@ -176,3 +176,124 @@ test(
     }
   },
 );
+
+
+test(
+  "repeated agency solicitation boilerplate is excluded from understanding while original forms stay included",
+  { skip: !canRun },
+  async () => {
+    const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+    const source = uniqueId("baseline-source");
+    const agencySlug = uniqueId("baseline-agency");
+    const sharedKey = "agency/shared/solicitation/general-terms.docx";
+    const sourceRecordIds: string[] = [];
+    let targetOpportunityId: string | null = null;
+    let targetGeneralVersionId: string | null = null;
+    let targetScopeVersionId: string | null = null;
+    let targetFormVersionId: string | null = null;
+
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        const sourceOpportunityId = uniqueId(`baseline-opportunity-${index}`);
+        const [sourceRecord] = await sql<{ id: string }[]>`
+          INSERT INTO source_records (source, source_record_id, raw_payload, payload_hash)
+          VALUES (${source}, ${sourceOpportunityId}, '{}'::jsonb, ${sha256(sourceOpportunityId)})
+          RETURNING id
+        `;
+        assert.ok(sourceRecord?.id);
+        sourceRecordIds.push(sourceRecord.id);
+
+        const [opportunity] = await sql<{ id: string }[]>`
+          INSERT INTO opportunities (
+            source_record_id, source, source_opportunity_id, title, agency_slug
+          ) VALUES (
+            ${sourceRecord.id}, ${source}, ${sourceOpportunityId},
+            ${`Repeated baseline fixture ${index}`}, ${agencySlug}
+          ) RETURNING id
+        `;
+        assert.ok(opportunity?.id);
+        if (index === 0) targetOpportunityId = opportunity.id;
+
+        const [generalDocument] = await sql<{ id: string }[]>`
+          INSERT INTO opportunity_documents (
+            opportunity_id, source_document_key, name, mime_type, source_metadata
+          ) VALUES (
+            ${opportunity.id}, ${sharedKey}, 'Agency General Terms.docx',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ${sql.json({ sourceLocation: "solicitation.documents" })}
+          ) RETURNING id
+        `;
+        assert.ok(generalDocument?.id);
+        const [generalVersion] = await sql<{ id: string }[]>`
+          INSERT INTO opportunity_document_versions (
+            opportunity_document_id, version_number, fingerprint, checksum_sha256, name, mime_type
+          ) VALUES (
+            ${generalDocument.id}, 1, ${sha256(`general-fingerprint-${index}`)},
+            ${sha256(`general-bytes-${index}`)}, 'Agency General Terms.docx',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          ) RETURNING id
+        `;
+        assert.ok(generalVersion?.id);
+        if (index === 0) targetGeneralVersionId = generalVersion.id;
+
+        if (index === 0) {
+          const [scopeDocument] = await sql<{ id: string }[]>`
+            INSERT INTO opportunity_documents (
+              opportunity_id, source_document_key, name, mime_type, source_metadata
+            ) VALUES (
+              ${opportunity.id}, ${uniqueId("scope-key")}, 'Opportunity Scope.docx',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              ${sql.json({ sourceLocation: "solicitation.documents" })}
+            ) RETURNING id
+          `;
+          const [scopeVersion] = await sql<{ id: string }[]>`
+            INSERT INTO opportunity_document_versions (
+              opportunity_document_id, version_number, fingerprint, checksum_sha256, name, mime_type
+            ) VALUES (
+              ${scopeDocument.id}, 1, ${sha256("scope-fingerprint")},
+              ${sha256("scope-bytes")}, 'Opportunity Scope.docx',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ) RETURNING id
+          `;
+          targetScopeVersionId = scopeVersion!.id;
+
+          const [formDocument] = await sql<{ id: string }[]>`
+            INSERT INTO opportunity_documents (
+              opportunity_id, source_document_key, name, mime_type, source_metadata
+            ) VALUES (
+              ${opportunity.id}, 'agency/shared/form-attachment/signature.docx',
+              'Required Signature Page.docx',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              ${sql.json({
+                sourceLocation: "ebid.eforms.questions.attachments",
+                requiredOriginalForm: true,
+              })}
+            ) RETURNING id
+          `;
+          const [formVersion] = await sql<{ id: string }[]>`
+            INSERT INTO opportunity_document_versions (
+              opportunity_document_id, version_number, fingerprint, checksum_sha256, name, mime_type
+            ) VALUES (
+              ${formDocument.id}, 1, ${sha256("form-fingerprint")},
+              ${sha256("form-bytes")}, 'Required Signature Page.docx',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ) RETURNING id
+          `;
+          targetFormVersionId = formVersion!.id;
+        }
+      }
+
+      assert.ok(targetOpportunityId);
+      const inputs = await loadPersistedUnderstandingDocuments(targetOpportunityId);
+      const ids = new Set(inputs.map((input) => input.documentVersionId));
+      assert.equal(ids.has(targetGeneralVersionId!), false);
+      assert.equal(ids.has(targetScopeVersionId!), true);
+      assert.equal(ids.has(targetFormVersionId!), true);
+    } finally {
+      for (const id of sourceRecordIds.reverse()) {
+        await sql`DELETE FROM source_records WHERE id = ${id}`;
+      }
+      await sql.end({ timeout: 5 });
+    }
+  },
+);

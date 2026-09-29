@@ -6,6 +6,7 @@ import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 
 export const BID_DRAFT_PROMPT_VERSION = "5";
 const MAX_SOURCE_CHARS = 48_000;
@@ -114,8 +115,8 @@ export function prepareBidDraftInput(input: {
     snapshot.documentSetFingerprint !== snapshot.currentDocumentSetFingerprint) {
     reasons.push("The source document set has changed. Review the latest authoritative amendments before drafting.");
   }
-  if (!requirements || requirements.isStale || requirements.completenessStatus !== "complete") {
-    reasons.push("Current, complete structured solicitation understanding is required for drafting.");
+  if (!isSolicitationRequirementSetDraftable(requirements)) {
+    reasons.push("Current structured solicitation requirements are not safe for drafting.");
   }
   if (requirements && section.metadata.understandingId !== requirements.understandingId) {
     reasons.push("The bid outline is linked to an older solicitation understanding; review and refresh the outline.");
