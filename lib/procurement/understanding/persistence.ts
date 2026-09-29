@@ -10,8 +10,9 @@ import {
   solicitationUnderstandingChunks,
   solicitationUnderstandings,
 } from "@/lib/db/solicitation-understandings-schema";
-import { opportunityDocuments, opportunityDocumentVersions } from "@/lib/db/schema";
+import { opportunities, opportunityDocuments, opportunityDocumentVersions } from "@/lib/db/schema";
 import { isSupportedDocumentType } from "@/lib/procurement/documents/persistence";
+import { AGENCY_BASELINE_MIN_OPPORTUNITIES } from "@/lib/procurement/documents/roles";
 
 import type {
   UnderstandingDocumentInput,
@@ -27,6 +28,8 @@ type VersionRow = {
   checksumSha256: string | null;
   name: string;
   mimeType: string | null;
+  sourceDocumentKey: string;
+  sourceMetadata: Record<string, unknown>;
 };
 
 type ExtractionRow = {
@@ -49,6 +52,56 @@ function latestVersions(rows: VersionRow[]) {
     if (!latest.has(row.documentId)) latest.set(row.documentId, row);
   }
   return [...latest.values()].sort((a, b) => a.documentVersionId.localeCompare(b.documentVersionId));
+}
+
+function isOriginalFormDocument(metadata: Record<string, unknown>) {
+  return metadata.requiredOriginalForm === true ||
+    metadata.sourceLocation === "ebid.eforms.questions.attachments";
+}
+
+async function loadRepeatedAgencyBaselineVersionIds(
+  opportunityId: string,
+  versions: VersionRow[],
+) {
+  const db = getDb();
+  const [context] = await db.select({
+    source: opportunities.source,
+    agencySlug: opportunities.agencySlug,
+  }).from(opportunities).where(eq(opportunities.id, opportunityId)).limit(1);
+  if (!context?.agencySlug) return new Set<string>();
+
+  const candidateKeys = [...new Set(versions
+    .filter((version) => !isOriginalFormDocument(version.sourceMetadata))
+    .map((version) => version.sourceDocumentKey)
+    .filter(Boolean))];
+  if (!candidateKeys.length) return new Set<string>();
+
+  const reused = await db.select({
+    sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
+    opportunityId: opportunityDocuments.opportunityId,
+  }).from(opportunityDocuments)
+    .innerJoin(opportunities, eq(opportunities.id, opportunityDocuments.opportunityId))
+    .where(and(
+      eq(opportunityDocuments.isActive, true),
+      eq(opportunities.isActive, true),
+      eq(opportunities.source, context.source),
+      eq(opportunities.agencySlug, context.agencySlug),
+      inArray(opportunityDocuments.sourceDocumentKey, candidateKeys),
+    ));
+
+  const opportunitiesByKey = new Map<string, Set<string>>();
+  for (const row of reused) {
+    const matches = opportunitiesByKey.get(row.sourceDocumentKey) ?? new Set<string>();
+    matches.add(row.opportunityId);
+    opportunitiesByKey.set(row.sourceDocumentKey, matches);
+  }
+
+  return new Set(versions.flatMap((version) =>
+    !isOriginalFormDocument(version.sourceMetadata) &&
+    (opportunitiesByKey.get(version.sourceDocumentKey)?.size ?? 0) >= AGENCY_BASELINE_MIN_OPPORTUNITIES
+      ? [version.documentVersionId]
+      : [],
+  ));
 }
 
 function extractionRank(status: string) {
@@ -117,6 +170,8 @@ export async function loadPersistedUnderstandingDocuments(
       checksumSha256: opportunityDocumentVersions.checksumSha256,
       name: opportunityDocumentVersions.name,
       mimeType: opportunityDocumentVersions.mimeType,
+      sourceDocumentKey: opportunityDocuments.sourceDocumentKey,
+      sourceMetadata: opportunityDocuments.sourceMetadata,
     })
     .from(opportunityDocuments)
     .innerJoin(
@@ -134,7 +189,12 @@ export async function loadPersistedUnderstandingDocuments(
 
   const versions = latestVersions(versionRows);
   if (versions.length === 0) return [];
-  const versionIds = versions.map((row) => row.documentVersionId);
+  const agencyBaselineVersionIds = await loadRepeatedAgencyBaselineVersionIds(opportunityId, versions);
+  const understandingVersions = versions.filter(
+    (version) => !agencyBaselineVersionIds.has(version.documentVersionId),
+  );
+  if (understandingVersions.length === 0) return [];
+  const versionIds = understandingVersions.map((row) => row.documentVersionId);
 
   const extractionRows = await db
     .select({
@@ -173,7 +233,7 @@ export async function loadPersistedUnderstandingDocuments(
     extractionsByVersion.set(row.documentVersionId, group);
   }
 
-  return versions.map((version) => {
+  return understandingVersions.map((version) => {
     const extraction = chooseExtraction(extractionsByVersion.get(version.documentVersionId) ?? []);
     const supported = isSupportedDocumentType({ name: version.name, mimeType: version.mimeType });
 
