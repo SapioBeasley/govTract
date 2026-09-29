@@ -19,7 +19,7 @@ test("bid preparation leads with one full-bid generation and editable response",
 test("supporting checkboxes represent submission items rather than buyer-source verification", () => {
   const review = read("components/bid-final-review.tsx");
   assert.match(review, /Supporting documents/);
-  assert.match(review, /I have completed this required supporting item[\\s\\S]*included it/i);
+  assert.match(review, /I have completed this required supporting item[\s\S]*included it/i);
   assert.doesNotMatch(review, /I checked the original buyer instruction|Confirm this original|source verification/i);
   assert.match(read("lib/bids/final-review.ts"), /original_form_unconfirmed/);
 });
