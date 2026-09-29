@@ -325,8 +325,6 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             {snapshot.documents.some((document) => document.status !== "stored") ? (
               <BidSourceRefreshAction workspaceId={workspace.id} unavailableCount={snapshot.documents.filter((document) => document.status !== "stored").length} />
             ) : null}
-            {showSourceReconciliation ? (
-            ) : null}
           </Section>
 
           <Section id="source-requirements" title="Source requirements" icon={<ClipboardCheck className="size-5" />}>
