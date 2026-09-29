@@ -4,7 +4,8 @@ import { generateFullBidDraft } from "@/lib/bids/draft-persistence";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { materializeRequirementsForUnderstanding } from "@/lib/procurement/requirements/persistence";
 import { ensureStoredSnapshotExtractions } from "@/lib/procurement/pursuits/extraction-recovery";
-import { ensureBidWorkspaceSnapshotPrepared } from "@/lib/procurement/pursuits/snapshot";
+import { refreshBidSourceSnapshot } from "@/lib/procurement/pursuits/manual-refresh";
+import { getPursuitSnapshot } from "@/lib/procurement/pursuits/snapshot";
 import { generateSolicitationUnderstanding } from "@/lib/procurement/understanding/generation";
 
 export const runtime = "nodejs";
@@ -33,15 +34,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   }
   try {
-    const snapshot = await ensureBidWorkspaceSnapshotPrepared(id);
-    if (
-      snapshot.status !== "complete" ||
-      snapshot.documents.some((document) => document.status !== "stored")
-    ) {
-      throw new Error("The retained solicitation package is incomplete. Retrieve the current source files before generating a bid.");
+    const source = await refreshBidSourceSnapshot(id);
+    if (source.state !== "complete") {
+      throw new Error("The current solicitation package could not be fully retained.");
+    }
+    const refreshedWorkspace = await getBidWorkspace(id);
+    const snapshotId = refreshedWorkspace?.sourceSnapshot.pursuitSnapshotId;
+    const snapshot = snapshotId ? await getPursuitSnapshot(snapshotId) : null;
+    if (!snapshot || snapshot.status !== "complete" ||
+        snapshot.documents.some((document) => document.status !== "stored")) {
+      throw new Error("The retained solicitation package is incomplete after source recovery.");
     }
 
-    await ensureStoredSnapshotExtractions(snapshot);
+    const extraction = await ensureStoredSnapshotExtractions(snapshot);
+    if (extraction.failed > 0) {
+      throw new Error("One or more retained source documents could not be extracted for bid generation.");
+    }
     let workspace = await getBidWorkspace(id);
     if (!workspace) throw new Error("Bid workspace was not found.");
 
