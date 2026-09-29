@@ -239,6 +239,7 @@ async function updateWorkspaceSnapshotReference(input: {
   documentSetFingerprint: string;
   snapshotStatus: "incomplete" | "complete" | "blocked";
   markStale?: boolean;
+  clearStale?: boolean;
 }) {
   const db = getDb();
   const [workspace] = await db
@@ -249,7 +250,9 @@ async function updateWorkspaceSnapshotReference(input: {
   if (!workspace) throw new Error("Bid workspace was not found");
 
   const existing = workspace.sourceSnapshot ?? {};
-  const stale = input.markStale === true || existing.stale === true;
+  const stale = input.clearStale === true
+    ? false
+    : input.markStale === true || existing.stale === true;
   const sourceSnapshot: Record<string, unknown> = {
     ...existing,
     pursuitSnapshotId: input.snapshotId,
@@ -696,11 +699,16 @@ export async function processPursuitSnapshot(
       .where(eq(savedOpportunities.id, snapshot.savedOpportunityId));
   }
   if (snapshot.bidWorkspaceId) {
+    const currentDocumentSetFingerprint =
+      await getCurrentOpportunityDocumentSetFingerprint(snapshot.opportunityId);
     await updateWorkspaceSnapshotReference({
       bidWorkspaceId: snapshot.bidWorkspaceId,
       snapshotId: snapshot.id,
       documentSetFingerprint: snapshot.documentSetFingerprint,
       snapshotStatus: status,
+      clearStale:
+        status === "complete" &&
+        snapshot.documentSetFingerprint === currentDocumentSetFingerprint,
     });
   }
 
