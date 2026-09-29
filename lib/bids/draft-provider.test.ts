@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BidDraftProviderFailure, createGeminiBidDraftProvider, makeBidDraftPrompt } from "@/lib/bids/draft-provider";
+import {\n  BidDraftProviderFailure,\n  createGeminiBidAnswerProvider,\n  createGeminiBidDraftProvider,\n  makeBidAnswerRevisionPrompt,\n  makeBidDraftPrompt,\n} from "@/lib/bids/draft-provider";
 import type { BidDraftPacket } from "@/lib/bids/draft-input";
 
 const packet: BidDraftPacket = {
@@ -136,4 +136,51 @@ test("Gemini draft output allowance permits substantive sections while honoring 
     await provider.generate("prompt");
   }
   assert.deepEqual(limits, [8192, 4096]);
+});
+
+
+test("bidder-answer prompt keeps explicit answers separate from source evidence and requires verbatim wording", () => {
+  const prompt = makeBidAnswerRevisionPrompt({
+    packet,
+    currentContent: "Draft [NEEDS INPUT: Confirm delivery schedule]",
+    answers: [{
+      question: "Confirm delivery schedule",
+      answer: "Delivery within 21 calendar days after receipt of PO.",
+    }],
+  });
+  assert.match(prompt, /user-authorized bidder/i);
+  assert.match(prompt, /not source evidence/i);
+  assert.match(prompt, /verbatim/i);
+  assert.match(prompt, /Delivery within 21 calendar days after receipt of PO\./);
+  assert.match(prompt, /Requirement REQ-1 backed by version-1 excerpt/);
+  assert.match(prompt, /CURRENT SAVED BID/);
+});
+
+test("Gemini bidder-answer revision uses isolated replacement JSON and a mockable provider", async () => {
+  let sent: Record<string, unknown> | null = null;
+  const provider = createGeminiBidAnswerProvider({
+    apiKey: "fixture-key", model: "fixture-model", modelVersion: "configured-v1",
+    billingMode: "non_billable", pricingProfileVersion: "fixture-pricing",
+    inputTokenLimit: 200_000, outputTokenLimit: 8192,
+    inputCostMicrousdPerMillionTokens: 0, outputCostMicrousdPerMillionTokens: 0,
+    fetchImpl: async (_url, init) => {
+      sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({
+          replacements: [{
+            question: "Confirm delivery schedule",
+            text: "Bidder response: Delivery within 21 calendar days after receipt of PO.",
+          }],
+        }) }] } }],
+        modelVersion: "provider-v2",
+        usageMetadata: { promptTokenCount: 60, candidatesTokenCount: 20, totalTokenCount: 80 },
+      }), { status: 200 });
+    },
+  });
+  const result = await provider.generate("fixture prompt");
+  assert.equal(result.output.replacements[0]?.question, "Confirm delivery schedule");
+  assert.equal(result.usage.promptTokenCount, 60);
+  assert.equal(result.modelVersion, "provider-v2");
+  assert.ok(JSON.stringify(sent).includes("APPLICATION_JSON"));
+  assert.ok(JSON.stringify(sent).includes("4096"));
 });
