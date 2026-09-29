@@ -14,7 +14,7 @@ export type SupportingDocumentItem = {
 
 const SUPPORT_TYPES = new Set([
   "form", "pricing", "certification", "bonding", "insurance", "insurance_bonding",
-  "license", "attachment", "reference", "product_literature", "submission_instruction",
+  "license", "attachment", "reference", "product_literature",
 ]);
 
 const SUPPORT_TEXT = /\b(?:attach|attachment|include|submit|provide|complete|sign|upload)\b[\s\S]{0,120}\b(?:form|sheet|certificate|certification|license|insurance|bond|w-?9|reference|literature|brochure|specification|drawing|affidavit|schedule)\b/i;
