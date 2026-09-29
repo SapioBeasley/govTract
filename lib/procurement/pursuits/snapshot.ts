@@ -282,7 +282,24 @@ async function ensureSnapshotPrepared(context: SnapshotContext) {
     .from(pursuitDocumentSnapshots)
     .where(and(predicate, eq(pursuitDocumentSnapshots.documentSetFingerprint, fingerprint)))
     .limit(1);
-  if (existing) return (await loadSnapshot(existing.id))!;
+  if (existing) {
+    const prepared = (await loadSnapshot(existing.id))!;
+    if (context.bidWorkspaceId) {
+      await updateWorkspaceSnapshotReference({
+        bidWorkspaceId: context.bidWorkspaceId,
+        snapshotId: prepared.id,
+        documentSetFingerprint: prepared.documentSetFingerprint,
+        snapshotStatus:
+          prepared.status === "complete" || prepared.status === "blocked"
+            ? prepared.status
+            : "incomplete",
+        clearStale:
+          prepared.status === "complete" &&
+          prepared.documentSetFingerprint === fingerprint,
+      });
+    }
+    return prepared;
+  }
 
   const [previous] = await db
     .select({ id: pursuitDocumentSnapshots.id })
