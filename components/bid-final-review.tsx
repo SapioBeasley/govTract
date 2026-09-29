@@ -118,6 +118,19 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
       </div>
 
       <div className="rounded-xl border p-4">
+        <h3 className="font-semibold">Package manifest</h3>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
+          The downloadable package contains the exact saved full bid plus a deterministic manifest of supporting items
+          confirmed in govTract. Items that must still be completed or uploaded in the authoritative procurement system remain listed.
+        </p>
+        <a href={`/api/bids/${workspaceId}/package`}
+          className={`mt-3 inline-flex rounded-lg border px-3 py-2 font-semibold ${approvalCurrent && review.readyForHumanReview ? "" : "pointer-events-none opacity-50"}`}
+          aria-disabled={!approvalCurrent || !review.readyForHumanReview}>
+          Download approved package
+        </a>
+      </div>
+
+      <div className="rounded-xl border p-4">
         <h3 className="font-semibold">Authoritative submission handoff</h3>
         <p className="mt-2 break-words [overflow-wrap:anywhere]">Method: {review.submission.method}</p>
         <p className="mt-1">Due: {review.submission.dueAt
@@ -151,7 +164,7 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
       </div>
 
       <div className="grid min-w-0 gap-3">
-        <h3 className="font-semibold">Cited forms, attachments, signatures, and submission instructions</h3>
+        <h3 className="font-semibold">Supporting documents</h3>
         {review.sourceChecks.length ? review.sourceChecks.map((check) => (
           <article key={check.requirementId} id={`original-form-${check.requirementId}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
             <div className="flex flex-wrap gap-2 text-xs">
@@ -179,7 +192,7 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
           <button type="button" disabled={pending || !changed}
             onClick={() => patch({ confirmedOriginalForms: confirmed })}
             className="w-fit rounded-lg border px-3 py-2 font-semibold disabled:opacity-50">
-            {pending ? "Saving…" : "Save original-form confirmations"}
+            {pending ? "Saving…" : "Save supporting-document checklist"}
           </button>
         ) : null}
       </div>
@@ -195,7 +208,7 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
           disabled={pending || changed || !humanReviewed || !review.readyForHumanReview || approvalCurrent}
           onClick={() => patch({ reviewState: "approved", humanReviewConfirmed: true })}
           className="mt-3 rounded-lg bg-[var(--primary)] px-3 py-2 font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
-          {pending ? "Recording review…" : approvalCurrent ? "Human review current" : "Approve current package for external handoff"}
+          {pending ? "Recording review…" : approvalCurrent ? "Human review current" : "Approve current package"}
         </button>
         {message ? <p role="status" className="mt-3 break-words text-xs">{message}</p> : null}
         <p className="mt-3 text-xs text-[var(--muted-foreground)]">
