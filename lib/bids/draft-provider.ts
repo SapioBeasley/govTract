@@ -100,7 +100,7 @@ USER-ENTERED COMPANY CONTEXT (UNVERIFIED)
 ${packet.companyContext}
 
 USER/SUPPLIER RESPONSES — USER-AUTHORIZED BIDDER FACTS, NOT SOLICITATION EVIDENCE
-${packet.bidderResponseContext}
+${packet.bidderResponseContext ?? "No saved bidder or supplier responses."}
 
 MANDATORY MISSING-FACT QUESTIONS
 ${JSON.stringify(packet.requiredQuestions)}`;
