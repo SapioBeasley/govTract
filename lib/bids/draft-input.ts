@@ -5,7 +5,7 @@ import { inspectBidDraft, redactUnverifiedClaims } from "@/lib/bids/draft-guardr
 import type { CompanyProfile } from "@/lib/company/profile";
 import type { BidWorkspaceRequirement, BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import { isComplianceEvidence } from "@/lib/bids/compliance";
-import { questionForBidRequirement, requirementNeedsBidderQuestion } from "@/lib/bids/requirement-questions";
+import { questionForBidRequirement, requirementNeedsBidderQuestion } from "@/lib/bids/requirement-question-rules";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
