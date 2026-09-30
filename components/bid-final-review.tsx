@@ -33,7 +33,7 @@ function Evidence({ check, workspaceId }: {
           {" · "}{check.listingEvidence.excerpt}
         </p>
       ) : <p>Authoritative source evidence is missing; do not rely on this requirement as verified.</p>}
-      {check.originalRequired ? (
+      {check.sourceTemplateRequired ? (
         check.originalDocuments.length ? (
           <div className="grid min-w-0 gap-1">
             {check.originalDocuments.map((document) => (

@@ -333,6 +333,29 @@ test("simplified full-bid readiness does not depend on removed compliance-matrix
     "conditional supporting items do not block until applicability is established");
 });
 
+test("bidder-supplied and portal-native supporting items do not require a retained City template", () => {
+  for (const text of [
+    "Product specification sheet/product literature submitted at the time of bid or within five (5) calendar days from date of request.",
+    "Electronic bid form including the Official Signature Page signed by a company official authorized to bind the company.",
+  ]) {
+    const input = simplifiedFullBidFixture();
+    const supporting = input.workspace.sourceRequirements.requirements[1]!;
+    supporting.level = "required";
+    supporting.text = text;
+    supporting.details = {};
+    input.confirmedOriginalForms = [supporting.id];
+
+    const result = evaluateBidFinalReview(input);
+    const check = result.sourceChecks.find((item) => item.requirementId === supporting.id);
+    assert.equal(check?.originalRequired, true, text);
+    assert.equal(check?.sourceTemplateRequired, false, text);
+    assert.equal(result.blockingIssues.some((issue) =>
+      issue.code === "original_form_not_identified" && issue.requirementId === supporting.id), false, text);
+    assert.equal(result.blockingIssues.some((issue) =>
+      issue.code === "original_form_unconfirmed" && issue.requirementId === supporting.id), false, text);
+  }
+});
+
 test("submission timing problems remain visible warnings but do not prevent approving or downloading a complete package", () => {
   const result = evaluateBidFinalReview(simplifiedFullBidFixture());
   assert.equal(result.blockingIssues.some((issue) => issue.code === "submission_deadline_elapsed"), false);
@@ -352,6 +375,13 @@ test("simplified full bid still blocks unresolved Needs input and genuinely requ
   result = evaluateBidFinalReview(input);
   assert.ok(result.blockingIssues.some((issue) =>
     issue.code === "original_form_unconfirmed" && issue.requirementId === "conditional-form"));
+
+  input.confirmedOriginalForms = ["conditional-form"];
+  result = evaluateBidFinalReview(input);
+  assert.ok(result.blockingIssues.some((issue) =>
+    issue.code === "original_form_not_identified" && issue.requirementId === "conditional-form"),
+    "a genuine required pricing form still needs an identifiable retained source template");
+  assert.equal(result.sourceChecks.find((check) => check.requirementId === "conditional-form")?.sourceTemplateRequired, true);
 });
 
 
