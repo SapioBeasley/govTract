@@ -27,6 +27,10 @@ const vendorSubject = /\b(?:we|our(?: company| team| proposed| offered| products
 const commitment = /\b(?:will|shall|can|are|is|has|have|undergo(?:es)?|meet(?:s)?|comply|complies|provide(?:s)?|supply|deliver(?:s)?|carry|carries|include(?:s)?|offer(?:s|ed)?|propose(?:s|d)?|certif(?:ied|y)|test(?:ed|ing)?|insur(?:ed|ance)|warrant(?:y|ies)?)\b/i;
 export type DraftInspection = { claims: string[]; modelIssues: string[] };
 
+// A period inside a numeric value such as 24.75 is content, not a sentence boundary.
+const clauseBoundary = /(?:(?<!\\d)\\.|\\.(?!\\d)|[!?;\\n]+)/;
+const clauseBoundaryWithDelimiter = /((?<!\\d)\\.|\\.(?!\\d)|[!?;\\n]+)/;
+
 /** Inspects offered-vendor assertions separately from buyer requirements and source-model mapping. */
 export function inspectBidDraft(content: string, sourceEvidence: string): DraftInspection {
   const claims: string[] = [];
