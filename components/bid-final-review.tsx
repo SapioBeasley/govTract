@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import type { BidSubmissionRecord } from "@/lib/bids/submission";
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
   review: BidWorkspaceRecord["finalReview"];
   confirmedOriginalForms: string[];
   approvalCurrent: boolean;
+  submissions: BidSubmissionRecord[];
+  currentSubmission: BidSubmissionRecord | null;
 };
 
 function Evidence({ check, workspaceId }: {
@@ -55,15 +58,84 @@ function Evidence({ check, workspaceId }: {
   );
 }
 
-export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOriginalForms, approvalCurrent }: Props) {
+function localDateTimeValue(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function submissionDate(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit",
+    timeZone: "America/Chicago", timeZoneName: "short",
+  }).format(new Date(value));
+}
+
+export function BidFinalReview({
+  workspaceId,
+  opportunityId,
+  review,
+  confirmedOriginalForms,
+  approvalCurrent,
+  submissions,
+  currentSubmission,
+}: Props) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState<string[]>(confirmedOriginalForms);
   useEffect(() => setConfirmed(confirmedOriginalForms), [confirmedOriginalForms]);
   const [humanReviewed, setHumanReviewed] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [submissionPending, setSubmissionPending] = useState(false);
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
+  const [submissionConfirmed, setSubmissionConfirmed] = useState(false);
+  const [submittedAt, setSubmittedAt] = useState("");
+  const [confirmationNumber, setConfirmationNumber] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
+  const [submissionNotes, setSubmissionNotes] = useState("");
+  useEffect(() => {
+    if (approvalCurrent && !currentSubmission && !submittedAt) {
+      setSubmittedAt(localDateTimeValue());
+    }
+  }, [approvalCurrent, currentSubmission, submittedAt]);
   const changed = [...confirmed].sort().join("|") !== [...confirmedOriginalForms].sort().join("|");
   const originals = review.sourceChecks.filter((check) => check.originalRequired);
+
+  async function confirmSubmission() {
+    if (!submissionConfirmed) return;
+    const submitted = new Date(submittedAt);
+    if (!submittedAt || Number.isNaN(submitted.getTime())) {
+      setSubmissionMessage("Enter a valid submission date and time.");
+      return;
+    }
+    setSubmissionPending(true);
+    setSubmissionMessage(null);
+    try {
+      const response = await fetch(`/api/bids/${workspaceId}/submission`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          submittedAt: submitted.toISOString(),
+          confirmationNumber: confirmationNumber.trim() || null,
+          receiptUrl: receiptUrl.trim() || null,
+          notes: submissionNotes.trim() || null,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as
+        | { error?: { message?: string } }
+        | null;
+      if (!response.ok) {
+        setSubmissionMessage(payload?.error?.message ?? "External submission could not be recorded.");
+      } else {
+        setSubmissionMessage("External submission recorded for this exact approved package.");
+        router.refresh();
+      }
+    } catch {
+      setSubmissionMessage("External submission could not be recorded.");
+    } finally {
+      setSubmissionPending(false);
+    }
+  }
 
   async function patch(body: Record<string, unknown>) {
     setPending(true);
@@ -149,6 +221,33 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
 
       <div className="rounded-xl border p-4">
         <h3 className="font-semibold">Authoritative submission handoff</h3>
+        {currentSubmission ? (
+          <div role="status" className="mt-3 rounded-lg border bg-[var(--muted)]/35 p-3">
+            <p className="font-semibold">Submitted — external submission confirmed by you</p>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              Recorded {submissionDate(currentSubmission.submittedAt)} for this exact approved package.
+              govTract did not perform or independently verify the portal submission.
+            </p>
+            {currentSubmission.confirmationNumber ? (
+              <p className="mt-2 text-sm">Confirmation/reference: {currentSubmission.confirmationNumber}</p>
+            ) : null}
+            {currentSubmission.receiptUrl ? (
+              <a href={currentSubmission.receiptUrl} target="_blank" rel="noreferrer"
+                className="mt-2 inline-block break-words text-sm font-semibold underline underline-offset-2 [overflow-wrap:anywhere]">
+                Open recorded receipt / confirmation evidence
+              </a>
+            ) : null}
+            {currentSubmission.notes ? (
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{currentSubmission.notes}</p>
+            ) : null}
+          </div>
+        ) : approvalCurrent ? (
+          <p className="mt-3 font-semibold">Next action: Submit externally in the authoritative procurement portal.</p>
+        ) : (
+          <p className="mt-3 text-sm text-[var(--muted-foreground)]">
+            Approve the exact current package before recording an external submission.
+          </p>
+        )}
         <p className="mt-2 break-words [overflow-wrap:anywhere]">Method: {review.submission.method}</p>
         <p className="mt-1">Due: {review.submission.dueAt
           ? new Intl.DateTimeFormat("en-US", {
@@ -176,8 +275,78 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
           </Link>
         )}
         <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-          Opening the portal does not submit the bid. Follow its requirements and retain its submission receipt separately.
+          Opening the portal does not submit the bid. Follow its requirements and retain its submission receipt.
         </p>
+
+        {approvalCurrent && !currentSubmission ? (
+          <div className="mt-4 grid gap-3 border-t pt-4">
+            <h4 className="font-semibold">Confirm submission</h4>
+            <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+              Record what happened in the external portal. govTract stores your confirmation and optional evidence;
+              it does not submit on your behalf or independently verify that the portal accepted the bid.
+            </p>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Submission date/time</span>
+              <input type="datetime-local" value={submittedAt}
+                onChange={(event) => setSubmittedAt(event.target.value)}
+                className="h-10 rounded-lg border bg-white px-3" />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Confirmation/reference number (optional)</span>
+              <input value={confirmationNumber}
+                onChange={(event) => setConfirmationNumber(event.target.value)}
+                maxLength={500}
+                className="h-10 rounded-lg border bg-white px-3"
+                placeholder="Portal confirmation or reference number" />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Receipt/confirmation link (optional)</span>
+              <input type="url" value={receiptUrl}
+                onChange={(event) => setReceiptUrl(event.target.value)}
+                maxLength={2000}
+                className="h-10 rounded-lg border bg-white px-3"
+                placeholder="https://…" />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Submission notes (optional)</span>
+              <textarea value={submissionNotes}
+                onChange={(event) => setSubmissionNotes(event.target.value)}
+                rows={3}
+                maxLength={10000}
+                className="rounded-lg border bg-white px-3 py-2"
+                placeholder="Anything useful about the external submission or receipt." />
+            </label>
+            <label className="flex items-start gap-2 text-sm leading-6">
+              <input type="checkbox" className="mt-1.5" checked={submissionConfirmed}
+                onChange={(event) => setSubmissionConfirmed(event.target.checked)} />
+              I confirm that I submitted this exact approved package through the authoritative external channel.
+            </label>
+            <button type="button"
+              disabled={submissionPending || !submissionConfirmed || !submittedAt}
+              onClick={confirmSubmission}
+              className="w-fit rounded-lg bg-[var(--primary)] px-3 py-2 font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
+              {submissionPending ? "Recording submission…" : "Confirm submission"}
+            </button>
+            {submissionMessage ? <p role="status" className="text-xs">{submissionMessage}</p> : null}
+          </div>
+        ) : null}
+
+        {submissions.filter((submission) => submission.id !== currentSubmission?.id).length ? (
+          <details className="mt-4 border-t pt-4">
+            <summary className="cursor-pointer font-medium">Previous submission records</summary>
+            <div className="mt-3 grid gap-2 text-sm">
+              {submissions.filter((submission) => submission.id !== currentSubmission?.id).map((submission) => (
+                <div key={submission.id} className="rounded-lg bg-[var(--muted)]/35 p-3">
+                  <p className="font-medium">{submissionDate(submission.submittedAt)}</p>
+                  <p className="mt-1 break-all text-xs text-[var(--muted-foreground)]">
+                    Package fingerprint: {submission.reviewFingerprint}
+                  </p>
+                  {submission.confirmationNumber ? <p className="mt-1">Reference: {submission.confirmationNumber}</p> : null}
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
 
       <div className="grid min-w-0 gap-3">
@@ -231,8 +400,9 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
         </button>
         {message ? <p role="status" className="mt-3 break-words text-xs">{message}</p> : null}
         <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-          govTract does not submit a bid or mark it Submitted. Complete the submission at the authoritative portal
-          and verify its receipt there. Any subsequent package or source change invalidates this approval.
+          govTract does not submit a bid on your behalf. After you submit externally, use Confirm submission above
+          to record that event for this exact approved package. Any subsequent package or source change invalidates
+          the current approval and does not transfer Submitted status to the revised package.
         </p>
       </div>
     </div>

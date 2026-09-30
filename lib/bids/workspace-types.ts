@@ -3,6 +3,7 @@ export const BID_WORKSPACE_STATUSES = [
   "in_progress",
   "ready_for_review",
   "complete",
+  "submitted",
 ] as const;
 
 export const BID_WORKSPACE_REVIEW_STATES = [

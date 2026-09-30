@@ -331,6 +331,33 @@ export const bidWorkspaces = pgTable(
   ],
 );
 
+export const bidSubmissions = pgTable(
+  "bid_submissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bidWorkspaceId: uuid("bid_workspace_id")
+      .notNull()
+      .references(() => bidWorkspaces.id, { onDelete: "cascade" }),
+    reviewFingerprint: text("review_fingerprint").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    confirmationNumber: text("confirmation_number"),
+    receiptUrl: text("receipt_url"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("bid_submissions_workspace_review_uidx").on(
+      table.bidWorkspaceId,
+      table.reviewFingerprint,
+    ),
+    index("bid_submissions_workspace_submitted_idx").on(
+      table.bidWorkspaceId,
+      table.submittedAt,
+    ),
+  ],
+);
+
 export const bidRequirements = pgTable(
   "bid_requirements",
   {

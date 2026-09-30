@@ -31,7 +31,7 @@ const titles: Record<GuidanceStepId, string> = {
   sections: "Response sections and human review",
   assistance: "Manual AI drafting (optional)",
   originals: "Original signed forms and attachments",
-  handoff: "Final human approval and portal handoff",
+  handoff: "Final human approval and external submission",
 };
 const anchors: Record<GuidanceStepId, string> = {
   sources: "#source-snapshot",
@@ -183,13 +183,18 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
     },
     {
       id: "handoff", title: titles.handoff,
-      status: workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
-        ? "Complete" : workspace.reviewState === "approved" ? "Needs re-review"
-          : issues.length || !workspace.finalReview.readyForHumanReview ? "Blocked" : "Needs action",
-      description: workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
-        ? "Human approval is current. Submit separately at the authoritative external portal and retain its receipt."
-        : issues.length ? `${issues.length} final-review check(s) remain; Draft with AI is not submission readiness.`
-          : "Approve the exact saved package yourself before external portal handoff.",
+      status: workspace.currentSubmission
+        ? "Complete"
+        : workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
+          ? "Needs action"
+          : workspace.reviewState === "approved" ? "Needs re-review"
+            : issues.length || !workspace.finalReview.readyForHumanReview ? "Blocked" : "Needs action",
+      description: workspace.currentSubmission
+        ? "External submission is recorded for this exact approved package."
+        : workspace.finalReviewApprovalCurrent && workspace.finalReview.readyForHumanReview
+          ? "Human approval is current. Submit externally, then confirm that external event in govTract."
+          : issues.length ? `${issues.length} final-review check(s) remain; Draft with AI is not submission readiness.`
+            : "Approve the exact saved package yourself before external portal handoff.",
       href: anchors.handoff, count: issues.length,
     },
   ];
@@ -265,10 +270,14 @@ export function deriveBidGuidance(workspace: BidWorkspaceRecord) {
         ? "Previous approval is stale. Review and explicitly approve the exact current package again."
         : "Confirm the saved response, original forms, signatures and source instructions, then record human approval.",
       anchors.handoff);
-  } else {
-    nextAction = action("handoff", "Open external submission portal",
-      "Human approval is current. govTract does not submit bids; follow the authoritative portal and retain its receipt.",
+  } else if (!workspace.currentSubmission) {
+    nextAction = action("handoff", "Submit externally",
+      "Human approval is current. Use the authoritative portal, retain its receipt, then confirm the external submission in govTract.",
       anchors.handoff, "External portal");
+  } else {
+    nextAction = action("handoff", "Submission recorded",
+      "External submission is recorded for this exact approved package. govTract did not perform or independently verify the portal submission.",
+      anchors.handoff);
   }
 
   return {

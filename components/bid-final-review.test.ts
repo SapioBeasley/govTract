@@ -34,6 +34,8 @@ function renderReview(dueAt: Date | null) {
         review,
         confirmedOriginalForms: [],
         approvalCurrent: false,
+        submissions: [],
+        currentSubmission: null,
       }),
     ),
   );
