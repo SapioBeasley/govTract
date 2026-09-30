@@ -3,6 +3,11 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { isComplianceEvidence, resolveComplianceStatus, type ComplianceStatus } from "@/lib/bids/compliance";
 import { evaluateBidFinalReview } from "@/lib/bids/final-review";
 import { responseEvidenceIsCurrent, type RequirementResponseEvidence } from "@/lib/bids/response-proof";
+import {
+  currentSubmissionForPackage,
+  effectiveBidStatus,
+  type BidSubmissionRecord,
+} from "@/lib/bids/submission";
 import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 import { bidRequirementSourceReviews } from "@/lib/db/source-review-schema";
 import { applySourceReview, type SourceReviewRecord } from "@/lib/bids/source-review";
@@ -10,6 +15,7 @@ import { applySourceReview, type SourceReviewRecord } from "@/lib/bids/source-re
 import {
   bidRequirements,
   bidSections,
+  bidSubmissions,
   bidWorkspaces,
 } from "@/lib/db/canonical-schema";
 import { getDb } from "@/lib/db/client";
@@ -109,6 +115,8 @@ export type BidWorkspaceRecord = {
   confirmedOriginalForms: string[];
   finalReview: ReturnType<typeof evaluateBidFinalReview>;
   finalReviewApprovalCurrent: boolean;
+  submissions: BidSubmissionRecord[];
+  currentSubmission: BidSubmissionRecord | null;
   agencyBaselineReviewCurrent: boolean;
   sourceSnapshot: BidWorkspaceSourceSnapshot;
   sourceRequirements: Awaited<ReturnType<typeof loadLatestSolicitationRequirements>>;
@@ -255,7 +263,7 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
   }
 
   const db = getDb();
-  const [requirements, sections, sourceRequirements, sourceSnapshot, appliedGenerations, sourceReviews] = await Promise.all([
+  const [requirements, sections, sourceRequirements, sourceSnapshot, appliedGenerations, sourceReviews, submissions] = await Promise.all([
     db
       .select({
         id: bidRequirements.id,
@@ -298,6 +306,9 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
     db.select().from(bidRequirementSourceReviews)
       .where(eq(bidRequirementSourceReviews.bidWorkspaceId, workspaceId))
       .orderBy(desc(bidRequirementSourceReviews.createdAt), desc(bidRequirementSourceReviews.id)),
+    db.select().from(bidSubmissions)
+      .where(eq(bidSubmissions.bidWorkspaceId, workspaceId))
+      .orderBy(desc(bidSubmissions.submittedAt), desc(bidSubmissions.createdAt)),
   ]);
 
   const state = metadataState(row.metadata ?? {});
@@ -397,14 +408,22 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
   const finalReviewApprovalCurrent = state.reviewState === "approved" &&
     row.metadata?.finalReviewApprovalFingerprint === finalReview.reviewFingerprint &&
     finalReview.readyForHumanReview;
+  const currentSubmission = currentSubmissionForPackage(
+    submissions,
+    finalReview.reviewFingerprint,
+    finalReviewApprovalCurrent,
+  );
   return {
     ...workspace,
+    status: effectiveBidStatus(row.status, currentSubmission),
     confirmedOriginalForms,
     finalReview: {
       ...finalReview,
       readyForExternalSubmission: finalReviewApprovalCurrent,
     },
     finalReviewApprovalCurrent,
+    submissions,
+    currentSubmission,
   };
 }
 
@@ -446,21 +465,21 @@ export async function listBidWorkspaces(): Promise<BidWorkspaceSummary[]> {
 
   return Promise.all(
     rows.map(async (row) => {
-      if (!isBidWorkspaceStatus(row.status)) {
-        throw new Error("Stored bid workspace status is invalid");
-      }
-      const state = metadataState(row.metadata ?? {});
-      const snapshot = await loadSourceSnapshot(
-        row.opportunityId,
-        row.sourceSnapshot ?? {},
-      );
+      const workspace = await getBidWorkspace(row.id);
+      if (!workspace) throw new Error("Bid workspace could not be loaded");
       return {
-        ...row,
-        status: row.status,
-        reviewState: state.reviewState,
-        notes: state.notes,
-        snapshotStatus: snapshot.snapshotStatus,
-        snapshotStale: snapshot.stale,
+        id: workspace.id,
+        opportunityId: workspace.opportunityId,
+        title: workspace.title,
+        opportunityTitle: workspace.opportunityTitle,
+        agencyName: workspace.agencyName,
+        dueAt: workspace.dueAt,
+        status: workspace.status,
+        reviewState: workspace.reviewState,
+        notes: workspace.notes,
+        snapshotStatus: workspace.sourceSnapshot.snapshotStatus,
+        snapshotStale: workspace.sourceSnapshot.stale,
+        updatedAt: workspace.updatedAt,
       };
     }),
   );
@@ -526,6 +545,9 @@ export async function updateBidWorkspace(
 ): Promise<BidWorkspaceRecord> {
   if (input.status !== undefined && !isBidWorkspaceStatus(input.status)) {
     throw new Error("Invalid bid workspace status");
+  }
+  if (input.status === "submitted") {
+    throw new Error("Use external submission confirmation to mark a bid Submitted");
   }
   if (
     input.reviewState !== undefined &&
