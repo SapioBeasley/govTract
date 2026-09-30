@@ -27,6 +27,7 @@ export function isCurrentBidRequirement(
 export function listBidRequirementQuestions(workspace: BidWorkspaceRecord): BidRequirementQuestion[] {
   return workspace.requirements
     .filter((requirement) => isCurrentBidRequirement(requirement, workspace))
+    .filter((requirement) => requirement.canMarkComplete)
     .filter(requirementNeedsBidderQuestion)
     .map((requirement) => ({
       ...requirement,
