@@ -7,7 +7,7 @@ import {
   BID_RESPONSE_SOURCE_TYPES,
   type BidRequirementQuestion,
   type BidResponseSourceType,
-} from "@/lib/bids/requirement-questions";
+} from "@/lib/bids/requirement-question-rules";
 import type { BidWorkspaceSection } from "@/lib/bids/workspace";
 
 const SOURCE_LABELS: Record<BidResponseSourceType, string> = {
