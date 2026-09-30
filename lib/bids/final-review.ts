@@ -98,6 +98,11 @@ function isConditionalRequirement(text: string, details: Record<string, unknown>
   return /\b(?:if applicable|as applicable|when applicable|where applicable|upon request|if requested|if applying|if bidding|if selected|if awarded|when requested|when required)\b/i.test(text);
 }
 
+function isSupportingItem(type: string, text: string) {
+  return ["form", "certification", "bonding", "insurance", "insurance_bonding", "license"].includes(type) ||
+    /\b(?:attach(?:ment)?|certificate|w-?9|product literature|specification(?:s)?|license|bond|insurance|reference(?:s)?|pricing (?:sheet|worksheet|form))\b/i.test(text);
+}
+
 /**
  * Read-only final review. The simplified full-bid flow requires current retained
  * source material, a complete saved full bid, required supporting originals, and
@@ -210,11 +215,15 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     });
 
     if (level === "unknown") {
-      (simplifiedFlow ? warn : issue)(
-        "requiredness_unverified",
-        `Verify whether this source requirement is mandatory: ${requirement.text}`,
-        { requirementId: requirement.id },
-      );
+      if (!simplifiedFlow) {
+        issue("requiredness_unverified",
+          `Verify whether this source requirement is mandatory: ${requirement.text}`,
+          { requirementId: requirement.id });
+      } else if (submissionTypes.has(requirement.type) || isSupportingItem(requirement.type, requirement.text)) {
+        warn("requiredness_unverified",
+          `Confirm whether this submission/supporting requirement applies: ${requirement.text}`,
+          { requirementId: requirement.id });
+      }
     }
 
     const responseCurrent = response && responseEvidenceIsCurrent(
@@ -254,8 +263,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     if (requirement.type === "submission_instruction" && !agencyBaseline) {
       submissionInstructions.push(requirement.text);
     }
-    const supportingItem = ["form", "certification", "bonding", "insurance", "insurance_bonding", "license"].includes(requirement.type) ||
-      /\b(?:attach(?:ment)?|certificate|w-?9|product literature|specification(?:s)?|license|bond|insurance|reference(?:s)?|pricing (?:sheet|worksheet|form))\b/i.test(requirement.text);
+    const supportingItem = isSupportingItem(requirement.type, requirement.text);
     if (!supportingItem && requirement.type !== "submission_instruction") continue;
 
     const originalRequired = mandatory &&
@@ -293,7 +301,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         ? "covered_by_full_bid"
         : agencyBaseline
           ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
-          : response?.effectiveStatus ?? conditional ? "conditional" : "missing",
+          : response?.effectiveStatus ?? (conditional ? "conditional" : "missing"),
       originalRequired,
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
