@@ -172,6 +172,7 @@ export function BidPackageControl({
   workspaceId,
   initialSections,
   initialQuestions,
+  questionSourceReady,
   sourceReady,
   sourceBlockers,
   requiresUnderstandingRefresh,
@@ -179,6 +180,7 @@ export function BidPackageControl({
   workspaceId: string;
   initialSections: BidWorkspaceSection[];
   initialQuestions: BidRequirementQuestion[];
+  questionSourceReady: boolean;
   sourceReady: boolean;
   sourceBlockers: string[];
   requiresUnderstandingRefresh: boolean;
@@ -207,7 +209,7 @@ export function BidPackageControl({
   const questionsGenerated = initialQuestions.length > 0;
 
   async function generateQuestions() {
-    if (!sourceReady || pending || inFlight.current) return;
+    if (!questionSourceReady || pending || inFlight.current) return;
     inFlight.current = true;
     setPending(true);
     setMessage(null);
@@ -327,15 +329,15 @@ export function BidPackageControl({
           <button
             type="button"
             onClick={generateQuestions}
-            disabled={!sourceReady || pending}
+            disabled={!questionSourceReady || pending}
             className="shrink-0 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           >
             {pending ? "Working…" : questionsGenerated ? "Refresh questions" : "Generate questions"}
           </button>
         </div>
-        {!sourceReady ? (
+        {!questionSourceReady ? (
           <p role="status" className="mt-3 text-sm text-[var(--muted-foreground)]">
-            {sourceBlockers[0] ?? "The retained solicitation package is not ready yet."}
+            The current solicitation understanding is not ready for requirement questions. Review or refresh the current source understanding below first.
           </p>
         ) : null}
       </section>
