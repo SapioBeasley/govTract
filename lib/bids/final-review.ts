@@ -35,6 +35,7 @@ export type FinalReviewSourceCheck = {
   conditional: boolean;
   responseStatus: string;
   originalRequired: boolean;
+  sourceTemplateRequired: boolean;
   originalConfirmed: boolean;
   originalDocuments: Array<{
     id: string;
@@ -72,6 +73,25 @@ function originalFormRequired(type: string, text: string, details: Record<string
   }
   return (type === "pricing" || type === "certification") &&
     /\b(?:original (?:form|template)|pricing (?:sheet|worksheet|form)|(?:signed|completed) (?:form|affidavit)|provided (?:form|template))\b/i.test(text);
+}
+
+function requiresRetainedSourceTemplate(
+  type: string,
+  text: string,
+  details: Record<string, unknown>,
+) {
+  if (!originalFormRequired(type, text, details)) return false;
+  if (details.requiredOriginalForm === true || details.templateRequired === true) return true;
+  if (["requiredFileName", "formFilename", "templateFilename", "sourceFileName"]
+      .some((field) => typeof details[field] === "string" && String(details[field]).trim())) {
+    return true;
+  }
+  // These are submission artifacts the bidder completes or supplies; there is no
+  // City-provided source template that should be expected in the retained package.
+  if (/\b(?:electronic bid form|product (?:specification sheet|literature)|specification sheet\/product literature)\b/i.test(text)) {
+    return false;
+  }
+  return true;
 }
 
 function explicitOriginalFileNames(details: Record<string, unknown>, text: string, filenames: string[]) {
@@ -268,8 +288,10 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
 
     const originalRequired = mandatory &&
       originalFormRequired(requirement.type, requirement.text, requirement.details);
+    const sourceTemplateRequired = originalRequired &&
+      requiresRetainedSourceTemplate(requirement.type, requirement.text, requirement.details);
     if (agencyBaseline && !originalRequired) continue;
-    const identifiedNames = originalRequired
+    const identifiedNames = sourceTemplateRequired
       ? explicitOriginalFileNames(requirement.details, requirement.text,
           snapshot.documents.map((document) => document.filename))
       : [];
@@ -281,7 +303,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         checksumSha256: document.checksumSha256,
         status: document.status,
       }));
-    if (originalRequired && !originalDocuments.length) {
+    if (sourceTemplateRequired && !originalDocuments.length) {
       issue("original_form_not_identified",
         `Identify the required original source template/form, not a generated replacement: ${requirement.text}`,
         { requirementId: requirement.id });
@@ -303,6 +325,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
           ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
           : response?.effectiveStatus ?? (conditional ? "conditional" : "missing"),
       originalRequired,
+      sourceTemplateRequired,
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
       references,
