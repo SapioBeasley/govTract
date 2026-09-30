@@ -42,6 +42,25 @@ export type ModelDraftOutput = {
   missingFacts: string[];
 };
 
+export function hasBidDraftSourceEvidence(requirement: PersistedSolicitationRequirement) {
+  const listing = requirement.listingEvidence;
+  const validListing = Boolean(listing?.sourceRecordId &&
+    /^[0-9a-f]{64}$/i.test(listing.payloadHash) && listing.excerpt.trim());
+  const readableDocumentEvidence = requirement.evidence.some((evidence) => Boolean(evidence.excerpt?.trim()));
+  return validListing || readableDocumentEvidence;
+}
+
+export function selectFullBidDraftRequirements(
+  requirements: SolicitationRequirementSet,
+  candidates: PersistedSolicitationRequirement[],
+) {
+  const evidenceOnlyPartial =
+    requirements.completenessStatus === "partial" &&
+    requirements.incompleteReasons.length > 0 &&
+    requirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing");
+  return evidenceOnlyPartial ? candidates.filter(hasBidDraftSourceEvidence) : candidates;
+}
+
 function questionFor(requirement: PersistedSolicitationRequirement): string | null {
   const text = requirement.text.toLowerCase();
   if (requirement.type === "pricing" || /\b(price|pricing|rate|cost|budget)\b/.test(text)) {
@@ -140,16 +159,23 @@ export function prepareBidDraftInput(input: {
   }
   const allLinked = savedLinked.filter((requirement): requirement is PersistedSolicitationRequirement => Boolean(requirement));
   const baselineResponseExplicitlyPrescribed = section.metadata.source === "solicitation_heading";
-  const selectedLinked = allLinked.filter((requirement) =>
+  const linkedCandidates = allLinked.filter((requirement) =>
     !isAgencyBaselineRequirement(requirement) || baselineResponseExplicitlyPrescribed);
+  const evidenceOnlyPartialFullBid = section.metadata.fullBid === true && Boolean(requirements);
+  const selectedLinked = evidenceOnlyPartialFullBid
+    ? selectFullBidDraftRequirements(requirements!, linkedCandidates)
+    : linkedCandidates;
   const keys = selectedLinked.map((requirement) => requirement.requirementKey);
   if (keys.length === 0) reasons.push("This bid section has no opportunity-specific, evidence-backed requirements.");
 
   const snapshotDocuments = new Map(snapshot.documents.map((document) => [document.opportunityDocumentVersionId, document]));
-  const governing = requirements?.requirements.filter((requirement) =>
+  const governingCandidates = requirements?.requirements.filter((requirement) =>
     !savedKeys.includes(requirement.requirementKey) &&
     !isAgencyBaselineRequirement(requirement) &&
     explicitlyGovernsSection(requirement, section.title)) ?? [];
+  const governing = evidenceOnlyPartialFullBid
+    ? selectFullBidDraftRequirements(requirements!, governingCandidates)
+    : governingCandidates;
   const selected = [...selectedLinked, ...governing];
 
   // Version metadata is recorded once per referenced source file. A requirement
