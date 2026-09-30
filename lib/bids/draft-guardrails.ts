@@ -27,7 +27,37 @@ const vendorSubject = /\b(?:we|our(?: company| team| proposed| offered| products
 const commitment = /\b(?:will|shall|can|are|is|has|have|undergo(?:es)?|meet(?:s)?|comply|complies|provide(?:s)?|supply|deliver(?:s)?|carry|carries|include(?:s)?|offer(?:s|ed)?|propose(?:s|d)?|certif(?:ied|y)|test(?:ed|ing)?|insur(?:ed|ance)|warrant(?:y|ies)?)\b/i;
 export type DraftInspection = { claims: string[]; modelIssues: string[] };
 
-// A period inside a numeric value such as 24.75 is content, not a sentence boundary.,function isClauseBoundary(text: string, index: number) {,  const value = text[index];,  if (value === ".") {,    const previous = index > 0 ? text[index - 1] : "";,    const next = index + 1 < text.length ? text[index + 1] : "";,    if (/\d/.test(previous) && /\d/.test(next)) return false;,    return true;,  },  return value === "!" || value === "?" || value === ";" || value === "\n";,},,function splitClausesWithDelimiters(content: string) {,  const chunks: string[] = [];,  let start = 0;,  let index = 0;,  while (index < content.length) {,    if (!isClauseBoundary(content, index)) {,      index++;,      continue;,    },    chunks.push(content.slice(start, index));,    let end = index + 1;,    while (end < content.length && isClauseBoundary(content, end)) end++;,    chunks.push(content.slice(index, end));,    start = end;,    index = end;,  },  chunks.push(content.slice(start));,  return chunks;,}
+// A period inside a numeric value such as 24.75 is content, not a sentence boundary.
+function isClauseBoundary(text: string, index: number) {
+  const value = text[index];
+  if (value === ".") {
+    const previous = index > 0 ? text[index - 1] : "";
+    const next = index + 1 < text.length ? text[index + 1] : "";
+    if (/\d/.test(previous) && /\d/.test(next)) return false;
+    return true;
+  }
+  return value === "!" || value === "?" || value === ";" || value === "\n";
+}
+
+function splitClausesWithDelimiters(content: string) {
+  const chunks: string[] = [];
+  let start = 0;
+  let index = 0;
+  while (index < content.length) {
+    if (!isClauseBoundary(content, index)) {
+      index++;
+      continue;
+    }
+    chunks.push(content.slice(start, index));
+    let end = index + 1;
+    while (end < content.length && isClauseBoundary(content, end)) end++;
+    chunks.push(content.slice(index, end));
+    start = end;
+    index = end;
+  }
+  chunks.push(content.slice(start));
+  return chunks;
+}
 
 /** Inspects offered-vendor assertions separately from buyer requirements and source-model mapping. */
 export function inspectBidDraft(content: string, sourceEvidence: string): DraftInspection {
