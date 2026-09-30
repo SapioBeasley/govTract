@@ -56,8 +56,8 @@ function RequirementQuestionCard({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             responseNotes: answer.trim() || null,
-            responseSourceType: answer.trim() ? sourceType : null,
-            responseSourceName: answer.trim() ? sourceName.trim() || null : null,
+            responseSourceType: sourceType,
+            responseSourceName: sourceName.trim() || null,
           }),
         },
       );
@@ -65,7 +65,7 @@ function RequirementQuestionCard({
       if (!response.ok) {
         setMessage(payload.error?.message ?? "Response could not be saved.");
       } else {
-        setMessage("Response saved.");
+        setMessage(answer.trim() ? "Response saved." : "Question assignment saved.");
         router.refresh();
       }
     } catch {
@@ -113,7 +113,7 @@ function RequirementQuestionCard({
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1.5 text-xs font-medium">
-          Who supplied the response?
+          Who should answer this?
           <select
             value={sourceType}
             onChange={(event) => setSourceType(event.target.value as BidResponseSourceType)}
