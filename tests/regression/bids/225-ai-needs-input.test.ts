@@ -64,7 +64,8 @@ test("AI answer replacements turn terse bidder inputs into proposal-ready prose 
     }),
   });
   assert.match(revised, /We will meet the delivery requirements stated in the solicitation\./);
-  assert.doesNotMatch(revised, /Delivery:\s*Meets expectations/i);
+  assert.doesNotMatch(revised, /Delivery:\s*(?:Meets expectations|We will)/i,
+    "the affected generated line should be rewritten as proposal prose, not receive an inline paste");
   assert.match(revised, /\[NEEDS INPUT: Confirm final pricing\]/);
   assert.doesNotMatch(revised, /\[NEEDS INPUT: Confirm delivery schedule\]/);
   assert.match(revised, /UNVERIFIED AI WORKING DRAFT/i,
