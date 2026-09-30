@@ -107,6 +107,8 @@ test("saved bidder or supplier responses are durable draft input and satisfy the
     missingFacts: [],
   });
   assert.match(final.content, /\$10,000\.00/);
+  assert.doesNotMatch(final.content, /^UNVERIFIED AI WORKING DRAFT/i,
+    "a fully resolved draft should proceed directly to human package review");
   assert.doesNotMatch(final.content, /\[NEEDS INPUT:.*pricing/i,
     "an authorized saved pricing response must not be replaced by a new pricing prompt");
 });
