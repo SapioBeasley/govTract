@@ -361,7 +361,7 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
   if (value.requirementKeys.some((key) => !packet.requirementKeys.includes(key))) {
     throw new Error("The model cited an unsupported requirement.");
   }
-  const inspection = inspectBidDraft(value.content, packet.sourceEvidence);
+  const inspection = inspectBidDraft(value.content, packet.sourceEvidence, packet.bidderResponseContext);
   const questions = [...new Set([...packet.requiredQuestions, ...value.missingFacts,
     "Verify all offered product specifications, company capabilities and commitments against actual vendor and manufacturer evidence",
     ...inspection.modelIssues,
@@ -369,7 +369,7 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
   ].map((question) =>
     question.trim().replace(/[\r\n\[\]]/g, " ").trim()).filter(Boolean))];
   return {
-    content: "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.\n\n" + redactUnverifiedClaims(value.content, packet.sourceEvidence).trim() + (questions.length
+    content: "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.\n\n" + redactUnverifiedClaims(value.content, packet.sourceEvidence, packet.bidderResponseContext).trim() + (questions.length
       ? "\n\nOpen factual questions — verify before submission:\n" +
         questions.map((question) => "- [NEEDS INPUT: " + question + "]").join("\n")
       : ""),
