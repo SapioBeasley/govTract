@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 
+import { isBidWritingRequirementType } from "@/lib/bids/builder";
+import { isComplianceEvidence } from "@/lib/bids/compliance";
 import { reviewDraftFingerprint } from "@/lib/bids/draft-guardrails";
 import { responseEvidenceIsCurrent } from "@/lib/bids/response-proof";
-import { isComplianceEvidence } from "@/lib/bids/compliance";
 
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
-import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
+import type { ListingEvidence } from "@/lib/procurement/requirements/listing-evidence";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 
 export type FinalReviewIssue = {
   code: string;
@@ -30,6 +32,7 @@ export type FinalReviewSourceCheck = {
   text: string;
   kind: string;
   mandatory: boolean;
+  conditional: boolean;
   responseStatus: string;
   originalRequired: boolean;
   originalConfirmed: boolean;
@@ -65,10 +68,10 @@ function originalFormRequired(type: string, text: string, details: Record<string
   if (details.requiredOriginalForm === true || details.templateRequired === true) return true;
   if (type === "form") return true;
   if (type === "submission_instruction") {
-    return /\\b(?:original (?:form|template)|provided (?:form|template))\\b/i.test(text);
+    return /\b(?:original (?:form|template)|provided (?:form|template))\b/i.test(text);
   }
   return (type === "pricing" || type === "certification") &&
-    /\\b(?:original (?:form|template)|pricing (?:sheet|worksheet|form)|(?:signed|completed) (?:form|affidavit)|provided (?:form|template))\\b/i.test(text);
+    /\b(?:original (?:form|template)|pricing (?:sheet|worksheet|form)|(?:signed|completed) (?:form|affidavit)|provided (?:form|template))\b/i.test(text);
 }
 
 function explicitOriginalFileNames(details: Record<string, unknown>, text: string, filenames: string[]) {
@@ -84,9 +87,22 @@ function hasUnresolvedPlaceholder(content: string) {
   return /\[(?:NEEDS\s+INPUT|TODO|TBD|INSERT|PLACEHOLDER)[^\]]*\]|\b(?:TODO|TBD)\s*[:\-]|\{\{[^}]+\}\}|<<[^>]+>>/i.test(content);
 }
 
+function isConditionalRequirement(text: string, details: Record<string, unknown>) {
+  if (details.applicable === true || details.isApplicable === true || details.conditionApplies === true) {
+    return false;
+  }
+  if (details.applicable === false || details.isApplicable === false ||
+      details.conditional === true || details.conditionApplies === false) {
+    return true;
+  }
+  return /\b(?:if applicable|as applicable|when applicable|where applicable|upon request|if requested|if applying|if bidding|if selected|if awarded|when requested|when required)\b/i.test(text);
+}
+
 /**
- * Read-only final review. A complete checklist only permits human review of a package;
- * it never records a bid as submitted and never uses an AI-generated source substitute.
+ * Read-only final review. The simplified full-bid flow requires current retained
+ * source material, a complete saved full bid, required supporting originals, and
+ * explicit human approval of the exact package. Legacy compliance rows are not a
+ * prerequisite when a full-bid response exists.
  */
 export function evaluateBidFinalReview(input: FinalReviewInput) {
   const { workspace, portalUrl } = input;
@@ -94,6 +110,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   const source = workspace.sourceRequirements;
   const confirmed = new Set(input.confirmedOriginalForms ?? []);
   const fullBidSection = workspace.sections.find((section) => section.metadata.fullBid === true) ?? null;
+  const simplifiedFlow = Boolean(fullBidSection);
   const fullBidKeys = new Set(
     fullBidSection && Array.isArray(fullBidSection.requirementLinks.sourceRequirementKeys)
       ? fullBidSection.requirementLinks.sourceRequirementKeys.filter((value): value is string => typeof value === "string")
@@ -101,8 +118,12 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   );
   const fullBidReady = Boolean(fullBidSection?.content?.trim() && !hasUnresolvedPlaceholder(fullBidSection.content));
   const issues: FinalReviewIssue[] = [];
+  const warnings: FinalReviewIssue[] = [];
   const issue = (code: string, message: string, extra: Omit<FinalReviewIssue, "code" | "message"> = {}) => {
     issues.push({ code, message, ...extra });
+  };
+  const warn = (code: string, message: string, extra: Omit<FinalReviewIssue, "code" | "message"> = {}) => {
+    warnings.push({ code, message, ...extra });
   };
 
   if (!snapshot.pursuitSnapshotId || snapshot.snapshotStatus !== "complete" ||
@@ -124,24 +145,33 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   if (snapshot.documents.length !== snapshot.totalDocumentCount) {
     issue("source_document_inventory_incomplete", "The source document inventory does not match the captured package.");
   }
-  const currentChecks = source?.requirements.map((requirement) => workspace.requirements.find((row) =>
-    row.sourceRequirementKey === `${source.understandingId}:${requirement.id}`)) ?? [];
-  const reviewedSourceSet = Boolean(source && source.requirements.length > 0 &&
-    source.completenessStatus === "partial" &&
-    source.incompleteReasons.length > 0 &&
-    source.incompleteReasons.every((reason) => reason === "requirement_evidence_missing") &&
-    currentChecks.every((row) => row?.canMarkComplete));
-  if (!source || (source.completenessStatus !== "complete" && !reviewedSourceSet) || source.isStale ||
-      !source.requirements.length) {
-    issue("source_requirements_unverified", "A complete current structured solicitation requirement set is unavailable.");
+
+  if (simplifiedFlow) {
+    if (!isSolicitationRequirementSetDraftable(source) || !source.requirements.length) {
+      issue("source_requirements_unverified", "A current draftable solicitation requirement set is unavailable.");
+    }
+  } else {
+    const currentChecks = source?.requirements.map((requirement) => workspace.requirements.find((row) =>
+      row.sourceRequirementKey === `${source.understandingId}:${requirement.id}`)) ?? [];
+    const reviewedSourceSet = Boolean(source && source.requirements.length > 0 &&
+      source.completenessStatus === "partial" &&
+      source.incompleteReasons.length > 0 &&
+      source.incompleteReasons.every((reason) => reason === "requirement_evidence_missing") &&
+      currentChecks.every((row) => row?.canMarkComplete));
+    if (!source || (source.completenessStatus !== "complete" && !reviewedSourceSet) || source.isStale ||
+        !source.requirements.length) {
+      issue("source_requirements_unverified", "A complete current structured solicitation requirement set is unavailable.");
+    }
   }
+
+  const submissionSignal = simplifiedFlow ? warn : issue;
   if (!portalUrl || !/^https:\/\/[^\s/]+(?:\/|$)/i.test(portalUrl)) {
-    issue("submission_portal_unverified", "Confirm the authoritative external solicitation and submission channel.");
+    submissionSignal("submission_portal_unverified", "Confirm the authoritative external solicitation and submission channel.");
   }
   if (!workspace.dueAt) {
-    issue("submission_deadline_unverified", "The authoritative submission due date and time must be confirmed.");
+    submissionSignal("submission_deadline_unverified", "The authoritative submission due date and time must be confirmed.");
   } else if (workspace.dueAt.getTime() <= (input.now ?? new Date()).getTime()) {
-    issue("submission_deadline_elapsed", "The recorded submission deadline has passed; verify any extension at the source.");
+    submissionSignal("submission_deadline_elapsed", "The recorded submission deadline has passed; verify any extension at the source.");
   }
 
   const byVersion = new Map(snapshot.documents.map((document) => [
@@ -150,9 +180,10 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   const byKey = new Map(workspace.requirements.map((requirement) => [
     requirement.sourceRequirementKey, requirement,
   ]));
-  if (!workspace.requirements.length) {
+  if (!simplifiedFlow && !workspace.requirements.length) {
     issue("compliance_matrix_missing", "Generate and review the bid compliance matrix.");
   }
+
   const sourceChecks: FinalReviewSourceCheck[] = [];
   const submissionInstructions: string[] = [];
   for (const requirement of source?.requirements ?? []) {
@@ -163,7 +194,8 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       response.evidence.sourceRequirementId === requirement.id
         ? response.evidence : null;
     const level = effectiveEvidence?.requirementLevel ?? requirement.level;
-    const mandatory = level === "required";
+    const conditional = isConditionalRequirement(requirement.text, requirement.details);
+    const mandatory = level === "required" && !conditional;
     const references = (effectiveEvidence?.references.length
       ? effectiveEvidence.references : requirement.evidence).map((evidence) => {
       const document = byVersion.get(evidence.opportunityDocumentVersionId);
@@ -176,10 +208,15 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
         excerpt: evidence.excerpt,
       };
     });
+
     if (level === "unknown") {
-      issue("requiredness_unverified", `Verify whether this source requirement is mandatory: ${requirement.text}`,
-        { requirementId: requirement.id });
+      (simplifiedFlow ? warn : issue)(
+        "requiredness_unverified",
+        `Verify whether this source requirement is mandatory: ${requirement.text}`,
+        { requirementId: requirement.id },
+      );
     }
+
     const responseCurrent = response && responseEvidenceIsCurrent(
       response.responseEvidence, workspace.sections, input.confirmedOriginalForms ?? [],
       requirement.type, requirement.id, {
@@ -189,18 +226,29 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       },
     );
     const coveredByFullBid = fullBidReady && fullBidKeys.has(requirement.requirementKey);
-    if (!agencyBaseline && mandatory && !coveredByFullBid &&
+    if (simplifiedFlow) {
+      if (!agencyBaseline && mandatory && isBidWritingRequirementType(requirement.type) && !coveredByFullBid) {
+        issue("mandatory_requirement_incomplete",
+          `Mandatory bid-writing requirement is not covered by the current saved full bid: ${requirement.text}`,
+          { requirementId: requirement.id });
+      }
+    } else if (!agencyBaseline && mandatory && !coveredByFullBid &&
         (!response || response.effectiveStatus !== "complete" || !responseCurrent)) {
       issue("mandatory_requirement_incomplete",
         `Mandatory requirement is not yet covered by the current saved full bid or a confirmed original form: ${requirement.text}`,
         { requirementId: requirement.id });
     }
-    if ((mandatory || submissionTypes.has(requirement.type)) &&
-        ((!references.length && !requirement.listingEvidence) || references.some((reference) =>
-          !reference.snapshotDocumentId || !reference.checksumSha256 || !reference.excerpt?.trim() ||
-          byVersion.get(reference.opportunityDocumentVersionId)?.status !== "stored"))) {
-      issue("source_evidence_unverified", `Source evidence cannot be verified against the retained version: ${requirement.text}`,
-        { requirementId: requirement.id });
+
+    const evidenceUnverified = (mandatory || submissionTypes.has(requirement.type)) &&
+      ((!references.length && !requirement.listingEvidence) || references.some((reference) =>
+        !reference.snapshotDocumentId || !reference.checksumSha256 || !reference.excerpt?.trim() ||
+        byVersion.get(reference.opportunityDocumentVersionId)?.status !== "stored"));
+    if (evidenceUnverified) {
+      (simplifiedFlow ? warn : issue)(
+        "source_evidence_unverified",
+        `Source evidence cannot be verified against the retained version: ${requirement.text}`,
+        { requirementId: requirement.id },
+      );
     }
 
     if (requirement.type === "submission_instruction" && !agencyBaseline) {
@@ -212,9 +260,6 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
 
     const originalRequired = mandatory &&
       originalFormRequired(requirement.type, requirement.text, requirement.details);
-    // Standard agency boilerplate is reviewed once in the builder. Keep an
-    // individual final-review card only when an original source form/template
-    // must actually be completed and included.
     if (agencyBaseline && !originalRequired) continue;
     const identifiedNames = originalRequired
       ? explicitOriginalFileNames(requirement.details, requirement.text,
@@ -243,9 +288,12 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       text: requirement.text,
       kind: requirement.type,
       mandatory,
-      responseStatus: agencyBaseline
-        ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
-        : response?.effectiveStatus ?? "missing",
+      conditional,
+      responseStatus: coveredByFullBid
+        ? "covered_by_full_bid"
+        : agencyBaseline
+          ? workspace.agencyBaselineReviewCurrent ? "standard_terms_reviewed" : "standard_terms_review"
+          : response?.effectiveStatus ?? conditional ? "conditional" : "missing",
       originalRequired,
       originalConfirmed: confirmed.has(requirement.id),
       originalDocuments,
@@ -253,8 +301,12 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
       listingEvidence: requirement.listingEvidence ?? null,
     });
   }
+
   if (!submissionInstructions.length) {
-    issue("submission_method_unverified", "Submission method and file requirements must be reviewed in authoritative instructions.");
+    (simplifiedFlow ? warn : issue)(
+      "submission_method_unverified",
+      "Submission method and file requirements must be reviewed in authoritative instructions.",
+    );
   }
 
   if (!fullBidSection && !workspace.sections.length) {
@@ -262,7 +314,7 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
   }
   for (const section of workspace.sections) {
     if (fullBidSection && section.id !== fullBidSection.id) continue;
-    if (section.metadata.aiDraftReview &&
+    if (!simplifiedFlow && section.metadata.aiDraftReview &&
         section.metadata.verifiedVendorFactsFingerprint !== reviewDraftFingerprint(
           section.content ?? "", snapshot.documentSetFingerprint,
         )) {
@@ -296,8 +348,8 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     agencyBaselineReviewCurrent: workspace.agencyBaselineReviewCurrent ?? false,
     sourceRequirements: source?.requirements.map((req) => [req.id, req.level, req.type, req.text,
       req.evidence.map((evidence) => evidence.opportunityDocumentVersionId),
-      req.listingEvidence ? [req.listingEvidence.sourceRecordId,req.listingEvidence.payloadHash,
-        req.listingEvidence.field,req.listingEvidence.excerpt] : null]) ?? [],
+      req.listingEvidence ? [req.listingEvidence.sourceRecordId, req.listingEvidence.payloadHash,
+        req.listingEvidence.field, req.listingEvidence.excerpt] : null]) ?? [],
     requirements: workspace.requirements.map((req) => [req.id, req.status, req.effectiveStatus, req.responseNotes, req.evidence, req.responseEvidence]),
     sections: workspace.sections.map((section) => [section.id, section.title, section.instructions,
       section.content, section.requirementLinks, section.metadata]),
@@ -308,8 +360,8 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
 
   return {
     blockingIssues: issues,
+    warnings,
     readyForHumanReview: issues.length === 0,
-    // No automated submission integration exists. Submission is never inferred from package review.
     readyForExternalSubmission: false,
     reviewFingerprint,
     sourceChecks,
