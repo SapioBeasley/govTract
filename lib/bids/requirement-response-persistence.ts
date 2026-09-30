@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 
+import { isCurrentBidRequirement } from "@/lib/bids/requirement-questions";
 import {
   isBidResponseSourceType,
-  isCurrentBidRequirement,
   type BidResponseSourceType,
-} from "@/lib/bids/requirement-questions";
+} from "@/lib/bids/requirement-question-rules";
 import { getBidWorkspace } from "@/lib/bids/workspace";
 import { bidRequirements } from "@/lib/db/canonical-schema";
 import { getDb } from "@/lib/db/client";
