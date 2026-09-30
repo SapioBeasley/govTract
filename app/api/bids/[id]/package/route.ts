@@ -23,13 +23,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!fullBid?.content?.trim()) {
     return NextResponse.json({ error: { message: "Generate and save the full bid before packaging." } }, { status: 409 });
   }
-  if (!workspace.finalReview.readyForHumanReview || !workspace.finalReviewApprovalCurrent) {
-    return NextResponse.json(
-      { error: { message: "Resolve package blockers and approve the exact current bid before download." } },
-      { status: 409 },
-    );
-  }
-
   const supporting = workspace.finalReview.sourceChecks.filter((check) =>
     check.originalRequired || ["form", "certification", "bonding", "insurance", "insurance_bonding", "license"].includes(check.kind),
   );
@@ -40,8 +33,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     `Workspace: ${workspace.id}`,
     `Source snapshot: ${workspace.sourceSnapshot.pursuitSnapshotId ?? "unavailable"}`,
     `Document fingerprint: ${workspace.sourceSnapshot.documentSetFingerprint ?? "unavailable"}`,
-    `Approved package fingerprint: ${workspace.finalReview.reviewFingerprint}`,
+    `Package review fingerprint: ${workspace.finalReview.reviewFingerprint}`,
+    `Human approval current: ${workspace.finalReviewApprovalCurrent ? "yes" : "no"}`,
+    `Package blockers remaining: ${workspace.finalReview.blockingIssues.length}`,
     "",
+    ...(workspace.finalReview.blockingIssues.length
+      ? ["Outstanding package blockers:", ...workspace.finalReview.blockingIssues.map((issue) => `- ${issue.message}`), ""]
+      : []),
     "Included:",
     "- Full bid response (below)",
     ...supporting.filter((item) => item.originalConfirmed).map((item) => `- Supporting item confirmed: ${item.text}`),
