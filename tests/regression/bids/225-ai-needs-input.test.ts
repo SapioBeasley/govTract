@@ -38,38 +38,69 @@ test("bidder answers are limited to unresolved prompts and empty answers are ign
   ]), /unresolved needs-input prompt/i);
 });
 
-test("AI answer replacements preserve unrelated draft text and must retain the user's answer verbatim", () => {
+test("AI answer replacements turn terse bidder inputs into proposal-ready prose while leaving unanswered gaps", () => {
   const current = [
-    "Intro remains unchanged.",
-    "[NEEDS INPUT: Confirm delivery schedule]",
-    "Pricing remains [NEEDS INPUT: Confirm final pricing].",
+    "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.",
+    "",
+    "Delivery: [NEEDS INPUT: Confirm delivery schedule]",
+    "Pricing: [NEEDS INPUT: Confirm final pricing]",
+    "",
+    "Open factual questions — verify before submission:",
+    "- [NEEDS INPUT: Confirm delivery schedule]",
+    "- [NEEDS INPUT: Confirm final pricing]",
   ].join("\n");
   const answers = normalizeBidderInputAnswers(current, [
-    { question: "Confirm delivery schedule", answer: "Delivery within 21 calendar days after receipt of PO." },
+    { question: "Confirm delivery schedule", answer: "Meets expectations" },
   ]);
   const revised = applyBidderAnswerReplacements({
     content: current,
     answers,
     replacements: [{
       question: "Confirm delivery schedule",
-      text: "Our delivery commitment is: Delivery within 21 calendar days after receipt of PO.",
+      text: "We will meet the delivery requirements stated in the solicitation.",
     }],
-    sourceEvidence: "{\"requirements\":[]}",
+    sourceEvidence: JSON.stringify({
+      requirements: [{ key: "delivery:1", text: "Deliver to the City's stated destination." }],
+    }),
   });
-  assert.match(revised, /^Intro remains unchanged\./);
-  assert.match(revised, /Our delivery commitment is: Delivery within 21 calendar days after receipt of PO\./);
+  assert.match(revised, /We will meet the delivery requirements stated in the solicitation\./);
+  assert.doesNotMatch(revised, /Delivery:\s*Meets expectations/i);
   assert.match(revised, /\[NEEDS INPUT: Confirm final pricing\]/);
   assert.doesNotMatch(revised, /\[NEEDS INPUT: Confirm delivery schedule\]/);
+  assert.match(revised, /UNVERIFIED AI WORKING DRAFT/i,
+    "working-draft warning remains while any Needs input item is unresolved");
+  assert.doesNotMatch(revised, /Open factual questions[\s\S]*Confirm delivery schedule/i);
 
+  const completed = applyBidderAnswerReplacements({
+    content: "[NEEDS INPUT: Confirm delivery schedule]",
+    answers,
+    replacements: [{
+      question: "Confirm delivery schedule",
+      text: "We will meet the delivery requirements stated in the solicitation.",
+    }],
+    sourceEvidence: JSON.stringify({
+      requirements: [{ key: "delivery:1", text: "Deliver to the City's stated destination." }],
+    }),
+  });
+  assert.doesNotMatch(completed, /UNVERIFIED AI WORKING DRAFT|Open factual questions|NEEDS INPUT/i);
+});
+
+test("AI answer replacement rejects newly invented concrete bidder facts not present in the answer or source context", () => {
+  const current = "[NEEDS INPUT: Confirm delivery schedule]";
+  const answers = normalizeBidderInputAnswers(current, [
+    { question: "Confirm delivery schedule", answer: "Meets expectations" },
+  ]);
   assert.throws(() => applyBidderAnswerReplacements({
     content: current,
     answers,
     replacements: [{
       question: "Confirm delivery schedule",
-      text: "We are fully certified and will deliver quickly.",
+      text: "We will deliver within 10 days under ISO 9001 certification.",
     }],
-    sourceEvidence: "{\"requirements\":[]}",
-  }), /verbatim|unsupported/i);
+    sourceEvidence: JSON.stringify({
+      requirements: [{ key: "delivery:1", text: "Deliver to the City's stated destination." }],
+    }),
+  }), /unsupported|invented|factual/i);
 });
 
 test("bid UI exposes answer cards and a separate explicit manual AI update action", () => {
@@ -88,7 +119,8 @@ test("answer revision route and prompt keep bidder answers distinct from solicit
   assert.match(route, /applyBidderAnswersToFullBid/);
   assert.match(provider, /user-authorized bidder/i);
   assert.match(provider, /not (?:buyer|solicitation|source) evidence/i);
-  assert.match(provider, /verbatim/i);
+  assert.match(provider, /proposal-ready|complete professional/i);
+  assert.match(provider, /terse|short confirmation/i);
 });
 
 
