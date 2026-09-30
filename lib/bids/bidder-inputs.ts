@@ -148,13 +148,26 @@ export function applyBidderAnswerReplacements(input: {
 
   const { body, appendixLines } = splitAppendix(input.content);
   const touched = new Set<string>();
-  let revisedBody = body.replace(needsInputPattern, (whole, rawQuestion: string) => {
-    const key = normalizedQuestion(rawQuestion).toLocaleLowerCase("en-US");
-    const replacement = replacementMap.get(key);
-    if (!replacement) return whole;
-    touched.add(key);
-    return replacement;
-  });
+  const revisedBody = body.split("\n").map((line) => {
+    const prompts = extractNeedsInputPrompts(line);
+    const answered = prompts.filter((question) =>
+      replacementMap.has(question.toLocaleLowerCase("en-US")));
+    const unanswered = prompts.filter((question) =>
+      !replacementMap.has(question.toLocaleLowerCase("en-US")));
+    if (answered.length === 1 && unanswered.length === 0) {
+      const key = answered[0]!.toLocaleLowerCase("en-US");
+      touched.add(key);
+      const indentation = line.match(/^\s*/)?.[0] ?? "";
+      return indentation + replacementMap.get(key);
+    }
+    return line.replace(needsInputPattern, (whole, rawQuestion: string) => {
+      const key = normalizedQuestion(rawQuestion).toLocaleLowerCase("en-US");
+      const replacement = replacementMap.get(key);
+      if (!replacement) return whole;
+      touched.add(key);
+      return replacement;
+    });
+  }).join("\n");
 
   const remainingAppendix = appendixLines.filter((line) => {
     const question = questionFromLine(line);
@@ -169,8 +182,8 @@ export function applyBidderAnswerReplacements(input: {
     throw new Error("One or more answered Needs-input prompts could not be located in the current bid.");
   }
 
-  revisedBody = revisedBody.trim();
-  let revised = remainingAppendix.length
+  let revised = revisedBody.trim();
+  revised = remainingAppendix.length
     ? revisedBody + "\n\n" + appendixMarker + "\n" + remainingAppendix.join("\n")
     : revisedBody;
   if (!needsInputPattern.test(revised)) {
