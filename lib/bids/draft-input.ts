@@ -64,32 +64,6 @@ export function selectFullBidDraftRequirements(
   return evidenceOnlyPartial ? candidates.filter(hasBidDraftSourceEvidence) : candidates;
 }
 
-function questionFor(requirement: PersistedSolicitationRequirement): string | null {
-  const text = requirement.text.toLowerCase();
-  if (requirement.type === "pricing" || /\b(price|pricing|rate|cost|budget)\b/.test(text)) {
-    return "Confirm final pricing against the authoritative pricing worksheet and approvals";
-  }
-  if (requirement.type === "certification" || /\bcertif(?:ication|ied|y)\b/.test(text)) {
-    return "Provide and verify applicable company certifications";
-  }
-  if (requirement.type === "license" || /\blicen[cs]e\b/.test(text)) {
-    return "Provide and verify applicable licenses";
-  }
-  if (/\b(past performance|references?|prior project|previous contract|experience)\b/.test(text)) {
-    return "Verify project history, customers, and past-performance evidence";
-  }
-  if (/\b(staff|personnel|crew|equipment|vehicle|capacity)\b/.test(text)) {
-    return "Verify available staffing, equipment, and operational capacity";
-  }
-  if (/\b(insurance|bond)\b/.test(text)) {
-    return "Verify insurance and bonding documentation and limits";
-  }
-  if (requirement.type === "form" || /\b(form|affidavit|signature|signed)\b/.test(text)) {
-    return "Complete the original required source form and verify signatures";
-  }
-  return null;
-}
-
 /**
  * Unlinked rules are not implicitly relevant to every section merely because they
  * concern pricing, forms, qualifications or submission. Only explicit applicability
