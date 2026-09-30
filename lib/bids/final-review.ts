@@ -332,9 +332,16 @@ export function evaluateBidFinalReview(input: FinalReviewInput) {
     }
     if (!section.content?.trim()) {
       issue("section_incomplete", `Response section ${section.title} is empty.`, { sectionId: section.id });
-    } else if (hasUnresolvedPlaceholder(section.content)) {
-      issue("section_placeholder", `Response section ${section.title} contains an unresolved placeholder.`,
-        { sectionId: section.id });
+    } else {
+      if (/^UNVERIFIED AI WORKING DRAFT\b/i.test(section.content.trim())) {
+        issue("section_unverified_working_draft",
+          `Response section ${section.title} is still marked as an unverified AI working draft. Regenerate or revise it into the final reviewed response before approval.`,
+          { sectionId: section.id });
+      }
+      if (hasUnresolvedPlaceholder(section.content)) {
+        issue("section_placeholder", `Response section ${section.title} contains an unresolved placeholder.`,
+          { sectionId: section.id });
+      }
     }
     if (section.metadata.snapshotStale === true ||
         section.metadata.understandingStale === true ||
