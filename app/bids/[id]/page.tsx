@@ -169,7 +169,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             <div className="min-w-0">
               <div className="flex flex-wrap gap-2 text-xs font-medium">
                 <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[var(--accent-foreground)]">
-                  {workspace.status.replaceAll("_", " ")}
+                  {workspace.status === "submitted" ? "Submitted" : workspace.status.replaceAll("_", " ")}
                 </span>
                 <span className="rounded-full border px-2.5 py-1 text-[var(--muted-foreground)]">
                   Review {workspace.reviewState.replaceAll("_", " ")}
@@ -386,6 +386,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               review={workspace.finalReview}
               confirmedOriginalForms={workspace.confirmedOriginalForms}
               approvalCurrent={workspace.finalReviewApprovalCurrent}
+              submissions={workspace.submissions}
+              currentSubmission={workspace.currentSubmission}
             />
           </Section>
         </div>
