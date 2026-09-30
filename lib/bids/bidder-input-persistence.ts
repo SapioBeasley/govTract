@@ -151,18 +151,19 @@ export async function applyBidderAnswersToFullBid(input: {
   let phase: "provider" | "validation" | "persistence" = "provider";
   let result: Awaited<ReturnType<BidAnswerModelProvider["generate"]>> | null = null;
   try {
-    result = await provider.generate(prompt);
+    const generated = await provider.generate(prompt);
+    result = generated;
     phase = "validation";
     const revised = applyBidderAnswerReplacements({
       content: section.content,
       answers,
-      replacements: result.output.replacements,
+      replacements: generated.output.replacements,
       sourceEvidence: packet.sourceEvidence,
     });
     const remainingQuestions = extractNeedsInputPrompts(revised);
     const actualCostMicrousd = estimatedCost(
-      result.usage.promptTokenCount,
-      result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount,
+      generated.usage.promptTokenCount,
+      generated.usage.candidatesTokenCount + generated.usage.thoughtsTokenCount,
       provider,
     );
 
@@ -210,11 +211,11 @@ export async function applyBidderAnswersToFullBid(input: {
       await tx.update(bidDraftGenerations).set({
         status: "completed",
         applied: Boolean(updated),
-        generatedContent: JSON.stringify(result.output),
+        generatedContent: JSON.stringify(generated.output),
         missingFacts: remainingQuestions,
         requirementKeys: packet.requirementKeys,
-        usageMetadata: result.usage,
-        modelVersion: result.modelVersion,
+        usageMetadata: generated.usage,
+        modelVersion: generated.modelVersion,
         actualCostMicrousd,
         failureCode: updated ? null : "source_or_section_changed",
         completedAt: new Date(),
