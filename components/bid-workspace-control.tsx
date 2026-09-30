@@ -16,6 +16,7 @@ const STATUS_LABELS: Record<BidWorkspaceStatus, string> = {
   in_progress: "In progress",
   ready_for_review: "Ready for review",
   complete: "Draft complete (internal)",
+  submitted: "Submitted (external confirmation recorded)",
 };
 
 const REVIEW_LABELS: Record<BidWorkspaceReviewState, string> = {
@@ -59,7 +60,7 @@ export function BidWorkspaceControl({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          status,
+          ...(status === "submitted" ? {} : { status }),
           reviewState,
           notes: notes.trim() || null,
         }),
@@ -89,11 +90,12 @@ export function BidWorkspaceControl({
           </span>
           <select
             value={status}
+            disabled={initialStatus === "submitted"}
             onChange={(event) => setStatus(event.target.value as BidWorkspaceStatus)}
             className="mt-1.5 h-10 w-full rounded-lg border bg-white px-3 text-sm"
           >
             {BID_WORKSPACE_STATUSES.map((value) => (
-              <option key={value} value={value}>
+              <option key={value} value={value} disabled={value === "submitted"}>
                 {STATUS_LABELS[value]}
               </option>
             ))}
