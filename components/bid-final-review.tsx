@@ -137,10 +137,14 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
           confirmed in govTract. Items that must still be completed or uploaded in the authoritative procurement system remain listed.
         </p>
         <a href={`/api/bids/${workspaceId}/package`}
-          className={`mt-3 inline-flex rounded-lg border px-3 py-2 font-semibold ${approvalCurrent && review.readyForHumanReview ? "" : "pointer-events-none opacity-50"}`}
-          aria-disabled={!approvalCurrent || !review.readyForHumanReview}>
-          Download approved package
+          className="mt-3 inline-flex rounded-lg border px-3 py-2 font-semibold">
+          Download package manifest
         </a>
+        {!approvalCurrent || !review.readyForHumanReview ? (
+          <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+            This download is for review and preparation. It will identify any remaining package blockers and whether human approval is current.
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-xl border p-4">
