@@ -223,6 +223,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
               workspaceId={workspace.id}
               initialSections={workspace.sections}
               initialQuestions={requirementQuestions}
+              questionSourceReady={sourceEligible}
               sourceBlockers={sourceBlockers}
               sourceReady={generationActionReady}
               requiresUnderstandingRefresh={requiresUnderstandingRefresh}
