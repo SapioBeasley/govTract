@@ -77,8 +77,8 @@ export type BidWorkspaceRequirement = {
   originalEvidence?: Record<string, unknown>;
   sourceReview?: SourceReviewRecord | null;
   responseNotes: string | null;
-  responseSourceType: "self" | "subcontractor" | "manufacturer" | "other" | null;
-  responseSourceName: string | null;
+  responseSourceType?: "self" | "subcontractor" | "manufacturer" | "other" | null;
+  responseSourceName?: string | null;
   responseEvidence?: RequirementResponseEvidence | null;
   sortOrder: number;
 };
