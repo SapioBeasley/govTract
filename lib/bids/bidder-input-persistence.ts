@@ -80,6 +80,7 @@ export async function applyBidderAnswersToFullBid(input: {
     section,
     requirements: workspace.sourceRequirements,
     company,
+    bidderRequirements: workspace.requirements,
   });
   if (preparation.state === "blocked") throw new Error(preparation.reasons.join(" "));
   const packet = preparation.packet;
@@ -175,6 +176,7 @@ export async function applyBidderAnswersToFullBid(input: {
       section: currentSection,
       requirements: current.sourceRequirements,
       company,
+      bidderRequirements: current.requirements,
     }) : null;
     const canApply = currentPrep?.state === "ready" &&
       currentPrep.packet.inputFingerprint === packet.inputFingerprint &&
