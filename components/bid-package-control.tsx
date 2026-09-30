@@ -219,7 +219,7 @@ export function BidPackageControl({
       if (!response.ok) {
         setMessage(payload.error?.message ?? "Requirement questions could not be generated.");
       } else {
-        setMessage("Requirement questions are ready. Save responses as you receive them.");
+        setMessage("Requirement questions are ready below. Save responses as you receive them.");
         router.refresh();
       }
     } catch {
@@ -298,7 +298,7 @@ export function BidPackageControl({
   }
 
   const steps = [
-    ["1", "Start bid", "Started"],
+    ["1", "Start bid", "Complete"],
     ["2", "Requirement questions", questionsGenerated ? `${initialQuestions.length} ready` : "Not generated"],
     ["3", "Populate responses", questionsGenerated ? `${answeredCount} of ${initialQuestions.length} saved` : "Waiting"],
     ["4", "Draft bid", fullBid?.content?.trim() ? "Draft ready" : "Not drafted"],
