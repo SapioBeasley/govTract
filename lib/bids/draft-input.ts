@@ -363,7 +363,6 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
   }
   const inspection = inspectBidDraft(value.content, packet.sourceEvidence, packet.bidderResponseContext ?? "");
   const questions = [...new Set([...packet.requiredQuestions, ...value.missingFacts,
-    "Verify all offered product specifications, company capabilities and commitments against actual vendor and manufacturer evidence",
     ...inspection.modelIssues,
     ...inspection.claims.map((claim) => claim.split(" before making this vendor commitment:")[0] + " against actual vendor evidence and approve exact wording"),
   ].map((question) =>
