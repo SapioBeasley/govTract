@@ -5,7 +5,7 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("bid workspace exposes one full-bid generation flow instead of the superseded guided builder", () => {
+test("bid workspace exposes the question-first full-bid flow instead of the superseded guided builder", () => {
   const page = read("app/bids/[id]/page.tsx");
   const control = read("components/bid-package-control.tsx");
 
@@ -14,11 +14,13 @@ test("bid workspace exposes one full-bid generation flow instead of the supersed
   assert.doesNotMatch(page, /<GuidedBidProgress/);
   assert.doesNotMatch(page, /<BidSourceReconciliationAction/);
 
-  assert.match(control, /"Generate bid"/);
+  assert.match(control, /Generate requirement questions/);
+  assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/questions/);
+  assert.match(control, /Populate responses/);
+  assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/requirements\/\$\{item\.id\}\/response/);
+  assert.match(control, /Draft bid/);
   assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/draft/);
-  assert.match(control, /Needs your input/i);
-  assert.doesNotMatch(control, /Draft with AI/);
-  assert.doesNotMatch(control, /Mark addressed in my bid/);
+  assert.doesNotMatch(control, /Update bid with my answers|Mark addressed in my bid|Draft with AI/);
 });
 
 test("supporting-document checklist tracks submission materials, not source verification", () => {

@@ -337,7 +337,8 @@ export function BidPackageControl({
         </div>
         {!questionSourceReady ? (
           <p role="status" className="mt-3 text-sm text-[var(--muted-foreground)]">
-            The current solicitation understanding is not ready for requirement questions. Review or refresh the current source understanding below first.
+            {sourceBlockers[0] ??
+              "The current solicitation understanding is not ready for requirement questions. Review or refresh the current source understanding below first."}
           </p>
         ) : null}
       </section>
@@ -380,7 +381,11 @@ export function BidPackageControl({
             {pending ? "Working…" : fullBid?.content?.trim() ? "Draft bid again" : "Draft bid"}
           </button>
         </div>
-        {changed ? (
+        {!sourceReady ? (
+          <p role="status" className="mt-3 text-sm text-[var(--muted-foreground)]">
+            {sourceBlockers[0] ?? "The retained solicitation package is not ready for drafting yet."}
+          </p>
+        ) : changed ? (
           <p className="mt-3 text-xs text-[var(--muted-foreground)]">Save your current bid edits before drafting again.</p>
         ) : null}
       </section>

@@ -13,7 +13,7 @@ test("a completed replacement snapshot clears the persisted stale marker only wh
   assert.match(snapshot, /status === "complete"/);
 });
 
-test("explicit Generate bid recovers deterministic extraction and stale understanding before drafting", () => {
+test("explicit Draft bid recovers deterministic extraction and stale understanding before drafting", () => {
   const route = read("app/api/bids/[id]/draft/route.ts");
   assert.match(route, /ensureStoredSnapshotExtractions/);
   assert.match(route, /generateSolicitationUnderstanding/);
@@ -23,11 +23,12 @@ test("explicit Generate bid recovers deterministic extraction and stale understa
   assert.match(route, /generateFullBidDraft/);
 });
 
-test("Generate bid remains actionable when originals are current even if understanding needs refresh", () => {
+test("Draft bid can explicitly refresh retained understanding without losing saved responses", () => {
   const page = read("app/bids/[id]/page.tsx");
   const control = read("components/bid-package-control.tsx");
   assert.match(page, /generationActionReady/);
   assert.match(page, /requiresUnderstandingRefresh/);
   assert.match(control, /requiresUnderstandingRefresh/);
-  assert.match(control, /refresh the solicitation understanding/i);
+  assert.match(control, /retained solicitation understanding will be refreshed first if required/i);
+  assert.match(control, /saved requirement responses will be preserved/i);
 });
