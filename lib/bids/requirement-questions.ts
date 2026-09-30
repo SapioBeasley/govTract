@@ -1,5 +1,6 @@
 import { generateBidComplianceMatrix } from "@/lib/bids/compliance-persistence";
 import { isComplianceEvidence } from "@/lib/bids/compliance";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 import type { BidWorkspaceRecord, BidWorkspaceRequirement } from "@/lib/bids/workspace";
 import {
   questionForBidRequirement,
@@ -25,9 +26,9 @@ export function isCurrentBidRequirement(
 }
 
 export function listBidRequirementQuestions(workspace: BidWorkspaceRecord): BidRequirementQuestion[] {
+  if (!isSolicitationRequirementSetDraftable(workspace.sourceRequirements)) return [];
   return workspace.requirements
     .filter((requirement) => isCurrentBidRequirement(requirement, workspace))
-    .filter((requirement) => requirement.canMarkComplete)
     .filter(requirementNeedsBidderQuestion)
     .map((requirement) => ({
       ...requirement,
