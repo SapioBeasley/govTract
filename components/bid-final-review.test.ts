@@ -11,6 +11,7 @@ import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 function renderReview(dueAt: Date | null) {
   const review = {
     blockingIssues: [],
+    warnings: [],
     readyForHumanReview: false,
     readyForExternalSubmission: false,
     reviewFingerprint: "fixture",
