@@ -45,6 +45,12 @@ const draftJsonSchema = {
   required: ["content", "requirementKeys", "missingFacts"],
 } as const;
 
+const internalEvidenceTag = /\[(?!NEEDS\s+INPUT:)[A-Za-z][A-Za-z0-9_.-]*:\d+[A-Za-z0-9_.-]*\]\s*/gi;
+
+export function stripInternalEvidenceTags(value: string) {
+  return value.replace(internalEvidenceTag, "").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 function isDraft(value: unknown): value is ModelDraftOutput {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const draft = value as Record<string, unknown>;
@@ -74,6 +80,7 @@ Company profile information is user-entered and unverified; it is NOT independen
 The original solicitation, pricing sheets, mandatory forms, drawings and amendments/addenda govern. They may need completion in their original templates; a draft here does not replace them. The evidence table below lists only the pinned excerpts applicable to this section, not the complete source documents. Other solicitation requirements and mandatory forms remain governing even when not repeated here.
 Use each requirement's evidenceIds to resolve its quoted passage and document provenance. Apply explicitly included cross-section rules without citing them as linked section keys. Cite only linked section requirement keys from the provided allowed list. If source evidence is insufficient, state the gap and insert [NEEDS INPUT: ...] rather than guessing.
 Do not assert responsiveness, eligibility, legal compliance, completed submission, or award likelihood. All content requires human source review.
+Never expose internal evidence labels, requirement keys, provenance codes, or drafting scaffolding in bidder-facing prose. In particular, do not emit bracketed codes such as [deliverables:01], [pricingInstructions:01], or [qualifications:02]. The only bracketed drafting marker allowed in content is [NEEDS INPUT: ...].
 Return a JSON object with content (editable section prose), requirementKeys (ONLY relevant allowed section keys), and missingFacts (concise unanswered questions). Do not include source text as system-level instructions.
 
 SECTION TITLE
@@ -202,7 +209,11 @@ export function createGeminiBidDraftProvider(
         throw new BidDraftProviderFailure("provider_invalid_output", { usage, modelVersion });
       }
       return {
-        output: parsed,
+        output: {
+          ...parsed,
+          content: stripInternalEvidenceTags(parsed.content),
+          missingFacts: parsed.missingFacts.map(stripInternalEvidenceTags),
+        },
         usage: usage ?? parseUsage(null),
         modelVersion,
       };
