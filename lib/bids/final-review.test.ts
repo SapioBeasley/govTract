@@ -252,3 +252,102 @@ test("shared agency baseline terms do not create a separate user-facing completi
   assert.equal(result.blockingIssues.some((issue) =>
     issue.code === "mandatory_requirement_incomplete" && issue.requirementId === baseline.id), false);
 });
+
+
+function simplifiedFullBidFixture() {
+  const input = fixture();
+  const scope: PersistedSolicitationRequirement = {
+    id: "scope-1",
+    requirementKey: "scope:1",
+    type: "scope",
+    level: "required",
+    text: "Provide the specified sealed lead acid batteries.",
+    sourceSection: "scope",
+    sourceFindingKey: "scope-1",
+    details: {},
+    evidence: [{
+      opportunityDocumentVersionId: version,
+      documentExtractionSegmentId: "segment-scope",
+      locator: { page: 1 },
+      excerpt: "Provide the specified sealed lead acid batteries.",
+    }],
+  };
+  const conditionalForm: PersistedSolicitationRequirement = {
+    id: "conditional-form",
+    requirementKey: "submissionComponents:local-preference",
+    type: "form",
+    level: "required",
+    text: "Complete the Hire Houston First designation form if applying for local preference.",
+    sourceSection: "submissionComponents",
+    sourceFindingKey: "conditional-form",
+    details: {},
+    evidence: [{
+      opportunityDocumentVersionId: version,
+      documentExtractionSegmentId: "segment-form",
+      locator: { page: 4 },
+      excerpt: "Complete the Hire Houston First designation form if applying for local preference.",
+    }],
+  };
+  input.workspace.sourceRequirements = {
+    understandingId: sourceId,
+    completenessStatus: "partial",
+    incompleteReasons: ["requirement_evidence_missing"],
+    isStale: false,
+    requirements: [scope, conditionalForm],
+  };
+  input.workspace.requirements = [];
+  input.workspace.sections = [{
+    id: "full-bid",
+    title: "Full bid response",
+    instructions: "Prepare a complete bid.",
+    content: "We will provide the specified sealed lead acid batteries in accordance with the solicitation.",
+    status: "draft",
+    requirementLinks: { sourceRequirementKeys: ["scope:1"] },
+    sortOrder: 0,
+    wordCount: 13,
+    metadata: {
+      fullBid: true,
+      pursuitSnapshotId: "snapshot-1",
+      documentSetFingerprint: fingerprint,
+      understandingId: sourceId,
+      aiDraftReview: { generationId: "answer-revision" },
+    },
+  }];
+  input.confirmedOriginalForms = [];
+  input.workspace.dueAt = new Date("2026-09-28T17:00:00Z");
+  input.now = new Date("2026-09-30T02:00:00Z");
+  return input;
+}
+
+test("simplified full-bid readiness does not depend on removed compliance-matrix or hidden AI verification state", () => {
+  const result = evaluateBidFinalReview(simplifiedFullBidFixture());
+  assert.equal(result.blockingIssues.some((issue) =>
+    ["compliance_matrix_missing", "requiredness_unverified", "ai_vendor_facts_unverified"].includes(issue.code)), false);
+  assert.equal(result.blockingIssues.some((issue) => issue.code === "source_requirements_unverified"), false,
+    "the same evidence-only partial requirement set allowed for generation remains valid for final review");
+  assert.equal(result.sourceChecks.find((check) => check.requirementId === "conditional-form")?.conditional, true);
+  assert.equal(result.blockingIssues.some((issue) =>
+    issue.code === "original_form_unconfirmed" && issue.requirementId === "conditional-form"), false,
+    "conditional supporting items do not block until applicability is established");
+});
+
+test("submission timing problems remain visible warnings but do not prevent approving or downloading a complete package", () => {
+  const result = evaluateBidFinalReview(simplifiedFullBidFixture());
+  assert.equal(result.blockingIssues.some((issue) => issue.code === "submission_deadline_elapsed"), false);
+  assert.ok(result.warnings.some((warning) => warning.code === "submission_deadline_elapsed"));
+});
+
+test("simplified full bid still blocks unresolved Needs input and genuinely required supporting originals", () => {
+  const input = simplifiedFullBidFixture();
+  input.workspace.sections[0]!.content += "\n[NEEDS INPUT: final unit price]";
+  let result = evaluateBidFinalReview(input);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "section_placeholder"));
+
+  input.workspace.sections[0]!.content =
+    "We will provide the specified sealed lead acid batteries in accordance with the solicitation.";
+  const requiredForm = input.workspace.sourceRequirements.requirements[1]!;
+  requiredForm.text = "Complete and sign the required pricing form.";
+  result = evaluateBidFinalReview(input);
+  assert.ok(result.blockingIssues.some((issue) =>
+    issue.code === "original_form_unconfirmed" && issue.requirementId === "conditional-form"));
+});
