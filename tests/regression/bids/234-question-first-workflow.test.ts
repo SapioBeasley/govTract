@@ -42,8 +42,9 @@ test("drafting consumes persisted bidder or supplier responses as separate non-s
 test("question generation is deterministic and does not call the model", () => {
   const route = read("app/api/bids/[id]/questions/route.ts");
   const questions = read("lib/bids/requirement-questions.ts");
+  const rules = read("lib/bids/requirement-question-rules.ts");
 
   assert.match(route, /generateBidRequirementQuestions/);
-  assert.doesNotMatch(route + questions, /createGemini|generateContent|provider\.generate/i);
-  assert.match(questions, /form|submission_instruction/);
+  assert.doesNotMatch(route + questions + rules, /createGemini|generateContent|provider\.generate/i);
+  assert.match(rules, /form|submission_instruction/);
 });
