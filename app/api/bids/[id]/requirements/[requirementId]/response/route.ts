@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isBidResponseSourceType } from "@/lib/bids/requirement-questions";
+import { isBidResponseSourceType } from "@/lib/bids/requirement-question-rules";
 import { updateBidRequirementResponse } from "@/lib/bids/requirement-response-persistence";
 
 export const runtime = "nodejs";
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, context: Context) {
   try {
     const workspace = await updateBidRequirementResponse(id, requirementId, {
       responseNotes: (body.responseNotes as string | null) ?? null,
-      responseSourceType: (body.responseSourceType as import("@/lib/bids/requirement-questions").BidResponseSourceType | null) ?? null,
+      responseSourceType: (body.responseSourceType as import("@/lib/bids/requirement-question-rules").BidResponseSourceType | null) ?? null,
       responseSourceName: (body.responseSourceName as string | null) ?? null,
     });
     return NextResponse.json({ workspace });
