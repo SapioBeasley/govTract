@@ -15,6 +15,7 @@ const STATUS_LABELS: Record<BidWorkspaceStatus, string> = {
   in_progress: "In progress",
   ready_for_review: "Ready for review",
   complete: "Complete",
+  submitted: "Submitted",
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
