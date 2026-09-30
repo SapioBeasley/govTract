@@ -50,6 +50,17 @@ export function hasBidDraftSourceEvidence(requirement: PersistedSolicitationRequ
   return validListing || readableDocumentEvidence;
 }
 
+export function selectFullBidDraftRequirements(
+  requirements: SolicitationRequirementSet,
+  candidates: PersistedSolicitationRequirement[],
+) {
+  const evidenceOnlyPartial =
+    requirements.completenessStatus === "partial" &&
+    requirements.incompleteReasons.length > 0 &&
+    requirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing");
+  return evidenceOnlyPartial ? candidates.filter(hasBidDraftSourceEvidence) : candidates;
+}
+
 function questionFor(requirement: PersistedSolicitationRequirement): string | null {
   const text = requirement.text.toLowerCase();
   if (requirement.type === "pricing" || /\b(price|pricing|rate|cost|budget)\b/.test(text)) {
@@ -150,12 +161,9 @@ export function prepareBidDraftInput(input: {
   const baselineResponseExplicitlyPrescribed = section.metadata.source === "solicitation_heading";
   const linkedCandidates = allLinked.filter((requirement) =>
     !isAgencyBaselineRequirement(requirement) || baselineResponseExplicitlyPrescribed);
-  const evidenceOnlyPartialFullBid = section.metadata.fullBid === true &&
-    requirements?.completenessStatus === "partial" &&
-    requirements.incompleteReasons.length > 0 &&
-    requirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing");
+  const evidenceOnlyPartialFullBid = section.metadata.fullBid === true && Boolean(requirements);
   const selectedLinked = evidenceOnlyPartialFullBid
-    ? linkedCandidates.filter(hasBidDraftSourceEvidence)
+    ? selectFullBidDraftRequirements(requirements!, linkedCandidates)
     : linkedCandidates;
   const keys = selectedLinked.map((requirement) => requirement.requirementKey);
   if (keys.length === 0) reasons.push("This bid section has no opportunity-specific, evidence-backed requirements.");
@@ -166,7 +174,7 @@ export function prepareBidDraftInput(input: {
     !isAgencyBaselineRequirement(requirement) &&
     explicitlyGovernsSection(requirement, section.title)) ?? [];
   const governing = evidenceOnlyPartialFullBid
-    ? governingCandidates.filter(hasBidDraftSourceEvidence)
+    ? selectFullBidDraftRequirements(requirements!, governingCandidates)
     : governingCandidates;
   const selected = [...selectedLinked, ...governing];
 
