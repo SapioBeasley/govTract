@@ -17,10 +17,11 @@ test("bid workspace uses one explicit full-bid generation action instead of guid
   assert.match(control, /Ordinary editing and saving never invoke AI/);
 });
 
-test("final handoff still requires exact-package human approval and never claims submission", () => {
+test("final handoff keeps approval and submission states explicit while allowing manifest review", () => {
   const finalReview = read("components/bid-final-review.tsx");
   assert.match(finalReview, /!review\.readyForHumanReview/);
   assert.match(finalReview, /Approve current package/);
   assert.match(finalReview, /govTract does not submit/);
-  assert.match(finalReview, /Download approved package/);
+  assert.match(finalReview, /Download package manifest/);
+  assert.doesNotMatch(finalReview, /Download approved package/);
 });
