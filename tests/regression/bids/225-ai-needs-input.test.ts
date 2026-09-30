@@ -201,6 +201,6 @@ test("bidder-answer persistence is content-bound and fails closed on in-flight s
 test("bidder-answer validation failures retain structured output with a granular safe audit code", () => {
   const persistence = read("lib/bids/bidder-input-persistence.ts");
   assert.match(persistence, /BidderAnswerValidationError/);
-  assert.match(persistence, /generatedContent:\s*JSON\.stringify\([^)]*result\.output[^)]*\)/s);
+  assert.match(persistence, /generatedContent:\s*JSON\.stringify\([\s\S]*?result\.output[\s\S]*?\)/);
   assert.match(persistence, /bidder_answer_(?:unsupported|missing|invalid|question|placeholder)/i);
 });
