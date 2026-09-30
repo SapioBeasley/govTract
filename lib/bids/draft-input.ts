@@ -341,11 +341,17 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
     ...inspection.claims.map((claim) => claim.split(" before making this vendor commitment:")[0] + " against actual vendor evidence and approve exact wording"),
   ].map((question) =>
     question.trim().replace(/[\r\n\[\]]/g, " ").trim()).filter(Boolean))];
+  const redactedContent = redactUnverifiedClaims(
+    value.content,
+    packet.sourceEvidence,
+    packet.bidderResponseContext ?? "",
+  ).trim();
   return {
-    content: "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.\n\n" + redactUnverifiedClaims(value.content, packet.sourceEvidence, packet.bidderResponseContext ?? "").trim() + (questions.length
-      ? "\n\nOpen factual questions — verify before submission:\n" +
+    content: questions.length
+      ? "UNVERIFIED AI WORKING DRAFT — unresolved bidder facts remain. Resolve every Needs Input item before package approval.\n\n" +
+        redactedContent + "\n\nOpen factual questions — verify before submission:\n" +
         questions.map((question) => "- [NEEDS INPUT: " + question + "]").join("\n")
-      : ""),
+      : redactedContent,
     requirementKeys: [...new Set(value.requirementKeys)],
     missingFacts: questions,
     inspection,
