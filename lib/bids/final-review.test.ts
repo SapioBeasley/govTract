@@ -353,3 +353,13 @@ test("simplified full bid still blocks unresolved Needs input and genuinely requ
   assert.ok(result.blockingIssues.some((issue) =>
     issue.code === "original_form_unconfirmed" && issue.requirementId === "conditional-form"));
 });
+
+
+test("an unresolved AI working-draft banner blocks simplified package approval even when placeholders are gone", () => {
+  const input = simplifiedFullBidFixture();
+  input.workspace.sections[0]!.content =
+    "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance.\n\n" +
+    "We will provide the specified sealed lead acid batteries in accordance with the solicitation.";
+  const result = evaluateBidFinalReview(input);
+  assert.ok(result.blockingIssues.some((issue) => issue.code === "section_unverified_working_draft"));
+});
