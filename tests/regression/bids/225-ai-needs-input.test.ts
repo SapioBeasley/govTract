@@ -168,16 +168,18 @@ test("letter-leading product and certification identifiers remain protected agai
   }), /unsupported|invented|factual/i);
 });
 
-test("bid UI exposes answer cards and a separate explicit manual AI update action", () => {
+test("primary bid UI persists requirement responses before drafting instead of using draft-derived answer cards", () => {
   const control = read("components/bid-package-control.tsx");
-  assert.match(control, /Needs your input/);
-  assert.match(control, /Update bid with my answers/);
-  assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/draft\/answers/);
-  assert.match(control, /answer/i);
-  assert.doesNotMatch(control, /onChange=\{[^}]*update.*answers.*fetch/i,
-    "typing an answer must not invoke AI");
+  assert.match(control, /Populate responses/);
+  assert.match(control, /Who should answer this\?/);
+  assert.match(control, /Subcontractor/);
+  assert.match(control, /Manufacturer/);
+  assert.match(control, /Other third party/);
+  assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/requirements\/\$\{item\.id\}\/response/);
+  assert.match(control, /Save response/);
+  assert.doesNotMatch(control, /Update bid with my answers/);
+  assert.doesNotMatch(control, /\/draft\/answers/);
 });
-
 test("answer revision route and prompt keep bidder answers distinct from solicitation evidence", () => {
   const route = read("app/api/bids/[id]/draft/answers/route.ts");
   const provider = read("lib/bids/draft-provider.ts");

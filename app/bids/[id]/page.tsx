@@ -21,6 +21,7 @@ import { getBidWorkspace } from "@/lib/bids/workspace";
 import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
 import { groupBidBuilderRequirements } from "@/lib/bids/builder";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
+import { listBidRequirementQuestions } from "@/lib/bids/requirement-questions";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const workspace = await getBidWorkspace(id);
   if (!workspace) notFound();
   const generations = await listBidDraftGenerations(workspace.id);
+  const requirementQuestions = listBidRequirementQuestions(workspace);
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const sourceEligible = Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
@@ -211,8 +213,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
         <div className="mt-5 grid min-w-0 gap-5">
           <Section id="prepare-bid" title="Prepare bid" icon={<FileText className="size-5" />}>
             <p className="mb-4 text-sm leading-6 text-[var(--muted-foreground)]">
-              First write what your company will supply, then check each buyer request below your saved response.
-              Each card shows just your next action. Detailed sources and other options are available when needed.
+              Generate the requirement questions first, gather factual responses from your company or suppliers,
+              then draft the bid from those saved answers. Detailed source documents and package checks remain available below.
             </p>
             {/* Preserve deep links from existing guidance and bookmarked bid pages. */}
             <span id="compliance-requirements" className="block scroll-mt-5" />
@@ -220,6 +222,8 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             <BidPackageControl
               workspaceId={workspace.id}
               initialSections={workspace.sections}
+              initialQuestions={requirementQuestions}
+              questionSourceReady={sourceEligible}
               sourceBlockers={sourceBlockers}
               sourceReady={generationActionReady}
               requiresUnderstandingRefresh={requiresUnderstandingRefresh}

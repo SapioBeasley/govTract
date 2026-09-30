@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { inspectBidDraft, redactUnverifiedClaims } from "@/lib/bids/draft-guardrails";
 
 import type { CompanyProfile } from "@/lib/company/profile";
-import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
+import type { BidWorkspaceRequirement, BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
+import { isComplianceEvidence } from "@/lib/bids/compliance";
+import { questionForBidRequirement, requirementNeedsBidderQuestion } from "@/lib/bids/requirement-question-rules";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 
-export const BID_DRAFT_PROMPT_VERSION = "5";
+export const BID_DRAFT_PROMPT_VERSION = "6";
 const MAX_SOURCE_CHARS = 48_000;
 
 export type DraftSourceVersion = {
@@ -28,6 +30,7 @@ export type BidDraftPacket = {
   requirementKeys: string[];
   sourceEvidence: string;
   companyContext: string;
+  bidderResponseContext?: string;
   requiredQuestions: string[];
   inputFingerprint: string;
 };
@@ -59,32 +62,6 @@ export function selectFullBidDraftRequirements(
     requirements.incompleteReasons.length > 0 &&
     requirements.incompleteReasons.every((reason) => reason === "requirement_evidence_missing");
   return evidenceOnlyPartial ? candidates.filter(hasBidDraftSourceEvidence) : candidates;
-}
-
-function questionFor(requirement: PersistedSolicitationRequirement): string | null {
-  const text = requirement.text.toLowerCase();
-  if (requirement.type === "pricing" || /\b(price|pricing|rate|cost|budget)\b/.test(text)) {
-    return "Confirm final pricing against the authoritative pricing worksheet and approvals";
-  }
-  if (requirement.type === "certification" || /\bcertif(?:ication|ied|y)\b/.test(text)) {
-    return "Provide and verify applicable company certifications";
-  }
-  if (requirement.type === "license" || /\blicen[cs]e\b/.test(text)) {
-    return "Provide and verify applicable licenses";
-  }
-  if (/\b(past performance|references?|prior project|previous contract|experience)\b/.test(text)) {
-    return "Verify project history, customers, and past-performance evidence";
-  }
-  if (/\b(staff|personnel|crew|equipment|vehicle|capacity)\b/.test(text)) {
-    return "Verify available staffing, equipment, and operational capacity";
-  }
-  if (/\b(insurance|bond)\b/.test(text)) {
-    return "Verify insurance and bonding documentation and limits";
-  }
-  if (requirement.type === "form" || /\b(form|affidavit|signature|signed)\b/.test(text)) {
-    return "Complete the original required source form and verify signatures";
-  }
-  return null;
 }
 
 /**
@@ -120,6 +97,7 @@ export function prepareBidDraftInput(input: {
   section: BidWorkspaceSection;
   requirements: SolicitationRequirementSet | null;
   company: Pick<CompanyProfile, "name" | "capabilities"> | null;
+  bidderRequirements?: BidWorkspaceRequirement[];
 }): BidDraftPreparation {
   const { snapshot, section, requirements } = input;
   const reasons: string[] = [];
@@ -281,10 +259,45 @@ export function prepareBidDraftInput(input: {
       instruction: "These user-entered values are NOT evidence of credentials, prior customers, staffing, insurance, rates or performance. Do not present them as verified.",
     })
     : "No company facts are available. Use explicit placeholders for all company-specific statements.";
+  const selectedSourceIds = new Set(selected.map((requirement) => requirement.id));
+  const bidderResponses = (input.bidderRequirements ?? []).flatMap((requirement) => {
+    const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
+    if (!requirement.responseNotes?.trim() || !evidence ||
+        evidence.understandingId !== requirements!.understandingId ||
+        evidence.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
+        !selectedSourceIds.has(evidence.sourceRequirementId)) {
+      return [];
+    }
+    const sourceRequirement = selected.find((candidate) => candidate.id === evidence.sourceRequirementId);
+    if (!sourceRequirement) return [];
+    return [{
+      sourceRequirementId: sourceRequirement.id,
+      sourceRequirementKey: sourceRequirement.requirementKey,
+      requirementType: sourceRequirement.type,
+      requirementText: sourceRequirement.text,
+      answer: requirement.responseNotes.trim(),
+      responseSourceType: requirement.responseSourceType ?? "self",
+      responseSourceName: requirement.responseSourceName?.trim() || null,
+    }];
+  });
+  const answeredSourceIds = new Set(bidderResponses.map((response) => response.sourceRequirementId));
   const requiredQuestions = [...new Set([
     ...(input.company ? [] : ["Provide and verify the company legal name and authorized bidder"]),
-    ...selected.map(questionFor).filter((question): question is string => question !== null),
+    ...selected
+      .filter((requirement) => !answeredSourceIds.has(requirement.id))
+      .filter((requirement) => requirementNeedsBidderQuestion({
+        requirementType: requirement.type,
+      } as BidWorkspaceRequirement))
+      .map((requirement) => questionForBidRequirement({
+        requirementType: requirement.type,
+        text: requirement.text,
+      } as BidWorkspaceRequirement)),
   ])];
+  const bidderResponseContext = JSON.stringify({
+    verification: "USER_OR_SUPPLIER_PROVIDED_UNVERIFIED",
+    responses: bidderResponses,
+    instruction: "These are user-authorized bidder or supplier responses. They are not buyer or solicitation evidence. Use them only for the linked requirement and do not strengthen them beyond what the response supports.",
+  });
   const packetWithoutFingerprint = {
     sectionTitle: section.title,
     sectionInstructions: uniqueSectionInstructions(section.instructions, allLinked),
@@ -295,6 +308,7 @@ export function prepareBidDraftInput(input: {
     requirementKeys: keys,
     sourceEvidence,
     companyContext,
+    bidderResponseContext,
     requiredQuestions,
   };
   return {
@@ -321,18 +335,23 @@ export function finalizeBidDraft(packet: BidDraftPacket, value: ModelDraftOutput
   if (value.requirementKeys.some((key) => !packet.requirementKeys.includes(key))) {
     throw new Error("The model cited an unsupported requirement.");
   }
-  const inspection = inspectBidDraft(value.content, packet.sourceEvidence);
+  const inspection = inspectBidDraft(value.content, packet.sourceEvidence, packet.bidderResponseContext ?? "");
   const questions = [...new Set([...packet.requiredQuestions, ...value.missingFacts,
-    "Verify all offered product specifications, company capabilities and commitments against actual vendor and manufacturer evidence",
     ...inspection.modelIssues,
     ...inspection.claims.map((claim) => claim.split(" before making this vendor commitment:")[0] + " against actual vendor evidence and approve exact wording"),
   ].map((question) =>
     question.trim().replace(/[\r\n\[\]]/g, " ").trim()).filter(Boolean))];
+  const redactedContent = redactUnverifiedClaims(
+    value.content,
+    packet.sourceEvidence,
+    packet.bidderResponseContext ?? "",
+  ).trim();
   return {
-    content: "UNVERIFIED AI WORKING DRAFT — solicitation requirements are not evidence of offered-product compliance. Verify every company commitment before using this text.\n\n" + redactUnverifiedClaims(value.content, packet.sourceEvidence).trim() + (questions.length
-      ? "\n\nOpen factual questions — verify before submission:\n" +
+    content: questions.length
+      ? "UNVERIFIED AI WORKING DRAFT — unresolved bidder facts remain. Resolve every Needs Input item before package approval.\n\n" +
+        redactedContent + "\n\nOpen factual questions — verify before submission:\n" +
         questions.map((question) => "- [NEEDS INPUT: " + question + "]").join("\n")
-      : ""),
+      : redactedContent,
     requirementKeys: [...new Set(value.requirementKeys)],
     missingFacts: questions,
     inspection,

@@ -23,14 +23,15 @@ test("Path 1 exposes the simplified bid workspace and opportunity handoff", () =
   assert.doesNotMatch(workspaceService, /generateSolicitationUnderstanding|Gemini|generateContent|AIProvider/);
 });
 
-test("disabled generation names source recovery instead of presenting a dead-end verification flow", () => {
+test("disabled requirement-question generation names source recovery instead of presenting a dead-end flow", () => {
   const detail = source("app/bids/[id]/page.tsx");
   const control = source("components/bid-package-control.tsx");
   assert.match(detail, /sourceBlockers/);
   assert.match(detail, /missingEvidence/);
   assert.match(detail, /snapshotStatus/);
   assert.match(control, /sourceBlockers/);
-  assert.match(control, /retained solicitation package is not ready for generation/i);
+  assert.match(control, /sourceBlockers\[0\]/);
+  assert.match(control, /not ready for requirement questions/i);
 });
 
 test("pending original files have an explicit bounded source-retrieval action without auto-running", () => {

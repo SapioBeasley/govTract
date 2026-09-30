@@ -345,6 +345,9 @@ export const bidRequirements = pgTable(
     status: text("status").notNull().default("missing"),
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default(jsonObject),
     responseNotes: text("response_notes"),
+    responseSourceType: text("response_source_type")
+      .$type<"self" | "subcontractor" | "manufacturer" | "other">(),
+    responseSourceName: text("response_source_name"),
     responseEvidence: jsonb("response_evidence").$type<import("@/lib/bids/response-proof").RequirementResponseEvidence | null>(),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -357,6 +360,8 @@ export const bidRequirements = pgTable(
     index("bid_requirements_workspace_order_idx").on(table.bidWorkspaceId, table.sortOrder),
     index("bid_requirements_workspace_status_idx").on(table.bidWorkspaceId, table.status),
     check("bid_requirements_response_status_check", sql`${table.status} IN ('missing', 'drafting', 'complete', 'needs_review', 'not_applicable')`),
+    check("bid_requirements_response_source_type_check",
+      sql`${table.responseSourceType} IS NULL OR ${table.responseSourceType} IN ('self', 'subcontractor', 'manufacturer', 'other')`),
   ],
 );
 

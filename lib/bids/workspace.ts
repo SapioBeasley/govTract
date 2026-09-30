@@ -77,6 +77,8 @@ export type BidWorkspaceRequirement = {
   originalEvidence?: Record<string, unknown>;
   sourceReview?: SourceReviewRecord | null;
   responseNotes: string | null;
+  responseSourceType?: "self" | "subcontractor" | "manufacturer" | "other" | null;
+  responseSourceName?: string | null;
   responseEvidence?: RequirementResponseEvidence | null;
   sortOrder: number;
 };
@@ -264,6 +266,8 @@ export async function getBidWorkspace(workspaceId: string): Promise<BidWorkspace
         status: bidRequirements.status,
         evidence: bidRequirements.evidence,
         responseNotes: bidRequirements.responseNotes,
+        responseSourceType: bidRequirements.responseSourceType,
+        responseSourceName: bidRequirements.responseSourceName,
         responseEvidence: bidRequirements.responseEvidence,
         sortOrder: bidRequirements.sortOrder,
       })

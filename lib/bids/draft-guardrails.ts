@@ -27,6 +27,78 @@ const vendorSubject = /\b(?:we|our(?: company| team| proposed| offered| products
 const commitment = /\b(?:will|shall|can|are|is|has|have|undergo(?:es)?|meet(?:s)?|comply|complies|provide(?:s)?|supply|deliver(?:s)?|carry|carries|include(?:s)?|offer(?:s|ed)?|propose(?:s|d)?|certif(?:ied|y)|test(?:ed|ing)?|insur(?:ed|ance)|warrant(?:y|ies)?)\b/i;
 export type DraftInspection = { claims: string[]; modelIssues: string[] };
 
+
+type SavedBidderResponse = {
+  requirementText: string;
+  answer: string;
+};
+
+function parseSavedBidderResponses(value: string): SavedBidderResponse[] {
+  if (!value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as { responses?: unknown };
+    if (!Array.isArray(parsed.responses)) return [];
+    return parsed.responses.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const row = item as Record<string, unknown>;
+      return typeof row.requirementText === "string" && typeof row.answer === "string" &&
+        row.answer.trim()
+        ? [{ requirementText: row.requirementText, answer: row.answer }]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+const responseStopWords = new Set([
+  "that","this","with","from","will","shall","must","should","have","has","been","being",
+  "into","your","their","there","where","when","what","which","provide","provided","required",
+  "requirement","requirements","requested","bidder","vendor","company","including","include",
+]);
+
+function meaningfulTokens(value: string) {
+  return new Set((value.toLocaleLowerCase("en-US").match(/[a-z0-9$][a-z0-9$.-]*/g) ?? [])
+    .filter((token) => token.length >= 3 && !responseStopWords.has(token)));
+}
+
+function concreteTokens(value: string) {
+  const tokens = new Set<string>();
+  for (const match of value.matchAll(/\$\s*\d[\d,.]*/g)) {
+    tokens.add(match[0]!.replace(/[\s,]/g, "").replace(/\.0+$/, "").toLocaleLowerCase("en-US"));
+  }
+  for (const match of value.matchAll(/\b\d+(?:[.,]\d+)*\b/g)) {
+    tokens.add(match[0]!.replace(/,/g, "").replace(/\.0+$/, "").toLocaleLowerCase("en-US"));
+  }
+  for (const match of value.matchAll(/\b(?=[a-z0-9-]*[a-z])(?=[a-z0-9-]*\d)[a-z0-9-]{3,}\b/gi)) {
+    if (!/^\d/.test(match[0]!)) tokens.add(match[0]!.toLocaleLowerCase("en-US"));
+  }
+  return tokens;
+}
+
+function responseAuthorizesClause(clause: string, bidderResponseContext: string, sourceEvidence: string) {
+  const responses = parseSavedBidderResponses(bidderResponseContext);
+  if (!responses.length) return false;
+  const clauseTokens = meaningfulTokens(clause);
+  const clauseFacts = concreteTokens(clause);
+  return responses.some((response) => {
+    const answer = response.answer.trim().toLocaleLowerCase("en-US");
+    if (/^(?:no|n\/a|not applicable|cannot|can't|unable)\b/.test(answer)) return false;
+    const allowedFacts = concreteTokens([response.requirementText, response.answer, sourceEvidence].join("\n"));
+    if ([...clauseFacts].some((fact) => !allowedFacts.has(fact))) return false;
+
+    const requirementTokens = meaningfulTokens(response.requirementText);
+    const answerTokens = meaningfulTokens(response.answer);
+    const requirementOverlap = [...requirementTokens].filter((token) => clauseTokens.has(token)).length;
+    const answerOverlap = [...answerTokens].filter((token) => clauseTokens.has(token)).length;
+    const requirementThreshold = Math.min(2, requirementTokens.size);
+    const answerThreshold = Math.min(2, answerTokens.size);
+
+    return (requirementThreshold > 0 && requirementOverlap >= requirementThreshold) ||
+      (answerThreshold > 0 && answerOverlap >= answerThreshold);
+  });
+}
+
 // A period inside a numeric value such as 24.75 is content, not a sentence boundary.
 function isClauseBoundary(text: string, index: number) {
   const value = text[index];
@@ -60,7 +132,11 @@ function splitClausesWithDelimiters(content: string) {
 }
 
 /** Inspects offered-vendor assertions separately from buyer requirements and source-model mapping. */
-export function inspectBidDraft(content: string, sourceEvidence: string): DraftInspection {
+export function inspectBidDraft(
+  content: string,
+  sourceEvidence: string,
+  bidderResponseContext = "",
+): DraftInspection {
   const claims: string[] = [];
   // Punctuation and paragraph boundaries delimit claims; placeholder questions after
   // an assertion cannot retroactively qualify a preceding assertion.
@@ -68,6 +144,7 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
     .filter((_part, index) => index % 2 === 0)
     .map((part) => part.trim()).filter(Boolean)) {
     if (!vendorSubject.test(clause) || !commitment.test(clause)) continue;
+    if (responseAuthorizesClause(clause, bidderResponseContext, sourceEvidence)) continue;
     for (const [kind, pattern] of claimKinds) {
       if (pattern.test(clause)) claims.push("Verify " + kind + " before making this vendor commitment: " + clause.slice(0, 180));
     }
@@ -84,10 +161,14 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
  * unverified offer sentences with category-specific, in-place questions. The raw
  * provider output is retained separately in the generation audit record.
  */
-export function redactUnverifiedClaims(content: string, sourceEvidence: string): string {
+export function redactUnverifiedClaims(
+  content: string,
+  sourceEvidence: string,
+  bidderResponseContext = "",
+): string {
   return splitClausesWithDelimiters(content).map((chunk, index) => {
     if (index % 2 === 1 || !chunk.trim()) return chunk;
-    const claims = inspectBidDraft(chunk, sourceEvidence).claims;
+    const claims = inspectBidDraft(chunk, sourceEvidence, bidderResponseContext).claims;
     const ambiguousModel = /\band\/or\b/i.test(chunk) && /\b(?:lb|lbs|pounds|model|basket)\b/i.test(chunk);
     const wrongModel = hasUnsafeModelAssertion(chunk, sourceEvidence);
     if (!claims.length && !ambiguousModel && !wrongModel) return chunk;
