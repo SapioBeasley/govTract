@@ -17,4 +17,4 @@ CREATE UNIQUE INDEX bid_submissions_workspace_review_uidx
   ON bid_submissions (bid_workspace_id, review_fingerprint);
 
 CREATE INDEX bid_submissions_workspace_submitted_idx
-  ON bid_submissions (bid_workspace_id, submitted_at DESC);
+  ON bid_submissions (bid_workspace_id, submitted_at);
