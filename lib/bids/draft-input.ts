@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { inspectBidDraft, redactUnverifiedClaims } from "@/lib/bids/draft-guardrails";
 
 import type { CompanyProfile } from "@/lib/company/profile";
-import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
+import type { BidWorkspaceRequirement, BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
+import { isComplianceEvidence } from "@/lib/bids/compliance";
+import { questionForBidRequirement, requirementNeedsBidderQuestion } from "@/lib/bids/requirement-questions";
 import type { SolicitationRequirementSet, PersistedSolicitationRequirement } from "@/lib/procurement/requirements/persistence";
 import { isAgencyBaselineRequirement } from "@/lib/procurement/documents/roles";
 import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
 
-export const BID_DRAFT_PROMPT_VERSION = "5";
+export const BID_DRAFT_PROMPT_VERSION = "6";
 const MAX_SOURCE_CHARS = 48_000;
 
 export type DraftSourceVersion = {
@@ -28,6 +30,7 @@ export type BidDraftPacket = {
   requirementKeys: string[];
   sourceEvidence: string;
   companyContext: string;
+  bidderResponseContext: string;
   requiredQuestions: string[];
   inputFingerprint: string;
 };
@@ -120,6 +123,7 @@ export function prepareBidDraftInput(input: {
   section: BidWorkspaceSection;
   requirements: SolicitationRequirementSet | null;
   company: Pick<CompanyProfile, "name" | "capabilities"> | null;
+  bidderRequirements?: BidWorkspaceRequirement[];
 }): BidDraftPreparation {
   const { snapshot, section, requirements } = input;
   const reasons: string[] = [];
@@ -281,10 +285,45 @@ export function prepareBidDraftInput(input: {
       instruction: "These user-entered values are NOT evidence of credentials, prior customers, staffing, insurance, rates or performance. Do not present them as verified.",
     })
     : "No company facts are available. Use explicit placeholders for all company-specific statements.";
+  const selectedSourceIds = new Set(selected.map((requirement) => requirement.id));
+  const bidderResponses = (input.bidderRequirements ?? []).flatMap((requirement) => {
+    const evidence = isComplianceEvidence(requirement.evidence) ? requirement.evidence : null;
+    if (!requirement.responseNotes?.trim() || !evidence ||
+        evidence.understandingId !== requirements!.understandingId ||
+        evidence.pursuitSnapshotId !== snapshot.pursuitSnapshotId ||
+        !selectedSourceIds.has(evidence.sourceRequirementId)) {
+      return [];
+    }
+    const sourceRequirement = selected.find((candidate) => candidate.id === evidence.sourceRequirementId);
+    if (!sourceRequirement) return [];
+    return [{
+      sourceRequirementId: sourceRequirement.id,
+      sourceRequirementKey: sourceRequirement.requirementKey,
+      requirementType: sourceRequirement.type,
+      requirementText: sourceRequirement.text,
+      answer: requirement.responseNotes.trim(),
+      responseSourceType: requirement.responseSourceType ?? "self",
+      responseSourceName: requirement.responseSourceName?.trim() || null,
+    }];
+  });
+  const answeredSourceIds = new Set(bidderResponses.map((response) => response.sourceRequirementId));
   const requiredQuestions = [...new Set([
     ...(input.company ? [] : ["Provide and verify the company legal name and authorized bidder"]),
-    ...selected.map(questionFor).filter((question): question is string => question !== null),
+    ...selected
+      .filter((requirement) => !answeredSourceIds.has(requirement.id))
+      .filter((requirement) => requirementNeedsBidderQuestion({
+        requirementType: requirement.type,
+      } as BidWorkspaceRequirement))
+      .map((requirement) => questionForBidRequirement({
+        requirementType: requirement.type,
+        text: requirement.text,
+      } as BidWorkspaceRequirement)),
   ])];
+  const bidderResponseContext = JSON.stringify({
+    verification: "USER_OR_SUPPLIER_PROVIDED_UNVERIFIED",
+    responses: bidderResponses,
+    instruction: "These are user-authorized bidder or supplier responses. They are not buyer or solicitation evidence. Use them only for the linked requirement and do not strengthen them beyond what the response supports.",
+  });
   const packetWithoutFingerprint = {
     sectionTitle: section.title,
     sectionInstructions: uniqueSectionInstructions(section.instructions, allLinked),
@@ -295,6 +334,7 @@ export function prepareBidDraftInput(input: {
     requirementKeys: keys,
     sourceEvidence,
     companyContext,
+    bidderResponseContext,
     requiredQuestions,
   };
   return {
