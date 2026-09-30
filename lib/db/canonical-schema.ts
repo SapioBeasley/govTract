@@ -345,7 +345,8 @@ export const bidRequirements = pgTable(
     status: text("status").notNull().default("missing"),
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default(jsonObject),
     responseNotes: text("response_notes"),
-    responseSourceType: text("response_source_type"),
+    responseSourceType: text("response_source_type")
+      .$type<"self" | "subcontractor" | "manufacturer" | "other">(),
     responseSourceName: text("response_source_name"),
     responseEvidence: jsonb("response_evidence").$type<import("@/lib/bids/response-proof").RequirementResponseEvidence | null>(),
     sortOrder: integer("sort_order").notNull().default(0),
