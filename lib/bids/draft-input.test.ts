@@ -311,3 +311,75 @@ test("manual drafting keeps a baseline requirement when the solicitation explici
   assert.deepEqual(result.packet.requirementKeys, ["submission:cover"]);
   assert.match(result.packet.sourceEvidence, /Acknowledge all City terms/);
 });
+
+
+test("full-bid drafting omits evidence-less derived requirements from an evidence-only partial understanding", () => {
+  const s = section();
+  s.title = "Full bid response";
+  s.metadata.fullBid = true;
+  s.metadata.source = "full_bid";
+  s.requirementLinks.sourceRequirementKeys = [
+    "pricing:1",
+    "workBreakdown:work.furnish_deliver",
+  ];
+  const requirements = source();
+  requirements.completenessStatus = "partial";
+  requirements.incompleteReasons = ["requirement_evidence_missing"];
+  requirements.requirements.push({
+    id: "derived-work",
+    requirementKey: "workBreakdown:work.furnish_deliver",
+    type: "deliverable",
+    level: "unknown",
+    text: "Furnish and deliver the requested goods.",
+    sourceSection: "workBreakdown",
+    sourceFindingKey: "work.furnish_deliver",
+    details: {},
+    evidence: [],
+    listingEvidence: null,
+  });
+
+  const result = prepareBidDraftInput({
+    snapshot: snapshot(),
+    section: s,
+    requirements,
+    company: null,
+  });
+
+  assert.equal(result.state, "ready",
+    "evidence-less derived duplicates must not abort the full-bid packet when evidence-only partiality is explicitly draftable");
+  if (result.state !== "ready") return;
+  assert.deepEqual(result.packet.requirementKeys, ["pricing:1"]);
+  assert.doesNotMatch(result.packet.sourceEvidence, /workBreakdown:work\.furnish_deliver/);
+  assert.match(result.packet.sourceEvidence, /pricing:1/);
+});
+
+test("non-full-bid sections still fail closed when a linked requirement has no evidence", () => {
+  const s = section();
+  s.requirementLinks.sourceRequirementKeys = ["pricing:1", "workBreakdown:work.furnish_deliver"];
+  const requirements = source();
+  requirements.completenessStatus = "partial";
+  requirements.incompleteReasons = ["requirement_evidence_missing"];
+  requirements.requirements.push({
+    id: "derived-work",
+    requirementKey: "workBreakdown:work.furnish_deliver",
+    type: "deliverable",
+    level: "unknown",
+    text: "Furnish and deliver the requested goods.",
+    sourceSection: "workBreakdown",
+    sourceFindingKey: "work.furnish_deliver",
+    details: {},
+    evidence: [],
+    listingEvidence: null,
+  });
+
+  const result = prepareBidDraftInput({
+    snapshot: snapshot(),
+    section: s,
+    requirements,
+    company: null,
+  });
+  assert.equal(result.state, "blocked");
+  if (result.state === "blocked") {
+    assert.match(result.reasons.join(" "), /lacks verified source-document or authoritative listing evidence/i);
+  }
+});
