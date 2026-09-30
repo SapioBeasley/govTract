@@ -21,6 +21,7 @@ import { getBidWorkspace } from "@/lib/bids/workspace";
 import { savedSectionCanAddressRequirement } from "@/lib/bids/response-proof";
 import { groupBidBuilderRequirements } from "@/lib/bids/builder";
 import { listBidDraftGenerations } from "@/lib/bids/draft-persistence";
+import { listBidRequirementQuestions } from "@/lib/bids/requirement-questions";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
   const workspace = await getBidWorkspace(id);
   if (!workspace) notFound();
   const generations = await listBidDraftGenerations(workspace.id);
+  const requirementQuestions = listBidRequirementQuestions(workspace);
 
   const sourceRequirements = workspace.sourceRequirements?.requirements ?? [];
   const sourceEligible = Boolean(workspace.sourceRequirements && !workspace.sourceRequirements.isStale &&
@@ -220,6 +222,7 @@ export default async function BidWorkspacePage({ params }: BidWorkspacePageProps
             <BidPackageControl
               workspaceId={workspace.id}
               initialSections={workspace.sections}
+              initialQuestions={requirementQuestions}
               sourceBlockers={sourceBlockers}
               sourceReady={generationActionReady}
               requiresUnderstandingRefresh={requiresUnderstandingRefresh}
