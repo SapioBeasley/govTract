@@ -158,7 +158,7 @@ export function applyBidderAnswerReplacements(input: {
       const key = answered[0]!.toLocaleLowerCase("en-US");
       touched.add(key);
       const indentation = line.match(/^\s*/)?.[0] ?? "";
-      return indentation + replacementMap.get(key);
+      return indentation + replacementMap.get(key)!;
     }
     return line.replace(needsInputPattern, (whole, rawQuestion: string) => {
       const key = normalizedQuestion(rawQuestion).toLocaleLowerCase("en-US");
@@ -182,10 +182,10 @@ export function applyBidderAnswerReplacements(input: {
     throw new Error("One or more answered Needs-input prompts could not be located in the current bid.");
   }
 
-  let revised = revisedBody.trim();
-  revised = remainingAppendix.length
-    ? revisedBody + "\n\n" + appendixMarker + "\n" + remainingAppendix.join("\n")
-    : revisedBody;
+  const trimmedBody = revisedBody.trim();
+  let revised = remainingAppendix.length
+    ? trimmedBody + "\n\n" + appendixMarker + "\n" + remainingAppendix.join("\n")
+    : trimmedBody;
   if (!needsInputPattern.test(revised)) {
     needsInputPattern.lastIndex = 0;
     revised = revised.replace(workingDraftBanner, "").trim();
