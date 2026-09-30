@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { prepareBidDraftInput, finalizeBidDraft } from "@/lib/bids/draft-input";
-import type { BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
+import type { BidWorkspaceRequirement, BidWorkspaceSection, BidWorkspaceSourceSnapshot } from "@/lib/bids/workspace";
 import type { SolicitationRequirementSet } from "@/lib/procurement/requirements/persistence";
 
 const versionId = "00000000-0000-4000-8000-000000000001";
@@ -60,6 +60,55 @@ test("manual drafting packet is pinned to the complete immutable solicitation sn
       company: { name: "Example LLC", capabilities: ["Consulting"] } }),
     result,
   );
+});
+
+test("saved bidder or supplier responses are durable draft input and satisfy the matching pre-draft question", () => {
+  const bidderRequirement: BidWorkspaceRequirement = {
+    id: "bid-requirement-1",
+    sourceRequirementKey: understandingId + ":r1",
+    requirementType: "pricing",
+    text: "Use the agency pricing sheet.",
+    isRequired: true,
+    status: "drafting",
+    effectiveStatus: "drafting",
+    canMarkComplete: true,
+    evidence: {
+      understandingId,
+      sourceRequirementId: "r1",
+      sourceFindingKey: "finding-1",
+      requirementLevel: "required",
+      pursuitSnapshotId: snapshotId,
+      references: [],
+      issues: [],
+    },
+    responseNotes: "$10000 total including shipping and handling.",
+    responseSourceType: "manufacturer",
+    responseSourceName: "Example Manufacturer",
+    sortOrder: 0,
+  };
+  const result = prepareBidDraftInput({
+    snapshot: snapshot(),
+    section: section(),
+    requirements: source(),
+    company: { name: "Example LLC", capabilities: ["Consulting"] },
+    bidderRequirements: [bidderRequirement],
+  });
+  assert.equal(result.state, "ready");
+  if (result.state !== "ready") return;
+  assert.doesNotMatch(result.packet.requiredQuestions.join(" "), /pricing/i,
+    "the persisted response should satisfy the matching pre-draft question");
+  assert.match(result.packet.bidderResponseContext ?? "", /\$10000/);
+  assert.match(result.packet.bidderResponseContext ?? "", /manufacturer/i);
+  assert.match(result.packet.bidderResponseContext ?? "", /Example Manufacturer/);
+
+  const final = finalizeBidDraft(result.packet, {
+    content: "Our pricing for the agency pricing sheet is $10,000.00 total, including shipping and handling.",
+    requirementKeys: ["pricing:1"],
+    missingFacts: [],
+  });
+  assert.match(final.content, /\$10,000\.00/);
+  assert.doesNotMatch(final.content, /\[NEEDS INPUT:.*pricing/i,
+    "an authorized saved pricing response must not be replaced by a new pricing prompt");
 });
 
 test("stale, incomplete or unverified source documents never reach model drafting", () => {
