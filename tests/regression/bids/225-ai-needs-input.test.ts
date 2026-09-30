@@ -104,6 +104,70 @@ test("AI answer replacement rejects newly invented concrete bidder facts not pre
   }), /unsupported|invented|factual/i);
 });
 
+test("safe bidder-answer prose accepts equivalent currency formatting and numeric-leading hyphenation", () => {
+  const pricing = "[NEEDS INPUT: Confirm final pricing]";
+  const pricingAnswers = normalizeBidderInputAnswers(pricing, [
+    { question: "Confirm final pricing", answer: "$10000 total including shipping and handling." },
+  ]);
+  const priced = applyBidderAnswerReplacements({
+    content: pricing,
+    answers: pricingAnswers,
+    replacements: [{
+      question: "Confirm final pricing",
+      text: "Our total bid price is $10,000.00, including shipping and handling.",
+    }],
+    sourceEvidence: "The price quote must include the grand total including shipping and handling.",
+  });
+  assert.match(priced, /\$10,000\.00/);
+
+  const insurance = "[NEEDS INPUT: Confirm insurance response timing]";
+  const insuranceAnswers = normalizeBidderInputAnswers(insurance, [
+    { question: "Confirm insurance response timing", answer: "Confirmed." },
+  ]);
+  const insured = applyBidderAnswerReplacements({
+    content: insurance,
+    answers: insuranceAnswers,
+    replacements: [{
+      question: "Confirm insurance response timing",
+      text: "We will provide the requested insurance documentation within the required 3-day period.",
+    }],
+    sourceEvidence: "Provide insurance documentation within three (3) days of request.",
+  });
+  assert.match(insured, /3-day period/);
+});
+
+test("bidder-answer prose must preserve concrete facts explicitly supplied by the bidder", () => {
+  const current = "[NEEDS INPUT: Confirm final pricing]";
+  const answers = normalizeBidderInputAnswers(current, [
+    { question: "Confirm final pricing", answer: "$10000 total including shipping and handling." },
+  ]);
+  assert.throws(() => applyBidderAnswerReplacements({
+    content: current,
+    answers,
+    replacements: [{
+      question: "Confirm final pricing",
+      text: "Pricing will be provided in accordance with the solicitation.",
+    }],
+    sourceEvidence: "The price quote must include the grand total including shipping and handling.",
+  }), /preserve|bidder|fact|pricing/i);
+});
+
+test("letter-leading product and certification identifiers remain protected against invention", () => {
+  const current = "[NEEDS INPUT: Confirm offered model]";
+  const answers = normalizeBidderInputAnswers(current, [
+    { question: "Confirm offered model", answer: "We are offering AP2." },
+  ]);
+  assert.throws(() => applyBidderAnswerReplacements({
+    content: current,
+    answers,
+    replacements: [{
+      question: "Confirm offered model",
+      text: "We are offering AP3 under ISO-9002.",
+    }],
+    sourceEvidence: "Requested model is AP2 and certification reference is ISO-9001.",
+  }), /unsupported|invented|factual/i);
+});
+
 test("bid UI exposes answer cards and a separate explicit manual AI update action", () => {
   const control = read("components/bid-package-control.tsx");
   assert.match(control, /Needs your input/);
@@ -132,4 +196,11 @@ test("bidder-answer persistence is content-bound and fails closed on in-flight s
   assert.match(persistence, /IS NOT DISTINCT FROM/);
   assert.match(persistence, /source_or_section_changed/);
   assert.match(persistence, /generationTrigger:\s*"manual"/);
+});
+
+test("bidder-answer validation failures retain structured output with a granular safe audit code", () => {
+  const persistence = read("lib/bids/bidder-input-persistence.ts");
+  assert.match(persistence, /BidderAnswerValidationError/);
+  assert.match(persistence, /generatedContent:\s*JSON\.stringify\([^)]*result\.output[^)]*\)/s);
+  assert.match(persistence, /bidder_answer_(?:unsupported|missing|invalid|question|placeholder)/i);
 });
