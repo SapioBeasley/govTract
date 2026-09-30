@@ -98,11 +98,11 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
       </p>
       <div role="status" className="rounded-xl border p-4">
         <p className="font-semibold">
-          {review.readyForExternalSubmission
-            ? "Human review recorded — package may be handed off for external submission"
+          {approvalCurrent && review.readyForHumanReview
+            ? "Human review recorded — approved package can be downloaded"
             : review.readyForHumanReview
-              ? "Checklist has no detected blockers — human approval required"
-              : `${review.blockingIssues.length} outstanding final-review check(s) — not ready for external submission`}
+              ? "Checklist has no package blockers — human approval required"
+              : `${review.blockingIssues.length} outstanding package check(s) — not ready for approval`}
         </p>
         {!approvalCurrent && !review.readyForHumanReview ? (
           <p className="mt-2 text-xs">A previous approval, if any, is not valid for this current package.</p>
@@ -114,6 +114,19 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
                 className="break-words [overflow-wrap:anywhere]">{issue.message}</li>
             ))}
           </ul>
+        ) : null}
+        {review.warnings.length ? (
+          <div className="mt-4 rounded-lg bg-[var(--muted)]/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+              Review before external submission
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--muted-foreground)]">
+              {review.warnings.map((warning, index) => (
+                <li key={`${warning.code}-${warning.requirementId ?? warning.sectionId ?? warning.documentId ?? index}`}
+                  className="break-words [overflow-wrap:anywhere]">{warning.message}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
 
@@ -169,7 +182,9 @@ export function BidFinalReview({ workspaceId, opportunityId, review, confirmedOr
           <article key={check.requirementId} id={`original-form-${check.requirementId}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border px-2 py-1 capitalize">{check.kind.replaceAll("_", " ")}</span>
-              <span className="rounded-full border px-2 py-1">{check.mandatory ? "Mandatory" : "Review requiredness"}</span>
+              <span className="rounded-full border px-2 py-1">
+                {check.conditional ? "Conditional" : check.mandatory ? "Mandatory" : "Review requiredness"}
+              </span>
               <span className="rounded-full border px-2 py-1">Response: {check.responseStatus.replaceAll("_", " ")}</span>
             </div>
             <p className="mt-2 break-words [overflow-wrap:anywhere]">{check.text}</p>

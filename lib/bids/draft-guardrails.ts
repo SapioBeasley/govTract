@@ -27,12 +27,46 @@ const vendorSubject = /\b(?:we|our(?: company| team| proposed| offered| products
 const commitment = /\b(?:will|shall|can|are|is|has|have|undergo(?:es)?|meet(?:s)?|comply|complies|provide(?:s)?|supply|deliver(?:s)?|carry|carries|include(?:s)?|offer(?:s|ed)?|propose(?:s|d)?|certif(?:ied|y)|test(?:ed|ing)?|insur(?:ed|ance)|warrant(?:y|ies)?)\b/i;
 export type DraftInspection = { claims: string[]; modelIssues: string[] };
 
+// A period inside a numeric value such as 24.75 is content, not a sentence boundary.
+function isClauseBoundary(text: string, index: number) {
+  const value = text[index];
+  if (value === ".") {
+    const previous = index > 0 ? text[index - 1] : "";
+    const next = index + 1 < text.length ? text[index + 1] : "";
+    if (/\d/.test(previous) && /\d/.test(next)) return false;
+    return true;
+  }
+  return value === "!" || value === "?" || value === ";" || value === "\n";
+}
+
+function splitClausesWithDelimiters(content: string) {
+  const chunks: string[] = [];
+  let start = 0;
+  let index = 0;
+  while (index < content.length) {
+    if (!isClauseBoundary(content, index)) {
+      index++;
+      continue;
+    }
+    chunks.push(content.slice(start, index));
+    let end = index + 1;
+    while (end < content.length && isClauseBoundary(content, end)) end++;
+    chunks.push(content.slice(index, end));
+    start = end;
+    index = end;
+  }
+  chunks.push(content.slice(start));
+  return chunks;
+}
+
 /** Inspects offered-vendor assertions separately from buyer requirements and source-model mapping. */
 export function inspectBidDraft(content: string, sourceEvidence: string): DraftInspection {
   const claims: string[] = [];
   // Punctuation and paragraph boundaries delimit claims; placeholder questions after
   // an assertion cannot retroactively qualify a preceding assertion.
-  for (const clause of content.split(/[.!?;\n]+/).map((part) => part.trim()).filter(Boolean)) {
+  for (const clause of splitClausesWithDelimiters(content)
+    .filter((_part, index) => index % 2 === 0)
+    .map((part) => part.trim()).filter(Boolean)) {
     if (!vendorSubject.test(clause) || !commitment.test(clause)) continue;
     for (const [kind, pattern] of claimKinds) {
       if (pattern.test(clause)) claims.push("Verify " + kind + " before making this vendor commitment: " + clause.slice(0, 180));
@@ -51,7 +85,7 @@ export function inspectBidDraft(content: string, sourceEvidence: string): DraftI
  * provider output is retained separately in the generation audit record.
  */
 export function redactUnverifiedClaims(content: string, sourceEvidence: string): string {
-  return content.split(/([.!?;\n]+)/).map((chunk, index) => {
+  return splitClausesWithDelimiters(content).map((chunk, index) => {
     if (index % 2 === 1 || !chunk.trim()) return chunk;
     const claims = inspectBidDraft(chunk, sourceEvidence).claims;
     const ambiguousModel = /\band\/or\b/i.test(chunk) && /\b(?:lb|lbs|pounds|model|basket)\b/i.test(chunk);

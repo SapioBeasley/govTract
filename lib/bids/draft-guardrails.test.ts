@@ -94,3 +94,17 @@ test("unsafe saved-model prose becomes scoped placeholders, never a naked affirm
   assert.match(redacted, /separate.*model/i);
   assert.equal(fixture.content.includes("in full compliance"), true, "unmodified source fixture remains available to audit");
 });
+
+
+test("claim redaction treats decimal specifications as atomic text and never splices placeholders into numbers", () => {
+  const source = JSON.stringify({ passages: [{
+    excerpt: "Battery weight 24.75 lbs; dimensions 7.68 in L x 5.12 in W x 7.09 in H.",
+  }] });
+  const redacted = redactUnverifiedClaims(
+    "Our offered battery weighs 24.75 lbs and measures 7.68 in L x 5.12 in W x 7.09 in H.",
+    source,
+  );
+  assert.equal((redacted.match(/\[NEEDS INPUT:/g) ?? []).length, 1);
+  assert.doesNotMatch(redacted, /24\.\[NEEDS INPUT|7\.\[NEEDS INPUT|5\.\[NEEDS INPUT/);
+  assert.doesNotMatch(redacted, /\.75|\.68|\.12|\.09/);
+});

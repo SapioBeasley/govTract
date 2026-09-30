@@ -51,6 +51,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     ...(workspace.finalReview.submission.portalUrl
       ? [`- Submission destination: ${workspace.finalReview.submission.portalUrl}`]
       : ["- Submission destination is not verified"]),
+    ...workspace.finalReview.warnings.map((warning) => `- Review warning: ${warning.message}`),
     "",
     "# Full bid response",
     "",
