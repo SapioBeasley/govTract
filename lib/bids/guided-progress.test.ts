@@ -167,8 +167,25 @@ test("original forms, stale approval, and human handoff never imply automatic su
   assert.equal(deriveBidGuidance(workspace).steps.find((step) => step.id === "handoff")?.status, "Needs re-review");
   workspace.finalReviewApprovalCurrent = true;
   const approved = deriveBidGuidance(workspace);
-  assert.equal(approved.steps.find((step) => step.id === "handoff")?.status, "Complete");
-  assert.match(approved.steps.find((step) => step.id === "handoff")!.description, /external portal/i);
+  assert.equal(approved.steps.find((step) => step.id === "handoff")?.status, "Needs action");
+  assert.equal(approved.nextAction.label, "Submit externally");
+  assert.match(approved.steps.find((step) => step.id === "handoff")!.description, /confirm.*govTract/i);
+
+  workspace.status = "submitted";
+  workspace.currentSubmission = {
+    id: "submission-1",
+    bidWorkspaceId: workspace.id,
+    reviewFingerprint: "review-fingerprint",
+    submittedAt: new Date("2026-09-30T20:00:00Z"),
+    confirmationNumber: null,
+    receiptUrl: null,
+    notes: null,
+    createdAt: new Date("2026-09-30T20:00:00Z"),
+    updatedAt: new Date("2026-09-30T20:00:00Z"),
+  };
+  const submitted = deriveBidGuidance(workspace);
+  assert.equal(submitted.steps.find((step) => step.id === "handoff")?.status, "Complete");
+  assert.equal(submitted.nextAction.label, "Submission recorded");
 });
 
 
