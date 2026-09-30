@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import {
   applyBidderAnswerReplacements,
+  BidderAnswerValidationError,
   extractNeedsInputPrompts,
   normalizeBidderInputAnswers,
   type BidderInputAnswer,
@@ -22,7 +23,7 @@ import { bidDraftGenerations } from "@/lib/db/bid-draft-generations-schema";
 import { getDb } from "@/lib/db/client";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const BIDDER_ANSWER_PROMPT_VERSION = "bidder-answers-v1";
+export const BIDDER_ANSWER_PROMPT_VERSION = "bidder-answers-v2";
 
 function budgetMicrousd(env: Record<string, string | undefined>) {
   const raw = env.GOVTRACT_AI_BID_DRAFT_BUDGET_USD?.trim() || "0";
@@ -148,8 +149,9 @@ export async function applyBidderAnswersToFullBid(input: {
   if (!created) throw new Error("This manual bidder-answer request was already processed or requested.");
 
   let phase: "provider" | "validation" | "persistence" = "provider";
+  let result: Awaited<ReturnType<BidAnswerModelProvider["generate"]>> | null = null;
   try {
-    const result = await provider.generate(prompt);
+    result = await provider.generate(prompt);
     phase = "validation";
     const revised = applyBidderAnswerReplacements({
       content: section.content,
@@ -229,17 +231,38 @@ export async function applyBidderAnswersToFullBid(input: {
     };
   } catch (error) {
     const providerFailure = error instanceof BidDraftProviderFailure ? error : null;
+    const validationFailure = error instanceof BidderAnswerValidationError ? error : null;
     const failureCode = providerFailure?.failureCode ??
+      validationFailure?.failureCode ??
       (phase === "provider" ? "provider_unexpected_failure" :
-        phase === "validation" ? "bidder_answer_validation_failed" : "draft_persistence_failure");
+        phase === "validation" ? "bidder_answer_invalid_output" : "draft_persistence_failure");
+    const completedUsage = result?.usage ?? providerFailure?.usage ?? null;
+    const completedModelVersion = result?.modelVersion ?? providerFailure?.modelVersion ?? null;
+    const actualCostMicrousd = result ? estimatedCost(
+      result.usage.promptTokenCount,
+      result.usage.candidatesTokenCount + result.usage.thoughtsTokenCount,
+      provider,
+    ) : null;
     await db.update(bidDraftGenerations).set({
       status: "failed",
       failureCode,
-      ...(providerFailure?.usage ? { usageMetadata: providerFailure.usage } : {}),
-      ...(providerFailure?.modelVersion ? { modelVersion: providerFailure.modelVersion } : {}),
+      ...(result ? { generatedContent: JSON.stringify(result.output) } : {}),
+      ...(completedUsage ? { usageMetadata: completedUsage } : {}),
+      ...(completedModelVersion ? { modelVersion: completedModelVersion } : {}),
+      ...(actualCostMicrousd !== null ? { actualCostMicrousd } : {}),
       completedAt: new Date(),
     }).where(and(eq(bidDraftGenerations.id, created.id), eq(bidDraftGenerations.status, "pending")));
 
+    const bidderAnswerValidationCodes = [
+      "bidder_answer_count_mismatch",
+      "bidder_answer_invalid_output",
+      "bidder_answer_question_mismatch",
+      "bidder_answer_invalid_text",
+      "bidder_answer_placeholder",
+      "bidder_answer_unsupported_fact",
+      "bidder_answer_missing_fact",
+      "bidder_answer_prompt_not_found",
+    ];
     const detail = failureCode === "provider_no_content_max_tokens" ||
       failureCode === "provider_invalid_json_max_tokens"
       ? "Gemini reached the output token limit without a complete answer update."
@@ -248,8 +271,8 @@ export async function applyBidderAnswersToFullBid(input: {
         : failureCode === "provider_no_content_safety"
           ? "Gemini produced no bidder-answer update after its safety checks."
           : failureCode === "provider_invalid_output" ||
-            failureCode === "bidder_answer_validation_failed" ||
-            failureCode === "provider_invalid_json"
+            failureCode === "provider_invalid_json" ||
+            bidderAnswerValidationCodes.includes(failureCode)
             ? "Gemini did not return a safe bidder-answer update."
             : failureCode === "draft_persistence_failure"
               ? "The bidder-answer update could not be saved."
