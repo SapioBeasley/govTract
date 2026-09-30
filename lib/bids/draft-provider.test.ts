@@ -145,7 +145,7 @@ test("Gemini draft output allowance permits substantive sections while honoring 
 });
 
 
-test("bidder-answer prompt keeps explicit answers separate from source evidence and requires verbatim wording", () => {
+test("bidder-answer prompt keeps answers separate from source evidence and asks for proposal-ready elaboration", () => {
   const prompt = makeBidAnswerRevisionPrompt({
     packet,
     currentContent: "Draft [NEEDS INPUT: Confirm delivery schedule]",
@@ -156,7 +156,9 @@ test("bidder-answer prompt keeps explicit answers separate from source evidence 
   });
   assert.match(prompt, /user-authorized bidder/i);
   assert.match(prompt, /not source evidence/i);
-  assert.match(prompt, /verbatim/i);
+  assert.match(prompt, /proposal-ready|complete professional/i);
+  assert.match(prompt, /terse|short confirmation/i);
+  assert.doesNotMatch(prompt, /MUST contain the user\'s answer verbatim/i);
   assert.match(prompt, /Delivery within 21 calendar days after receipt of PO\./);
   assert.match(prompt, /Requirement REQ-1 backed by version-1 excerpt/);
   assert.match(prompt, /CURRENT SAVED BID/);
