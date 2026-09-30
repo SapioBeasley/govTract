@@ -37,6 +37,20 @@ export function questionForBidRequirement(
   requirement: Pick<BidWorkspaceRequirement, "requirementType" | "text">,
 ) {
   const type = requirement.requirementType;
+  const text = requirement.text.toLocaleLowerCase("en-US");
+  if (/\b(?:authorized|approved)\s+(?:dealer|distributor|reseller)\b/.test(text) ||
+      /\bmanufacturer(?:'s)?\s+(?:authorization|authorisation)\b/.test(text)) {
+    return "Can you or your supplier provide the required manufacturer authorization or authorized reseller/distributor status? State exactly what proof can be included with the bid.";
+  }
+  if (/\b(?:warranty|warranties|dead on arrival|\bdoa\b|defective|return|replacement)\b/.test(text)) {
+    return "What warranty, DOA/defective-item replacement, and return support can you or the manufacturer commit to for this requirement? State only the exact terms and timelines you can support.";
+  }
+  if (/\b(?:fob|freight|inside delivery|delivery window|after receipt of order|\baro\b|shipping|loading dock)\b/.test(text)) {
+    return "What exact delivery and freight commitment can you or your supplier make for this requirement? Include the supported lead time and any required FOB, inside-delivery, freight, or receiving terms stated by the buyer.";
+  }
+  if (/\b(?:mwbe|mwdbe|mbe|wbe|sbe|hub|local vendor preference|lvp)\b/.test(text)) {
+    return "Does the bidder or an identified subcontractor hold the certification or local-preference status requested here? Provide the exact program, holder, certification/status details, and supporting proof you can include.";
+  }
   if (type === "pricing") {
     return "What pricing will you offer for this requirement? Include the exact unit price, total, and any required shipping/handling or other pricing components you can support.";
   }
