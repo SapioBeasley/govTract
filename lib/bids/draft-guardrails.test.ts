@@ -108,3 +108,26 @@ test("claim redaction treats decimal specifications as atomic text and never spl
   assert.doesNotMatch(redacted, /24\.\[NEEDS INPUT|7\.\[NEEDS INPUT|5\.\[NEEDS INPUT/);
   assert.doesNotMatch(redacted, /\.75|\.68|\.12|\.09/);
 });
+
+
+test("saved bidder or supplier responses can authorize matching proposal prose without becoming solicitation evidence", () => {
+  const source = JSON.stringify({ passages: [{
+    excerpt: "Complete pricing in the agency pricing sheet and include shipping and handling.",
+  }] });
+  const bidderResponses = JSON.stringify({
+    verification: "USER_OR_SUPPLIER_PROVIDED_UNVERIFIED",
+    responses: [{
+      requirementText: "Complete pricing in the agency pricing sheet and include shipping and handling.",
+      answer: "$10000 total including shipping and handling.",
+      responseSourceType: "manufacturer",
+      responseSourceName: "Example Manufacturer",
+    }],
+  });
+  const authorized = "Our pricing for the agency pricing sheet is $10,000.00 total, including shipping and handling.";
+  assert.equal(redactUnverifiedClaims(authorized, source, bidderResponses), authorized);
+  assert.deepEqual(inspectBidDraft(authorized, source, bidderResponses).claims, []);
+
+  const invented = "Our pricing for the agency pricing sheet is $12,500.00 total, including shipping and handling.";
+  assert.match(redactUnverifiedClaims(invented, source, bidderResponses), /\[NEEDS INPUT:/,
+    "a different price must remain blocked even when a supplier supplied another authorized price");
+});
