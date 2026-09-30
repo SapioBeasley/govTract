@@ -11,6 +11,10 @@ export const BID_RESPONSE_SOURCE_TYPES = [
 
 export type BidResponseSourceType = (typeof BID_RESPONSE_SOURCE_TYPES)[number];
 
+export type BidRequirementQuestion = BidWorkspaceRequirement & {
+  question: string;
+};
+
 export function isBidResponseSourceType(value: unknown): value is BidResponseSourceType {
   return typeof value === "string" &&
     BID_RESPONSE_SOURCE_TYPES.some((source) => source === value);
@@ -64,7 +68,7 @@ export function isCurrentBidRequirement(
   );
 }
 
-export function listBidRequirementQuestions(workspace: BidWorkspaceRecord) {
+export function listBidRequirementQuestions(workspace: BidWorkspaceRecord): BidRequirementQuestion[] {
   return workspace.requirements
     .filter((requirement) => isCurrentBidRequirement(requirement, workspace))
     .filter(requirementNeedsBidderQuestion)
