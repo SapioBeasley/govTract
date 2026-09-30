@@ -34,8 +34,8 @@ export async function updateBidRequirementResponse(
 
   const answer = input.responseNotes?.trim() || null;
   const sourceName = input.responseSourceName?.trim() || null;
-  if (answer && !input.responseSourceType) {
-    throw new Error("Choose who supplied this requirement response.");
+  if (!input.responseSourceType) {
+    throw new Error("Choose who is responsible for this requirement response.");
   }
 
   const workspace = await getBidWorkspace(workspaceId);
@@ -48,8 +48,8 @@ export async function updateBidRequirementResponse(
 
   await getDb().update(bidRequirements).set({
     responseNotes: answer,
-    responseSourceType: answer ? input.responseSourceType : null,
-    responseSourceName: answer ? sourceName : null,
+    responseSourceType: input.responseSourceType,
+    responseSourceName: sourceName,
     updatedAt: new Date(),
   }).where(and(
     eq(bidRequirements.id, requirementId),
