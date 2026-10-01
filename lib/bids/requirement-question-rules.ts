@@ -9,10 +9,8 @@ export const BID_RESPONSE_SOURCE_TYPES = [
 
 export type BidResponseSourceType = (typeof BID_RESPONSE_SOURCE_TYPES)[number];
 
-export type BidQuestionCandidate = Pick<
-  BidWorkspaceRequirement,
-  "requirementType" | "text" | "isRequired"
->;
+export type BidQuestionCandidate = Pick<BidWorkspaceRequirement, "requirementType"> &
+  Partial<Pick<BidWorkspaceRequirement, "text" | "isRequired">>;
 
 export type BidRequirementQuestion = BidWorkspaceRequirement & {
   question: string;
@@ -61,7 +59,8 @@ const reusableManufacturerFactPattern = /\b(?:warranty|warranties|dead\s+on\s+ar
 export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate) {
   if (packageOnlyTypes.has(requirement.requirementType)) return false;
 
-  const text = requirement.text.trim();
+  const text = requirement.text?.trim() ?? "";
+  const isRequired = requirement.isRequired ?? true;
   if (requirement.requirementType === "pricing") return true;
   if (bidderCredentialTypes.has(requirement.requirementType)) return true;
   if (["schedule", "mandatory_event"].includes(requirement.requirementType)) return true;
@@ -70,7 +69,7 @@ export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate
   if (choicePattern.test(text) || exceptionPattern.test(text)) return true;
 
   if (inferableScopeTypes.has(requirement.requirementType)) {
-    return !requirement.isRequired;
+    return !isRequired;
   }
 
   // Unknown bidder-facing requirement types remain fail-closed: ask for a fact
@@ -79,7 +78,7 @@ export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate
 }
 
 export function inferredBidAssumptionForRequirement(requirement: BidQuestionCandidate) {
-  if (!requirement.isRequired || !inferableScopeTypes.has(requirement.requirementType) ||
+  if ((requirement.isRequired ?? true) !== true || !inferableScopeTypes.has(requirement.requirementType) ||
       requirementNeedsBidderQuestion(requirement)) {
     return null;
   }
@@ -107,9 +106,10 @@ function normalizedReusableFactText(text: string) {
 }
 
 export function bidQuestionDeduplicationKey(requirement: BidQuestionCandidate) {
-  const kind = reusableManufacturerFactKind(requirement.text);
+  const text = requirement.text ?? "";
+  const kind = reusableManufacturerFactKind(text);
   if (!kind) return null;
-  return `${kind}:${normalizedReusableFactText(requirement.text)}`;
+  return `${kind}:${normalizedReusableFactText(text)}`;
 }
 
 export function selectBidRequirementQuestions<T extends BidWorkspaceRequirement>(requirements: T[]) {
@@ -136,7 +136,7 @@ export function questionForBidRequirement(
   requirement: BidQuestionCandidate,
 ) {
   const type = requirement.requirementType;
-  const text = requirement.text.toLocaleLowerCase("en-US");
+  const text = requirement.text?.toLocaleLowerCase("en-US") ?? "";
   if (manufacturerAuthorizationPattern.test(text)) {
     return "What manufacturer authorization or authorized reseller/distributor proof can support this bid? State the exact status and evidence available.";
   }
@@ -164,7 +164,7 @@ export function questionForBidRequirement(
   if (exceptionPattern.test(text)) {
     return "Does the bidder take any exception or deviation from this requirement? State the exact exception or confirm that none is being taken.";
   }
-  if (!requirement.isRequired && inferableScopeTypes.has(type)) {
+  if ((requirement.isRequired ?? true) !== true && inferableScopeTypes.has(type)) {
     return "Will the bidder include this optional or conditional item? If yes, state exactly what is being offered and any requested make/model, quantity, or pricing detail.";
   }
   if (inferableScopeTypes.has(type)) {
