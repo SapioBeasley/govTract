@@ -5,11 +5,19 @@ import type { BidWorkspaceRecord, BidWorkspaceRequirement } from "@/lib/bids/wor
 import {
   questionForBidRequirement,
   requirementNeedsBidderQuestion,
+  selectBidRequirementAssumptions,
+  selectBidRequirementQuestions,
+  type BidRequirementAssumption,
   type BidRequirementQuestion,
 } from "@/lib/bids/requirement-question-rules";
 
-export { questionForBidRequirement, requirementNeedsBidderQuestion };
-export type { BidRequirementQuestion };
+export {
+  questionForBidRequirement,
+  requirementNeedsBidderQuestion,
+  selectBidRequirementAssumptions,
+  selectBidRequirementQuestions,
+};
+export type { BidRequirementAssumption, BidRequirementQuestion };
 
 export function isCurrentBidRequirement(
   requirement: BidWorkspaceRequirement,
@@ -25,15 +33,17 @@ export function isCurrentBidRequirement(
   );
 }
 
-export function listBidRequirementQuestions(workspace: BidWorkspaceRecord): BidRequirementQuestion[] {
+function currentBidRequirements(workspace: BidWorkspaceRecord) {
   if (!isSolicitationRequirementSetDraftable(workspace.sourceRequirements)) return [];
-  return workspace.requirements
-    .filter((requirement) => isCurrentBidRequirement(requirement, workspace))
-    .filter(requirementNeedsBidderQuestion)
-    .map((requirement) => ({
-      ...requirement,
-      question: questionForBidRequirement(requirement),
-    }));
+  return workspace.requirements.filter((requirement) => isCurrentBidRequirement(requirement, workspace));
+}
+
+export function listBidRequirementQuestions(workspace: BidWorkspaceRecord): BidRequirementQuestion[] {
+  return selectBidRequirementQuestions(currentBidRequirements(workspace));
+}
+
+export function listBidRequirementAssumptions(workspace: BidWorkspaceRecord): BidRequirementAssumption[] {
+  return selectBidRequirementAssumptions(currentBidRequirements(workspace));
 }
 
 /**
