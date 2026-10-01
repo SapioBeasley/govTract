@@ -5,17 +5,18 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("bid preparation leads with requirement questions, saved responses, then one editable full-bid draft", () => {
+test("bid preparation leads with exception-driven inputs, then one editable full-bid draft", () => {
   const page = read("app/bids/[id]/page.tsx");
   const control = read("components/bid-package-control.tsx");
   assert.match(page, /id="prepare-bid"/);
   assert.match(page, /<BidPackageControl/);
-  assert.match(control, /Generate requirement questions/);
-  assert.match(control, /Populate responses/);
+  assert.match(control, /Generate questions/);
+  assert.match(control, /Inferred assumptions/);
+  assert.match(control, /Required bidder facts/);
   assert.match(control, /Draft bid/);
-  assert.match(control, /Full bid response/);
+  assert.match(control, /Review & edit bid/);
   assert.match(control, /Save bid/);
-  assert.match(control, /saved requirement responses/i);
+  assert.match(control, /Saved responses remain separate/i);
   assert.doesNotMatch(control, /Update bid with my answers|Mark addressed in my bid|Draft with AI/);
 });
 
