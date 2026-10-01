@@ -4,78 +4,44 @@ import { Check, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import {
-  BID_WORKSPACE_REVIEW_STATES,
-  BID_WORKSPACE_STATUSES,
-  type BidWorkspaceReviewState,
-  type BidWorkspaceStatus,
-} from "@/lib/bids/workspace-types";
-
-const STATUS_LABELS: Record<BidWorkspaceStatus, string> = {
-  draft: "Draft",
-  in_progress: "In progress",
-  ready_for_review: "Ready for review",
-  complete: "Draft complete (internal)",
-  submitted: "Submitted (external confirmation recorded)",
-};
-
-const REVIEW_LABELS: Record<BidWorkspaceReviewState, string> = {
-  not_started: "Not started",
-  in_review: "In review",
-  needs_changes: "Needs changes",
-  approved: "Approved",
-};
-
 export function BidWorkspaceControl({
   workspaceId,
-  initialStatus,
-  initialReviewState,
   initialNotes,
 }: {
   workspaceId: string;
-  initialStatus: BidWorkspaceStatus;
-  initialReviewState: BidWorkspaceReviewState;
   initialNotes: string | null;
 }) {
   const router = useRouter();
-  const [status, setStatus] = useState(initialStatus);
-  const [reviewState, setReviewState] = useState(initialReviewState);
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const hasChanges = useMemo(
-    () =>
-      status !== initialStatus ||
-      reviewState !== initialReviewState ||
-      notes !== (initialNotes ?? ""),
-    [status, reviewState, notes, initialStatus, initialReviewState, initialNotes],
+    () => notes !== (initialNotes ?? ""),
+    [notes, initialNotes],
   );
 
   async function save() {
+    if (!hasChanges || pending) return;
     setPending(true);
     setMessage(null);
     try {
       const response = await fetch(`/api/bids/${workspaceId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...(status === "submitted" ? {} : { status }),
-          reviewState,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify({ notes: notes.trim() || null }),
       });
       const payload = (await response.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
       if (!response.ok) {
-        setMessage(payload?.error?.message ?? "Workspace could not be updated.");
+        setMessage(payload?.error?.message ?? "Workspace notes could not be updated.");
         return;
       }
-      setMessage("Workspace updated.");
+      setMessage("Workspace notes saved.");
       router.refresh();
     } catch {
-      setMessage("Workspace could not be updated.");
+      setMessage("Workspace notes could not be updated.");
     } finally {
       setPending(false);
     }
@@ -83,54 +49,21 @@ export function BidWorkspaceControl({
 
   return (
     <div className="grid min-w-0 gap-4 rounded-2xl border bg-white p-5 shadow-sm">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label>
-          <span className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-            Workspace status
-          </span>
-          <select
-            value={status}
-            disabled={initialStatus === "submitted"}
-            onChange={(event) => setStatus(event.target.value as BidWorkspaceStatus)}
-            className="mt-1.5 h-10 w-full rounded-lg border bg-white px-3 text-sm"
-          >
-            {BID_WORKSPACE_STATUSES.map((value) => (
-              <option key={value} value={value} disabled={value === "submitted"}>
-                {STATUS_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-            Review state
-          </span>
-          <select
-            value={reviewState}
-            onChange={(event) => setReviewState(event.target.value as BidWorkspaceReviewState)}
-            className="mt-1.5 h-10 w-full rounded-lg border bg-white px-3 text-sm"
-          >
-            {BID_WORKSPACE_REVIEW_STATES.map((value) => (
-              <option key={value} value={value} disabled={value === "approved"}>
-                {REVIEW_LABELS[value]}
-              </option>
-            ))}
-          </select>
-          <span className="mt-1 block text-xs text-[var(--muted-foreground)]">Approve only in Final review after checking the current source package.</span>
-        </label>
+      <div>
+        <h3 className="font-semibold">Workspace notes</h3>
+        <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">
+          Bid status is derived from unresolved inputs, the saved draft, package approval, and explicit external submission confirmation.
+          Notes remain available here without creating a second workflow state.
+        </p>
       </div>
-
       <label>
-        <span className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-          Workspace notes
-        </span>
+        <span className="sr-only">Workspace notes</span>
         <textarea
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           rows={4}
           placeholder="Bid strategy, assignments, review notes, unanswered questions…"
-          className="mt-1.5 w-full min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm"
+          className="w-full min-w-0 resize-y rounded-lg border bg-white px-3 py-2 text-sm"
         />
       </label>
 
@@ -142,7 +75,7 @@ export function BidWorkspaceControl({
           className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
-          {pending ? "Saving…" : "Save workspace"}
+          {pending ? "Saving…" : "Save notes"}
         </button>
         {message ? (
           <span className="break-words text-xs text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
