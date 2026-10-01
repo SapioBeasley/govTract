@@ -8,10 +8,11 @@ import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("bid workspace is question-first and no longer collects transient answers from generated draft prose", () => {
+test("bid workspace prepares bidder inputs before drafting and never clears persisted answers", () => {
   const control = read("components/bid-package-control.tsx");
 
-  assert.match(control, /Generate requirement questions/i);
+  assert.match(control, /Bid inputs/i);
+  assert.match(control, /Generate questions/i);
   assert.match(control, /Draft bid/i);
   assert.match(control, /subcontractor|manufacturer/i);
   assert.doesNotMatch(control, /setAnswers\(\{\}\)/,
@@ -52,8 +53,7 @@ test("question generation is deterministic and does not call the model", () => {
   assert.match(rules, /form|submission_instruction/);
 });
 
-
-test("evidence-only partial source sets still expose current bidder and supplier questions", () => {
+test("evidence-only partial source sets expose only genuine bidder exceptions", () => {
   const base = {
     sourceRequirements: {
       understandingId: "understanding-current",
@@ -67,8 +67,8 @@ test("evidence-only partial source sets still expose current bidder and supplier
     },
     requirements: [
       {
-        id: "deliverable-question",
-        sourceRequirementKey: "understanding-current:source-deliverable",
+        id: "required-scope",
+        sourceRequirementKey: "understanding-current:source-scope",
         requirementType: "deliverable",
         text: "Provide the specified equipment.",
         isRequired: true,
@@ -77,14 +77,34 @@ test("evidence-only partial source sets still expose current bidder and supplier
         canMarkComplete: false,
         evidence: {
           understandingId: "understanding-current",
-          sourceRequirementId: "source-deliverable",
-          sourceFindingKey: "deliverable-finding",
+          sourceRequirementId: "source-scope",
+          sourceFindingKey: "scope-finding",
           pursuitSnapshotId: "snapshot-current",
           references: [],
           issues: ["requirement_set_incomplete", "requirement_evidence_missing"],
         },
         responseNotes: null,
         sortOrder: 0,
+      },
+      {
+        id: "delivery-question",
+        sourceRequirementKey: "understanding-current:source-delivery",
+        requirementType: "deliverable",
+        text: "State the bidder's delivery lead time after receipt of order.",
+        isRequired: true,
+        status: "needs_review",
+        effectiveStatus: "needs_review",
+        canMarkComplete: false,
+        evidence: {
+          understandingId: "understanding-current",
+          sourceRequirementId: "source-delivery",
+          sourceFindingKey: "delivery-finding",
+          pursuitSnapshotId: "snapshot-current",
+          references: [],
+          issues: ["requirement_set_incomplete", "requirement_evidence_missing"],
+        },
+        responseNotes: null,
+        sortOrder: 1,
       },
       {
         id: "package-form",
@@ -104,15 +124,15 @@ test("evidence-only partial source sets still expose current bidder and supplier
           issues: ["requirement_set_incomplete", "requirement_evidence_missing"],
         },
         responseNotes: null,
-        sortOrder: 1,
+        sortOrder: 2,
       },
     ],
   } as unknown as BidWorkspaceRecord;
 
   const questions = listBidRequirementQuestions(base);
   assert.equal(questions.length, 1);
-  assert.equal(questions[0]?.id, "deliverable-question");
-  assert.match(questions[0]?.question ?? "", /supplier provide/i);
+  assert.equal(questions[0]?.id, "delivery-question");
+  assert.match(questions[0]?.question ?? "", /delivery|freight/i);
 
   const nonDraftable = {
     ...base,
@@ -124,9 +144,12 @@ test("evidence-only partial source sets still expose current bidder and supplier
   assert.deepEqual(listBidRequirementQuestions(nonDraftable), []);
 });
 
-test("stepper marks the workspace start complete and advances from generated question count", () => {
+test("stepper follows bid inputs through external submission", () => {
   const control = read("components/bid-package-control.tsx");
-  assert.match(control, /\["1", "Start bid", "Complete"\]/);
-  assert.match(control, /questionsGenerated \? `\$\{initialQuestions\.length\} ready` : "Not generated"/);
-  assert.match(control, /questionsGenerated \? `\$\{answeredCount\} of \$\{initialQuestions\.length\} saved` : "Waiting"/);
+  assert.match(control, /\["1", "Bid inputs"/);
+  assert.match(control, /\["2", "Draft bid"/);
+  assert.match(control, /\["3", "Review & edit bid"/);
+  assert.match(control, /\["4", "Supporting documents"/);
+  assert.match(control, /\["5", "Final approval & download"/);
+  assert.match(control, /\["6", "External submission"/);
 });
