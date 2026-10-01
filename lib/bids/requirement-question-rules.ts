@@ -54,7 +54,13 @@ const choicePattern = /\b(?:alternate|alternative|substitut(?:e|ion)|option(?:al
 const exceptionPattern = /\b(?:exception|deviation|take\s+exception|variance|non[- ]?compliance|does\s+not\s+meet)\b/i;
 const deliveryPattern = /\b(?:delivery|lead\s*time|after\s+receipt\s+of\s+order|\baro\b|ship(?:ping)?|freight|fob|inside\s+delivery|loading\s+dock|receiv(?:e|ing))\b/i;
 const manufacturerAuthorizationPattern = /\b(?:authorized|approved)\s+(?:dealer|distributor|reseller)\b|\bmanufacturer(?:'s)?\s+(?:authorization|authorisation)\b/i;
-const reusableManufacturerFactPattern = /\b(?:warranty|warranties|dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement|manufacturer\s+certification|factory\s+certification)\b/i;
+const warrantyPattern = /\b(?:warranty|warranties)\b/i;
+const returnSupportPattern = /\b(?:dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement)\b/i;
+const manufacturerCertificationPattern = /\b(?:manufacturer\s+certification|factory\s+certification)\b/i;
+const reusableManufacturerFactPattern = new RegExp(
+  `${warrantyPattern.source}|${returnSupportPattern.source}|${manufacturerCertificationPattern.source}`,
+  "i",
+);
 
 export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate) {
   if (packageOnlyTypes.has(requirement.requirementType)) return false;
@@ -87,13 +93,9 @@ export function inferredBidAssumptionForRequirement(requirement: BidQuestionCand
 
 function reusableManufacturerFactKind(text: string) {
   if (manufacturerAuthorizationPattern.test(text)) return "manufacturer_authorization";
-  if (/\b(?:warranty|warranties)\b/i.test(text)) return "manufacturer_warranty";
-  if (/\b(?:dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement)\b/i.test(text)) {
-    return "manufacturer_return_support";
-  }
-  if (/\b(?:manufacturer\s+certification|factory\s+certification)\b/i.test(text)) {
-    return "manufacturer_certification";
-  }
+  if (warrantyPattern.test(text)) return "manufacturer_warranty";
+  if (returnSupportPattern.test(text)) return "manufacturer_return_support";
+  if (manufacturerCertificationPattern.test(text)) return "manufacturer_certification";
   return null;
 }
 
@@ -140,8 +142,17 @@ export function questionForBidRequirement(
   if (manufacturerAuthorizationPattern.test(text)) {
     return "What manufacturer authorization or authorized reseller/distributor proof can support this bid? State the exact status and evidence available.";
   }
-  if (reusableManufacturerFactPattern.test(text)) {
-    return "What manufacturer-backed warranty, replacement/return, or certification fact applies here? State only the exact terms and evidence that can support the bid.";
+  if (warrantyPattern.test(text) && returnSupportPattern.test(text)) {
+    return "What exact manufacturer warranty and DOA/replacement or return support applies here? State only the supported terms and evidence available for the bid.";
+  }
+  if (warrantyPattern.test(text)) {
+    return "What exact manufacturer warranty applies here? State only the supported term, coverage, and evidence available for the bid.";
+  }
+  if (returnSupportPattern.test(text)) {
+    return "What exact manufacturer DOA, replacement, defective-item, or return support applies here? State only the supported terms and evidence available for the bid.";
+  }
+  if (manufacturerCertificationPattern.test(text)) {
+    return "What exact manufacturer or factory certification applies here, and what supporting evidence is available for the bid?";
   }
   if (deliveryPattern.test(text)) {
     return "What exact delivery and freight commitment will the bidder make for this requirement? Include the supported lead time and any required FOB, inside-delivery, freight, or receiving terms stated by the buyer.";
