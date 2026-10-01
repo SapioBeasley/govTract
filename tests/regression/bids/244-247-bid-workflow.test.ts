@@ -1,3 +1,4 @@
+// Regression contract for issues #244-#247. Added before production changes.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
