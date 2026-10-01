@@ -93,13 +93,38 @@ export function BidFinalReview({
   const [confirmationNumber, setConfirmationNumber] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
   const [submissionNotes, setSubmissionNotes] = useState("");
+
   useEffect(() => {
     if (approvalCurrent && !currentSubmission && !submittedAt) {
       setSubmittedAt(localDateTimeValue());
     }
   }, [approvalCurrent, currentSubmission, submittedAt]);
+
   const changed = [...confirmed].sort().join("|") !== [...confirmedOriginalForms].sort().join("|");
   const originals = review.sourceChecks.filter((check) => check.originalRequired);
+
+  async function patch(body: Record<string, unknown>) {
+    setPending(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/bids/${workspaceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) {
+        setMessage(payload.error?.message ?? "Final review could not be saved.");
+      } else {
+        setMessage("Saved. Recheck the current source package and checklist.");
+        router.refresh();
+      }
+    } catch {
+      setMessage("Final review could not be saved.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function confirmSubmission() {
     if (!submissionConfirmed) return;
@@ -137,29 +162,6 @@ export function BidFinalReview({
     }
   }
 
-  async function patch(body: Record<string, unknown>) {
-    setPending(true);
-    setMessage(null);
-    try {
-      const response = await fetch(`/api/bids/${workspaceId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const payload = await response.json() as { error?: { message?: string } };
-      if (!response.ok) {
-        setMessage(payload.error?.message ?? "Final review could not be saved.");
-      } else {
-        setMessage("Saved. Recheck the current source package and checklist.");
-        router.refresh();
-      }
-    } catch {
-      setMessage("Final review could not be saved.");
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <div className="grid min-w-0 gap-5 text-sm">
       <p className="leading-6 text-[var(--muted-foreground)]">
@@ -168,6 +170,7 @@ export function BidFinalReview({
         files, portal steps, and deadline yourself. Only the authoritative submission channel can
         confirm that your bid was actually received.
       </p>
+
       <div role="status" className="rounded-xl border p-4">
         <p className="font-semibold">
           {approvalCurrent && review.readyForHumanReview
@@ -202,21 +205,80 @@ export function BidFinalReview({
         ) : null}
       </div>
 
-      <div className="rounded-xl border p-4">
-        <h3 className="font-semibold">Package manifest</h3>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
-          The downloadable package contains the exact saved full bid plus a deterministic manifest of supporting items
-          confirmed in govTract. Items that must still be completed or uploaded in the authoritative procurement system remain listed.
-        </p>
-        <a href={`/api/bids/${workspaceId}/package`}
-          className="mt-3 inline-flex rounded-lg border px-3 py-2 font-semibold">
-          Download package manifest
-        </a>
-        {!approvalCurrent || !review.readyForHumanReview ? (
-          <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-            This download is for review and preparation. It will identify any remaining package blockers and whether human approval is current.
-          </p>
+      <div className="grid min-w-0 gap-3">
+        <h3 className="font-semibold">Supporting documents</h3>
+        {review.sourceChecks.length ? review.sourceChecks.map((check) => (
+          <article key={check.requirementId} id={`original-form-${check.requirementId}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border px-2 py-1 capitalize">{check.kind.replaceAll("_", " ")}</span>
+              <span className="rounded-full border px-2 py-1">
+                {check.conditional ? "Conditional" : check.mandatory ? "Mandatory" : "Review requiredness"}
+              </span>
+              <span className="rounded-full border px-2 py-1">Response: {check.responseStatus.replaceAll("_", " ")}</span>
+            </div>
+            <p className="mt-2 break-words [overflow-wrap:anywhere]">{check.text}</p>
+            <Evidence check={check} workspaceId={workspaceId} />
+            {check.originalRequired ? (
+              <label className="mt-3 flex min-w-0 items-start gap-2 leading-6">
+                <input type="checkbox" className="mt-1.5" disabled={pending}
+                  checked={confirmed.includes(check.requirementId)}
+                  onChange={(event) => setConfirmed((current) =>
+                    event.target.checked
+                      ? [...new Set([...current, check.requirementId])]
+                      : current.filter((id) => id !== check.requirementId))} />
+                I have completed this required supporting item and included it in my submission package.
+                This confirmation does not establish that the external portal received it.
+              </label>
+            ) : null}
+          </article>
+        )) : <p>No submission/form requirements have been verified. Review source instructions.</p>}
+        {originals.length ? (
+          <button type="button" disabled={pending || !changed}
+            onClick={() => patch({ confirmedOriginalForms: confirmed })}
+            className="w-fit rounded-lg border px-3 py-2 font-semibold disabled:opacity-50">
+            {pending ? "Saving…" : "Save supporting-document checklist"}
+          </button>
         ) : null}
+      </div>
+
+      <div className="rounded-xl border p-4">
+        <h3 className="font-semibold">Final approval & download</h3>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
+          Review the exact current package, then record explicit human approval. Approval is fingerprint-bound and becomes stale if the bid, supporting checklist, or source package changes.
+        </p>
+        <div className="mt-4 rounded-lg border p-3">
+          <h4 className="font-semibold">Package manifest</h4>
+          <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
+            The downloadable package contains the exact saved full bid plus a deterministic manifest of supporting items confirmed in govTract.
+            Items that still must be completed or uploaded in the authoritative procurement system remain listed.
+          </p>
+          <a href={`/api/bids/${workspaceId}/package`}
+            className="mt-3 inline-flex rounded-lg border px-3 py-2 font-semibold">
+            Download package manifest
+          </a>
+          {!approvalCurrent || !review.readyForHumanReview ? (
+            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+              This download is for review and preparation until the exact package is approved.
+            </p>
+          ) : null}
+        </div>
+        <label className="mt-4 flex items-start gap-2 leading-6">
+          <input type="checkbox" className="mt-1.5" checked={humanReviewed}
+            onChange={(event) => setHumanReviewed(event.target.checked)} />
+          I have personally reviewed the current original solicitation package, all amendments,
+          final response, required attachments, signatures, deadline, and authoritative submission method.
+        </label>
+        <button type="button"
+          disabled={pending || changed || !humanReviewed || !review.readyForHumanReview || approvalCurrent}
+          onClick={() => patch({ reviewState: "approved", humanReviewConfirmed: true })}
+          className="mt-3 rounded-lg bg-[var(--primary)] px-3 py-2 font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
+          {pending ? "Recording review…" : approvalCurrent ? "Human review current" : "Approve current package"}
+        </button>
+        {message ? <p role="status" className="mt-3 break-words text-xs">{message}</p> : null}
+        <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+          govTract does not submit a bid on your behalf. Any subsequent package or source change invalidates
+          the current approval and does not transfer Submitted status to the revised package.
+        </p>
       </div>
 
       <div className="rounded-xl border p-4">
@@ -347,63 +409,6 @@ export function BidFinalReview({
             </div>
           </details>
         ) : null}
-      </div>
-
-      <div className="grid min-w-0 gap-3">
-        <h3 className="font-semibold">Supporting documents</h3>
-        {review.sourceChecks.length ? review.sourceChecks.map((check) => (
-          <article key={check.requirementId} id={`original-form-${check.requirementId}`} className="min-w-0 scroll-mt-5 rounded-xl border p-4">
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border px-2 py-1 capitalize">{check.kind.replaceAll("_", " ")}</span>
-              <span className="rounded-full border px-2 py-1">
-                {check.conditional ? "Conditional" : check.mandatory ? "Mandatory" : "Review requiredness"}
-              </span>
-              <span className="rounded-full border px-2 py-1">Response: {check.responseStatus.replaceAll("_", " ")}</span>
-            </div>
-            <p className="mt-2 break-words [overflow-wrap:anywhere]">{check.text}</p>
-            <Evidence check={check} workspaceId={workspaceId} />
-            {check.originalRequired ? (
-              <label className="mt-3 flex min-w-0 items-start gap-2 leading-6">
-                <input type="checkbox" className="mt-1.5" disabled={pending}
-                  checked={confirmed.includes(check.requirementId)}
-                  onChange={(event) => setConfirmed((current) =>
-                    event.target.checked
-                      ? [...new Set([...current, check.requirementId])]
-                      : current.filter((id) => id !== check.requirementId))} />
-                I have completed this required supporting item and included it in my submission package.
-                This confirmation does not establish that the external portal received it.
-              </label>
-            ) : null}
-          </article>
-        )) : <p>No submission/form requirements have been verified. Review source instructions.</p>}
-        {originals.length ? (
-          <button type="button" disabled={pending || !changed}
-            onClick={() => patch({ confirmedOriginalForms: confirmed })}
-            className="w-fit rounded-lg border px-3 py-2 font-semibold disabled:opacity-50">
-            {pending ? "Saving…" : "Save supporting-document checklist"}
-          </button>
-        ) : null}
-      </div>
-
-      <div className="rounded-xl border p-4">
-        <label className="flex items-start gap-2 leading-6">
-          <input type="checkbox" className="mt-1.5" checked={humanReviewed}
-            onChange={(event) => setHumanReviewed(event.target.checked)} />
-          I have personally reviewed the current original solicitation package, all amendments,
-          final response, required attachments, signatures, deadline, and authoritative submission method.
-        </label>
-        <button type="button"
-          disabled={pending || changed || !humanReviewed || !review.readyForHumanReview || approvalCurrent}
-          onClick={() => patch({ reviewState: "approved", humanReviewConfirmed: true })}
-          className="mt-3 rounded-lg bg-[var(--primary)] px-3 py-2 font-semibold text-[var(--primary-foreground)] disabled:opacity-50">
-          {pending ? "Recording review…" : approvalCurrent ? "Human review current" : "Approve current package"}
-        </button>
-        {message ? <p role="status" className="mt-3 break-words text-xs">{message}</p> : null}
-        <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-          govTract does not submit a bid on your behalf. After you submit externally, use Confirm submission above
-          to record that event for this exact approved package. Any subsequent package or source change invalidates
-          the current approval and does not transfer Submitted status to the revised package.
-        </p>
       </div>
     </div>
   );
