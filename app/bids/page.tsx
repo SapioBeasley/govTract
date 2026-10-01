@@ -1,21 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, CalendarDays, FileText, ShieldCheck } from "lucide-react";
+import { Building2, CalendarDays, FileText } from "lucide-react";
 
-import { listBidWorkspaces, type BidWorkspaceStatus } from "@/lib/bids/workspace";
+import { getBidWorkspace, listBidWorkspaces } from "@/lib/bids/workspace";
+import { deriveBidWorkflowStatusForWorkspace } from "@/lib/bids/workflow-status";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Bids",
-};
-
-const STATUS_LABELS: Record<BidWorkspaceStatus, string> = {
-  draft: "Draft",
-  in_progress: "In progress",
-  ready_for_review: "Ready for review",
-  complete: "Complete",
-  submitted: "Submitted",
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -37,7 +30,14 @@ function snapshotLabel(status: string, stale: boolean) {
 }
 
 export default async function BidsPage() {
-  const workspaces = await listBidWorkspaces();
+  const summaries = await listBidWorkspaces();
+  const workspaces = (await Promise.all(summaries.map(async (summary) => {
+    const workspace = await getBidWorkspace(summary.id);
+    return workspace ? {
+      ...summary,
+      workflowStatus: deriveBidWorkflowStatusForWorkspace(workspace),
+    } : null;
+  }))).filter((workspace): workspace is NonNullable<typeof workspace> => Boolean(workspace));
 
   return (
     <section className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
@@ -49,8 +49,8 @@ export default async function BidsPage() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Bids</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted-foreground)] sm:text-base">
-              Prepare solicitation-specific response workspaces using the exact source documents,
-              requirements, notes, and review state for each pursuit.
+              Prepare solicitation-specific bids. Progress is derived from the actual saved inputs, draft,
+              package approval, and external submission record instead of a manual status setting.
             </p>
           </div>
           <Link
@@ -81,7 +81,7 @@ export default async function BidsPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap gap-2 text-xs font-medium">
                         <span className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[var(--accent-foreground)]">
-                          {STATUS_LABELS[workspace.status]}
+                          {workspace.workflowStatus.label}
                         </span>
                         <span className="max-w-full break-words rounded-full border px-2.5 py-1 text-[var(--muted-foreground)] [overflow-wrap:anywhere]">
                           {snapshotLabel(workspace.snapshotStatus, workspace.snapshotStale)}
@@ -95,6 +95,9 @@ export default async function BidsPage() {
                           {workspace.title}
                         </Link>
                       </h2>
+                      <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                        {workspace.workflowStatus.description}
+                      </p>
                       <div className="mt-2 flex min-w-0 flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted-foreground)]">
                         {workspace.agencyName ? (
                           <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -110,10 +113,6 @@ export default async function BidsPage() {
                             Due {dateFormatter.format(workspace.dueAt)}
                           </span>
                         ) : null}
-                        <span className="inline-flex items-center gap-1.5">
-                          <ShieldCheck className="size-4 shrink-0" />
-                          Review {workspace.reviewState.replaceAll("_", " ")}
-                        </span>
                       </div>
                     </div>
                     <Link
