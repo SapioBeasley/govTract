@@ -1,3 +1,7 @@
+import { selectBidRequirementQuestions } from "@/lib/bids/requirement-question-rules";
+import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
+import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
+
 export const BID_WORKFLOW_STATUS_KEYS = [
   "started",
   "inputs_ready",
@@ -70,4 +74,57 @@ export function deriveBidWorkflowStatus(input: BidWorkflowStatusInput): BidWorkf
   if (input.readyForFinalApproval) return STATUS.ready_for_final_approval;
   if (input.hasCurrentDraft) return STATUS.draft_ready;
   return STATUS.inputs_ready;
+}
+
+type WorkflowWorkspace = Pick<
+  BidWorkspaceRecord,
+  | "sourceRequirements"
+  | "requirements"
+  | "sections"
+  | "finalReview"
+  | "finalReviewApprovalCurrent"
+  | "currentSubmission"
+>;
+
+export function currentBidInputRequirements(workspace: WorkflowWorkspace) {
+  const source = workspace.sourceRequirements;
+  if (!isSolicitationRequirementSetDraftable(source)) return [];
+  const currentKeys = new Set(source.requirements.map((requirement) =>
+    `${source.understandingId}:${requirement.id}`));
+  return workspace.requirements.filter((requirement) =>
+    requirement.sourceRequirementKey !== null && currentKeys.has(requirement.sourceRequirementKey));
+}
+
+export function bidInputProgress(workspace: WorkflowWorkspace) {
+  const source = workspace.sourceRequirements;
+  const currentRequirements = currentBidInputRequirements(workspace);
+  const questions = selectBidRequirementQuestions(currentRequirements);
+  const requiredQuestions = questions.filter((question) => question.isRequired);
+  const inputsPrepared = Boolean(
+    isSolicitationRequirementSetDraftable(source) &&
+    source.requirements.length > 0 &&
+    currentRequirements.length === source.requirements.length,
+  );
+
+  return {
+    inputsPrepared,
+    questions,
+    requiredQuestionCount: requiredQuestions.length,
+    answeredRequiredQuestionCount: requiredQuestions.filter((question) =>
+      Boolean(question.responseNotes?.trim())).length,
+  };
+}
+
+export function deriveBidWorkflowStatusForWorkspace(workspace: WorkflowWorkspace) {
+  const progress = bidInputProgress(workspace);
+  const fullBid = workspace.sections.find((section) => section.metadata.fullBid === true) ?? null;
+  return deriveBidWorkflowStatus({
+    inputsPrepared: progress.inputsPrepared,
+    requiredQuestionCount: progress.requiredQuestionCount,
+    answeredRequiredQuestionCount: progress.answeredRequiredQuestionCount,
+    hasCurrentDraft: Boolean(fullBid?.content?.trim()),
+    readyForFinalApproval: workspace.finalReview.readyForHumanReview,
+    approvalCurrent: workspace.finalReviewApprovalCurrent,
+    submissionCurrent: Boolean(workspace.currentSubmission),
+  });
 }
