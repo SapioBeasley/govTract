@@ -78,8 +78,6 @@ export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate
     return !isRequired;
   }
 
-  // Unknown bidder-facing requirement types remain fail-closed: ask for a fact
-  // rather than silently assuming a response that the deterministic rules do not understand.
   return true;
 }
 
@@ -115,16 +113,35 @@ export function bidQuestionDeduplicationKey(requirement: BidQuestionCandidate) {
 }
 
 export function selectBidRequirementQuestions<T extends BidWorkspaceRequirement>(requirements: T[]) {
-  const seenReusableFacts = new Set<string>();
-  return requirements.flatMap((requirement): Array<T & { question: string }> => {
-    if (!requirementNeedsBidderQuestion(requirement)) return [];
+  const output: Array<T & { question: string }> = [];
+  const reusableIndexes = new Map<string, number>();
+
+  for (const requirement of requirements) {
+    if (!requirementNeedsBidderQuestion(requirement)) continue;
+    const candidate = { ...requirement, question: questionForBidRequirement(requirement) };
     const dedupeKey = bidQuestionDeduplicationKey(requirement);
-    if (dedupeKey) {
-      if (seenReusableFacts.has(dedupeKey)) return [];
-      seenReusableFacts.add(dedupeKey);
+    if (!dedupeKey) {
+      output.push(candidate);
+      continue;
     }
-    return [{ ...requirement, question: questionForBidRequirement(requirement) }];
-  });
+
+    const existingIndex = reusableIndexes.get(dedupeKey);
+    if (existingIndex === undefined) {
+      reusableIndexes.set(dedupeKey, output.length);
+      output.push(candidate);
+      continue;
+    }
+
+    // A saved fact on any equivalent line item satisfies the shared manufacturer-level
+    // question. Prefer that row so the user sees the existing answer instead of being
+    // asked to re-enter the same warranty/authorization/support fact.
+    const existing = output[existingIndex];
+    if (!existing.responseNotes?.trim() && requirement.responseNotes?.trim()) {
+      output[existingIndex] = candidate;
+    }
+  }
+
+  return output;
 }
 
 export function selectBidRequirementAssumptions<T extends BidWorkspaceRequirement>(requirements: T[]) {
