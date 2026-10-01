@@ -23,7 +23,13 @@ function requirement(
   };
 }
 
-function questionWorkspace(rows: Array<{ id: string; requirementType: string; text: string; isRequired?: boolean }>) {
+function questionWorkspace(rows: Array<{
+  id: string;
+  requirementType: string;
+  text: string;
+  isRequired?: boolean;
+  responseNotes?: string | null;
+}>) {
   return {
     sourceRequirements: {
       understandingId: "understanding-current",
@@ -52,7 +58,7 @@ function questionWorkspace(rows: Array<{ id: string; requirementType: string; te
         references: [],
         issues: [],
       },
-      responseNotes: null,
+      responseNotes: row.responseNotes ?? null,
       sortOrder: index,
     })),
   } as unknown as BidWorkspaceRecord;
@@ -101,6 +107,21 @@ test("repeated manufacturer warranty facts are consolidated while distinct facts
     { id: "warranty-b", requirementType: "deliverable", text: "Product B requires a five-year manufacturer warranty." },
   ]));
   assert.equal(distinct.length, 2);
+});
+
+test("an existing saved manufacturer fact satisfies the shared duplicate question", () => {
+  const questions = listBidRequirementQuestions(questionWorkspace([
+    { id: "warranty-a", requirementType: "deliverable", text: "Line item 1: Manufacturer shall provide a three-year warranty." },
+    {
+      id: "warranty-b",
+      requirementType: "deliverable",
+      text: "Line item 2: Manufacturer shall provide a three-year warranty.",
+      responseNotes: "Manufacturer confirms a three-year warranty.",
+    },
+  ]));
+  assert.equal(questions.length, 1);
+  assert.equal(questions[0]?.id, "warranty-b");
+  assert.match(questions[0]?.responseNotes ?? "", /three-year warranty/i);
 });
 
 test("question cards keep bidder identity fixed and make fact provenance optional", () => {
