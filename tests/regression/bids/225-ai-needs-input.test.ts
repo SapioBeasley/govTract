@@ -168,10 +168,12 @@ test("letter-leading product and certification identifiers remain protected agai
   }), /unsupported|invented|factual/i);
 });
 
-test("primary bid UI persists requirement responses before drafting instead of using draft-derived answer cards", () => {
+test("primary bid UI persists bidder facts while provenance remains optional metadata", () => {
   const control = read("components/bid-package-control.tsx");
-  assert.match(control, /Populate responses/);
-  assert.match(control, /Who should answer this\?/);
+  assert.match(control, /Required bidder facts/);
+  assert.doesNotMatch(control, /Who should answer this\?/);
+  assert.match(control, /Fact source \(optional\)/);
+  assert.match(control, /The bidder is your company/);
   assert.match(control, /Subcontractor/);
   assert.match(control, /Manufacturer/);
   assert.match(control, /Other third party/);
@@ -180,6 +182,7 @@ test("primary bid UI persists requirement responses before drafting instead of u
   assert.doesNotMatch(control, /Update bid with my answers/);
   assert.doesNotMatch(control, /\/draft\/answers/);
 });
+
 test("answer revision route and prompt keep bidder answers distinct from solicitation evidence", () => {
   const route = read("app/api/bids/[id]/draft/answers/route.ts");
   const provider = read("lib/bids/draft-provider.ts");
@@ -189,7 +192,6 @@ test("answer revision route and prompt keep bidder answers distinct from solicit
   assert.match(provider, /proposal-ready|complete professional/i);
   assert.match(provider, /terse|short confirmation/i);
 });
-
 
 test("bidder-answer persistence is content-bound and fails closed on in-flight source or draft changes", () => {
   const persistence = read("lib/bids/bidder-input-persistence.ts");

@@ -15,7 +15,7 @@ test("source recovery remains explicit in the question-first flow without a reco
   assert.doesNotMatch(page, /<BidSourceReconciliationAction/);
   assert.match(control, /disabled=\{!questionSourceReady \|\| pending\}/);
   assert.match(control, /sourceBlockers\[0\]/);
-  assert.match(control, /not ready for requirement questions/i);
+  assert.match(control, /not ready for bidder questions/i);
 });
 
 test("internal reconciliation logic may remain only as a non-user-facing provenance safeguard", () => {
