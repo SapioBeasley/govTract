@@ -31,7 +31,7 @@ test("disabled requirement-question generation names source recovery instead of 
   assert.match(detail, /snapshotStatus/);
   assert.match(control, /sourceBlockers/);
   assert.match(control, /sourceBlockers\[0\]/);
-  assert.match(control, /not ready for requirement questions/i);
+  assert.match(control, /not ready for bidder questions/i);
 });
 
 test("pending original files have an explicit bounded source-retrieval action without auto-running", () => {
