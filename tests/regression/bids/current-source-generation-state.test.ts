@@ -30,5 +30,5 @@ test("Draft bid can explicitly refresh retained understanding without losing sav
   assert.match(page, /requiresUnderstandingRefresh/);
   assert.match(control, /requiresUnderstandingRefresh/);
   assert.match(control, /retained solicitation understanding will be refreshed first if required/i);
-  assert.match(control, /saved requirement responses will be preserved/i);
+  assert.match(control, /saved bidder facts and exceptions will be preserved/i);
 });
