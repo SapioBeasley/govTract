@@ -90,7 +90,9 @@ test("Submitted cannot be selected through the generic workspace-status patch", 
   const control = read("components/bid-workspace-control.tsx");
 
   assert.match(service, /external submission confirmation/i);
-  assert.match(control, /submitted/);
+  assert.doesNotMatch(control, /Workspace status/);
+  assert.doesNotMatch(control, /Review state/);
+  assert.match(control, /explicit external submission confirmation/);
 });
 
 test("workspace status type includes Submitted for read models", () => {
