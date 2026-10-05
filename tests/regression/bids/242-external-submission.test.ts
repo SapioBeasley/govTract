@@ -82,7 +82,8 @@ test("bid detail and list distinguish Approved from Submitted without claiming g
   assert.match(review, /confirmation.*reference/i);
   assert.match(review, /receipt/i);
   assert.match(detail, /currentSubmission/);
-  assert.match(list, /Submitted/);
+  assert.match(list, /deriveBidWorkflowStatusForWorkspace/);
+  assert.match(list, /workspace\.workflowStatus\.label/);
 });
 
 test("Submitted cannot be selected through the generic workspace-status patch", () => {
