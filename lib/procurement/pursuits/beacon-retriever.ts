@@ -7,9 +7,14 @@ import {
   resolveBeaconDocumentDownloadUrl,
 } from "@/lib/procurement/sources/beacon/documents";
 import {
+  buildBeaconPlanholderRegistrationRequest,
+  parseBeaconPlanholderRegistrationResponse,
+} from "@/lib/procurement/sources/beacon/registration";
+import {
   buildBeaconCookieHeader,
   isBeaconPermissionResponse,
-  isBeaconRegistrationRequiredResponse,
+  isBeaconPlanholderRegistrationResponse,
+  parseBeaconRegistrationProfile,
 } from "@/lib/procurement/sources/beacon/session-transport";
 import {
   SnapshotRetrievalError,
@@ -19,6 +24,7 @@ import { loadSourceConnectionSession } from "@/lib/source-connections/repository
 
 const BEACON_ORIGIN = "https://www.beaconbid.com";
 const DEFAULT_TIMEOUT_MS = 120_000;
+const AUTO_REGISTER = process.env.BEACON_AUTO_REGISTER !== "false";
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36 govTract/0.1 pursuit-snapshot";
 
@@ -81,11 +87,75 @@ async function resolveResponse(input: {
   return gateway;
 }
 
+async function loadRegistrationProfile(cookieHeader: string, timeoutMs: number) {
+  const response = await fetchWithTimeout(
+    `${BEACON_ORIGIN}/api/rest/session`,
+    { method: "GET", redirect: "manual" },
+    timeoutMs,
+    cookieHeader,
+  );
+  const body = (await response.text()).slice(0, 10_000);
+  if (!response.ok) {
+    throw new SnapshotRetrievalError(
+      "auth_blocked",
+      "Beacon supplier session could not be validated before solicitation registration.",
+    );
+  }
+  const profile = parseBeaconRegistrationProfile(body);
+  if (!profile) {
+    throw new SnapshotRetrievalError(
+      "source_restricted",
+      "Beacon supplier profile is incomplete for automatic solicitation registration.",
+    );
+  }
+  return profile;
+}
+
+async function registerForSolicitation(input: {
+  sourceOpportunityId: string;
+  cookieHeader: string;
+  timeoutMs: number;
+}) {
+  if (!AUTO_REGISTER) {
+    throw new SnapshotRetrievalError(
+      "source_restricted",
+      "Beacon requires solicitation registration before document retrieval, and automatic registration is disabled.",
+    );
+  }
+
+  const profile = await loadRegistrationProfile(input.cookieHeader, input.timeoutMs);
+  const request = buildBeaconPlanholderRegistrationRequest({
+    solicitationId: input.sourceOpportunityId,
+    profile,
+    interest: "Bidder",
+  });
+  const response = await fetchWithTimeout(
+    `${BEACON_ORIGIN}/api/gql?operation=createPlanholder`,
+    {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    input.timeoutMs,
+    input.cookieHeader,
+  );
+  const body = (await response.text()).slice(0, 10_000);
+  const result = parseBeaconPlanholderRegistrationResponse(response.status, body);
+  if (!result.ok) {
+    throw new SnapshotRetrievalError(
+      "source_restricted",
+      `Beacon automatic solicitation registration failed (HTTP ${response.status}).`,
+    );
+  }
+}
+
 export function createBeaconPursuitDocumentRetriever(input: {
   timeoutMs?: number;
 } = {}): PursuitDocumentRetriever {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let cookieHeaderPromise: Promise<string> | null = null;
+  const registeredSourceOpportunities = new Set<string>();
   const getCookieHeader = () => {
     cookieHeaderPromise ??= loadSourceConnectionSession("beacon")
       .then(buildBeaconCookieHeader)
@@ -116,30 +186,49 @@ export function createBeaconPursuitDocumentRetriever(input: {
       }
 
       const cookieHeader = await getCookieHeader();
-      const response = await resolveResponse({
+      let response = await resolveResponse({
         downloadUrl,
         sourceDocumentKey: document.sourceDocumentKey,
         cookieHeader,
         timeoutMs,
       });
+
       if (!response.ok) {
-        const body = (await response.text()).slice(0, 1000);
+        let body = (await response.text()).slice(0, 1000);
         if (
-          isBeaconPermissionResponse(response.status, body) ||
-          isBeaconRegistrationRequiredResponse(response.status, body)
+          isBeaconPlanholderRegistrationResponse(response.status, body) &&
+          !registeredSourceOpportunities.has(document.sourceOpportunityId)
         ) {
+          await registerForSolicitation({
+            sourceOpportunityId: document.sourceOpportunityId,
+            cookieHeader,
+            timeoutMs,
+          });
+          registeredSourceOpportunities.add(document.sourceOpportunityId);
+          response = await resolveResponse({
+            downloadUrl,
+            sourceDocumentKey: document.sourceDocumentKey,
+            cookieHeader,
+            timeoutMs,
+          });
+          if (!response.ok) body = (await response.text()).slice(0, 1000);
+        }
+
+        if (!response.ok) {
+          if (isBeaconPermissionResponse(response.status, body)) {
+            throw new SnapshotRetrievalError(
+              "auth_blocked",
+              "Beacon denied the current supplier session access to the pursuit document.",
+            );
+          }
+          if (response.status === 404) {
+            throw new SnapshotRetrievalError("missing", "Beacon source document is no longer available");
+          }
           throw new SnapshotRetrievalError(
-            "auth_blocked",
-            "Beacon denied the current supplier session access to the pursuit document.",
+            "http",
+            `Beacon source document returned HTTP ${response.status}`,
           );
         }
-        if (response.status === 404) {
-          throw new SnapshotRetrievalError("missing", "Beacon source document is no longer available");
-        }
-        throw new SnapshotRetrievalError(
-          "http",
-          `Beacon source document returned HTTP ${response.status}`,
-        );
       }
       if (!response.body) {
         throw new SnapshotRetrievalError("missing", "Beacon source document returned no body");
