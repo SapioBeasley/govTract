@@ -75,6 +75,34 @@ test("required scope and quantity are inferred instead of becoming confirmation 
   )), false);
 });
 
+test("unknown requiredness does not turn prescribed buyer scope into optional bidder questions", () => {
+  assert.equal(requirementNeedsBidderQuestion(requirement(
+    "work",
+    "Vendor shall apply water to each newly planted tree.",
+    false,
+  )), false);
+  assert.equal(requirementNeedsBidderQuestion(requirement(
+    "quantity",
+    "A total of 211 trees will be planted at the two locations.",
+    false,
+  )), false);
+  assert.equal(requirementNeedsBidderQuestion(requirement(
+    "schedule",
+    "The Contractor shall complete this contract within thirty (30) calendar days.",
+    false,
+  )), false);
+  assert.equal(requirementNeedsBidderQuestion(requirement(
+    "scope",
+    "Optional line item: additional tree watering visits.",
+    false,
+  )), true);
+  assert.equal(requirementNeedsBidderQuestion(requirement(
+    "schedule",
+    "State the bidder's proposed completion schedule.",
+    false,
+  )), true);
+});
+
 test("bidder-specific and choice requirements remain questions", () => {
   assert.equal(requirementNeedsBidderQuestion(requirement(
     "pricing",
@@ -101,6 +129,12 @@ test("repeated manufacturer warranty facts are consolidated while distinct facts
     { id: "warranty-b", requirementType: "deliverable", text: "Line item 2: Manufacturer shall provide a three-year warranty." },
   ]));
   assert.equal(duplicate.length, 1);
+
+  const equivalentWording = listBidRequirementQuestions(questionWorkspace([
+    { id: "warranty-a", requirementType: "deliverable", text: "All trees carry a two (2) year warranty beginning when planted." },
+    { id: "warranty-b", requirementType: "deliverable", text: "Contractor provides a 2-year warranty and replaces dead trees during the warranty period." },
+  ]));
+  assert.equal(equivalentWording.length, 1);
 
   const distinct = listBidRequirementQuestions(questionWorkspace([
     { id: "warranty-a", requirementType: "deliverable", text: "Product A requires a three-year manufacturer warranty." },
@@ -130,6 +164,15 @@ test("question cards keep bidder identity fixed and make fact provenance optiona
   assert.match(control, /Fact source \(optional\)/i);
   assert.match(control, /The bidder is your company/i);
   assert.match(control, /Inferred assumptions/i);
+});
+
+test("draft step does not claim readiness while the retained source package is blocked", () => {
+  const page = read("app/bids/[id]/page.tsx");
+  const control = read("components/bid-package-control.tsx");
+
+  assert.match(page, /snapshot\.snapshotStatus === "complete"/);
+  assert.match(page, /snapshot\.storedDocumentCount === snapshot\.totalDocumentCount/);
+  assert.match(control, /sourceReady\s*\?\s*"Ready to draft"\s*:\s*"Source files blocked"/);
 });
 
 test("primary workflow ends with external submission and advanced diagnostics do not interrupt it", () => {
