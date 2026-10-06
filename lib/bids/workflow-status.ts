@@ -1,3 +1,4 @@
+import { bidQuestionProgress } from "@/lib/bids/question-progress";
 import { selectBidRequirementQuestions } from "@/lib/bids/requirement-question-rules";
 import type { BidWorkspaceRecord } from "@/lib/bids/workspace";
 import { isSolicitationRequirementSetDraftable } from "@/lib/procurement/requirements/readiness";
@@ -23,12 +24,12 @@ const STATUS: Record<BidWorkflowStatusKey, BidWorkflowStatus> = {
   started: {
     key: "started",
     label: "Started",
-    description: "Bid inputs still need preparation or required bidder facts are unresolved.",
+    description: "Bid inputs still need preparation or bidder facts and choices are unresolved.",
   },
   inputs_ready: {
     key: "inputs_ready",
     label: "Inputs ready",
-    description: "Required bidder facts are resolved and the bid is ready to draft.",
+    description: "Bidder facts and choices are resolved and the bid is ready to draft.",
   },
   draft_ready: {
     key: "draft_ready",
@@ -54,8 +55,8 @@ const STATUS: Record<BidWorkflowStatusKey, BidWorkflowStatus> = {
 
 export type BidWorkflowStatusInput = {
   inputsPrepared: boolean;
-  requiredQuestionCount: number;
-  answeredRequiredQuestionCount: number;
+  questionCount: number;
+  answeredQuestionCount: number;
   hasCurrentDraft: boolean;
   readyForFinalApproval: boolean;
   approvalCurrent: boolean;
@@ -66,11 +67,11 @@ export function deriveBidWorkflowStatus(input: BidWorkflowStatusInput): BidWorkf
   if (input.submissionCurrent) return STATUS.submitted;
   if (input.approvalCurrent) return STATUS.approved;
 
-  const unresolvedRequired = Math.max(
+  const unresolvedQuestions = Math.max(
     0,
-    input.requiredQuestionCount - input.answeredRequiredQuestionCount,
+    input.questionCount - input.answeredQuestionCount,
   );
-  if (!input.inputsPrepared || unresolvedRequired > 0) return STATUS.started;
+  if (!input.inputsPrepared || unresolvedQuestions > 0) return STATUS.started;
   if (input.readyForFinalApproval) return STATUS.ready_for_final_approval;
   if (input.hasCurrentDraft) return STATUS.draft_ready;
   return STATUS.inputs_ready;
@@ -99,7 +100,7 @@ export function bidInputProgress(workspace: WorkflowWorkspace) {
   const source = workspace.sourceRequirements;
   const currentRequirements = currentBidInputRequirements(workspace);
   const questions = selectBidRequirementQuestions(currentRequirements);
-  const requiredQuestions = questions.filter((question) => question.isRequired);
+  const questionProgress = bidQuestionProgress(questions);
   const inputsPrepared = Boolean(
     isSolicitationRequirementSetDraftable(source) &&
     source.requirements.length > 0 &&
@@ -109,9 +110,7 @@ export function bidInputProgress(workspace: WorkflowWorkspace) {
   return {
     inputsPrepared,
     questions,
-    requiredQuestionCount: requiredQuestions.length,
-    answeredRequiredQuestionCount: requiredQuestions.filter((question) =>
-      Boolean(question.responseNotes?.trim())).length,
+    ...questionProgress,
   };
 }
 
@@ -120,8 +119,8 @@ export function deriveBidWorkflowStatusForWorkspace(workspace: WorkflowWorkspace
   const fullBid = workspace.sections.find((section) => section.metadata.fullBid === true) ?? null;
   return deriveBidWorkflowStatus({
     inputsPrepared: progress.inputsPrepared,
-    requiredQuestionCount: progress.requiredQuestionCount,
-    answeredRequiredQuestionCount: progress.answeredRequiredQuestionCount,
+    questionCount: progress.questionCount,
+    answeredQuestionCount: progress.answeredQuestionCount,
     hasCurrentDraft: Boolean(fullBid?.content?.trim()),
     readyForFinalApproval: workspace.finalReview.readyForHumanReview,
     approvalCurrent: workspace.finalReviewApprovalCurrent,
