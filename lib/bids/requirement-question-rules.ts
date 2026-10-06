@@ -41,56 +41,64 @@ const inferableScopeTypes = new Set([
   "quantity",
 ]);
 
-const bidderCredentialTypes = new Set([
-  "qualification",
-  "license",
-  "certification",
-  "insurance",
-  "bonding",
-  "insurance_bonding",
-]);
-
 const choicePattern = /\b(?:alternate|alternative|substitut(?:e|ion)|option(?:al)?|partial\s+bid|line\s+item\s+choice|brand\s+name\s+or\s+equal|or\s+equal|make\s*(?:\/|and)?\s*model|manufacturer\s*(?:\/|and)?\s*model|identify\s+(?:the\s+)?(?:make|model|manufacturer|product))\b/i;
 const exceptionPattern = /\b(?:exception|deviation|take\s+exception|variance|non[- ]?compliance|does\s+not\s+meet)\b/i;
 const deliveryPattern = /\b(?:delivery|lead\s*time|after\s+receipt\s+of\s+order|\baro\b|ship(?:ping)?|freight|fob|inside\s+delivery|loading\s+dock|receiv(?:e|ing))\b/i;
 const bidderScheduleInputPattern = /\b(?:state|provide|identify|propose|specify|indicate|submit|enter)\b[^.\n]{0,80}\b(?:schedule|timeline|completion\s+(?:date|time)|lead\s*time|delivery\s+(?:date|time))\b/i;
 const mandatoryLanguagePattern = /\b(?:shall|must|required\s+to|is\s+required|are\s+required|will\s+be\s+(?:provided|performed|completed|installed|delivered|planted|applied))\b/i;
+const pricedLineItemPattern = /^\s*Supply\s+\d+(?:\.\d+)?\s+.+?\s+of\s+/i;
+const manufacturerPattern = /\b(?:manufacturer|factory)\b/i;
 const manufacturerAuthorizationPattern = /\b(?:authorized|approved)\s+(?:dealer|distributor|reseller)\b|\bmanufacturer(?:'s)?\s+(?:authorization|authorisation)\b/i;
 const warrantyPattern = /\b(?:warranty|warranties)\b/i;
 const returnSupportPattern = /\b(?:dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement|replaces?|replace)\b/i;
 const manufacturerCertificationPattern = /\b(?:manufacturer\s+certification|factory\s+certification)\b/i;
-const reusableManufacturerFactPattern = new RegExp(
-  `${warrantyPattern.source}|${returnSupportPattern.source}|${manufacturerCertificationPattern.source}`,
-  "i",
-);
+const bidderCredentialFactPattern = /\b(?:licen[cs](?:e|ed|ing)|certif(?:ication|ied)|registered|registration|accredit(?:ed|ation)|designation|bond(?:ed|ing)?|years?\s+of\s+experience|minimum\s+[^.\n]{0,40}\s+experience|demonstrat(?:e|es|ed)\s+[^.\n]{0,50}\s+experience)\b/i;
+const localPreferenceFactPattern = /\b(?:mwbe|mwdbe|mbe|wbe|sbe|hub|local\s+vendor\s+preference|lvp)\b/i;
+const formRepresentationPattern = /\bequal\s+opportunity\s+employer\b/i;
+
+function hasManufacturerFact(text: string) {
+  return manufacturerAuthorizationPattern.test(text) ||
+    manufacturerCertificationPattern.test(text) ||
+    (manufacturerPattern.test(text) && (warrantyPattern.test(text) || returnSupportPattern.test(text)));
+}
 
 export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate) {
   if (packageOnlyTypes.has(requirement.requirementType)) return false;
 
   const text = requirement.text?.trim() ?? "";
   if (requirement.requirementType === "pricing") return true;
-  if (bidderCredentialTypes.has(requirement.requirementType)) return true;
+  if (pricedLineItemPattern.test(text)) return true;
+  if (formRepresentationPattern.test(text)) return false;
+  if (requirement.requirementType === "license" || requirement.requirementType === "certification") return true;
+  if (["qualification", "bonding", "insurance_bonding"].includes(requirement.requirementType) &&
+      (bidderCredentialFactPattern.test(text) || localPreferenceFactPattern.test(text))) return true;
+  if (requirement.requirementType === "insurance") return false;
   if (requirement.requirementType === "mandatory_event") return true;
   if (requirement.requirementType === "schedule") {
     return bidderScheduleInputPattern.test(text) || choicePattern.test(text) || exceptionPattern.test(text);
   }
   if (deliveryPattern.test(text)) return true;
-  if (manufacturerAuthorizationPattern.test(text) || reusableManufacturerFactPattern.test(text)) return true;
+  if (hasManufacturerFact(text)) return true;
   if (choicePattern.test(text) || exceptionPattern.test(text)) return true;
 
-  // Scope, work, deliverables, and quantities describe what the buyer wants. They are
-  // included by default unless the solicitation explicitly asks the bidder to choose,
-  // identify, substitute, or take an exception. `isRequired: false` can mean the source
-  // understanding was uncertain; it must not be interpreted as "optional" by itself.
-  if (inferableScopeTypes.has(requirement.requirementType)) return false;
+  // Scope, work, deliverables, quantities, ordinary workmanship, and future compliance
+  // commitments describe what the buyer wants. They are included by default unless the
+  // solicitation asks the bidder for a price, choice, exception, credential, schedule,
+  // delivery commitment, or manufacturer-specific fact. `isRequired: false` can mean
+  // source-understanding uncertainty and must never be interpreted as "optional" alone.
+  if (inferableScopeTypes.has(requirement.requirementType) || requirement.requirementType === "qualification") {
+    return false;
+  }
 
-  return true;
+  return false;
 }
 
 export function inferredBidAssumptionForRequirement(requirement: BidQuestionCandidate) {
   const text = requirement.text?.trim() ?? "";
   const inferableType = inferableScopeTypes.has(requirement.requirementType) ||
-    requirement.requirementType === "schedule";
+    requirement.requirementType === "schedule" ||
+    requirement.requirementType === "qualification" ||
+    requirement.requirementType === "insurance";
   if (!inferableType || requirementNeedsBidderQuestion(requirement)) return null;
   if ((requirement.isRequired ?? true) !== true && !mandatoryLanguagePattern.test(text) &&
       requirement.requirementType === "schedule") {
@@ -101,9 +109,10 @@ export function inferredBidAssumptionForRequirement(requirement: BidQuestionCand
 
 function reusableManufacturerFactKind(text: string) {
   if (manufacturerAuthorizationPattern.test(text)) return "manufacturer_authorization";
+  if (manufacturerCertificationPattern.test(text)) return "manufacturer_certification";
+  if (!manufacturerPattern.test(text)) return null;
   if (warrantyPattern.test(text)) return "manufacturer_warranty";
   if (returnSupportPattern.test(text)) return "manufacturer_return_support";
-  if (manufacturerCertificationPattern.test(text)) return "manufacturer_certification";
   return null;
 }
 
@@ -193,17 +202,21 @@ export function questionForBidRequirement(
   requirement: BidQuestionCandidate,
 ) {
   const type = requirement.requirementType;
-  const text = requirement.text?.toLocaleLowerCase("en-US") ?? "";
+  const originalText = requirement.text ?? "";
+  const text = originalText.toLocaleLowerCase("en-US");
+  if (pricedLineItemPattern.test(originalText)) {
+    return "What price will the bidder offer for this line item? Include the unit price and extended total, plus any required freight or other pricing component.";
+  }
   if (manufacturerAuthorizationPattern.test(text)) {
     return "What manufacturer authorization or authorized reseller/distributor proof can support this bid? State the exact status and evidence available.";
   }
-  if (warrantyPattern.test(text) && returnSupportPattern.test(text)) {
+  if (manufacturerPattern.test(text) && warrantyPattern.test(text) && returnSupportPattern.test(text)) {
     return "What exact manufacturer warranty and DOA/replacement or return support applies here? State only the supported terms and evidence available for the bid.";
   }
-  if (warrantyPattern.test(text)) {
+  if (manufacturerPattern.test(text) && warrantyPattern.test(text)) {
     return "What exact manufacturer warranty applies here? State only the supported term, coverage, and evidence available for the bid.";
   }
-  if (returnSupportPattern.test(text)) {
+  if (manufacturerPattern.test(text) && returnSupportPattern.test(text)) {
     return "What exact manufacturer DOA, replacement, defective-item, or return support applies here? State only the supported terms and evidence available for the bid.";
   }
   if (manufacturerCertificationPattern.test(text)) {
@@ -212,14 +225,20 @@ export function questionForBidRequirement(
   if (deliveryPattern.test(text)) {
     return "What exact delivery and freight commitment will the bidder make for this requirement? Include the supported lead time and any required FOB, inside-delivery, freight, or receiving terms stated by the buyer.";
   }
-  if (/\b(?:mwbe|mwdbe|mbe|wbe|sbe|hub|local vendor preference|lvp)\b/.test(text)) {
+  if (localPreferenceFactPattern.test(text)) {
     return "Does the bidder or an identified subcontractor hold the certification or local-preference status requested here? Provide the exact program, holder, certification/status details, and supporting proof that can be included.";
   }
   if (type === "pricing") {
     return "What pricing will the bidder offer for this requirement? Include the exact unit price, total, and any required shipping/handling or other pricing components.";
   }
-  if (bidderCredentialTypes.has(type)) {
-    return "What exact bidder, subcontractor, or manufacturer qualification, certification, license, insurance, or bonding fact satisfies this requirement, and what supporting proof is available?";
+  if (type === "license") {
+    return "What exact current license satisfies this requirement? Provide the license type, holder, number if appropriate for the bid, and supporting proof available.";
+  }
+  if (type === "certification") {
+    return "What exact current certification satisfies this requirement? Provide the certification, holder, and supporting proof available.";
+  }
+  if (["qualification", "bonding", "insurance_bonding"].includes(type) && bidderCredentialFactPattern.test(text)) {
+    return "What exact bidder qualification or credential satisfies this requirement, and what supporting proof is available?";
   }
   if (["schedule", "mandatory_event"].includes(type)) {
     return "What exact timing or event commitment will the bidder make for this requirement?";
@@ -229,9 +248,6 @@ export function questionForBidRequirement(
   }
   if (exceptionPattern.test(text)) {
     return "Does the bidder take any exception or deviation from this requirement? State the exact exception or confirm that none is being taken.";
-  }
-  if (inferableScopeTypes.has(type)) {
-    return "What bidder-specific fact is needed to distinguish the offered scope from the buyer's required scope?";
   }
   return "What bidder-specific fact is needed for this requirement?";
 }
