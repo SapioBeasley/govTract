@@ -97,7 +97,7 @@ function RequirementQuestionCard({
     <article className="rounded-xl border p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--muted-foreground)]">
         <span className="rounded-full border px-2 py-1">
-          {item.isRequired ? "Required bidder fact" : "Optional buyer item / bidder choice"}
+          {item.isRequired ? "Required bidder fact" : "Bidder input"}
         </span>
         {item.responseNotes?.trim() ? (
           <span className="rounded-full border px-2 py-1">Response saved</span>
@@ -298,6 +298,7 @@ export function BidPackageControl({
   const changed = content !== savedContent;
   const inputProgress = bidQuestionProgress(initialQuestions);
   const inputsReady = questionSetPrepared && inputProgress.unansweredQuestionCount === 0;
+  const sourcePackageReady = sourceReady && sourceBlockers.length === 0;
 
   async function generateQuestions() {
     if (!questionSourceReady || pending || inFlight.current) return;
@@ -322,7 +323,7 @@ export function BidPackageControl({
   }
 
   async function draftBid() {
-    if (!sourceReady || pending || inFlight.current || changed || !inputsReady) return;
+    if (!sourcePackageReady || pending || inFlight.current || changed || !inputsReady) return;
     const replace = Boolean(fullBid?.content?.trim());
     const understandingNote = requiresUnderstandingRefresh
       ? " The retained solicitation understanding will be refreshed first if required; that may add model cost."
@@ -396,7 +397,13 @@ export function BidPackageControl({
         : initialQuestions.length
           ? "Inputs ready"
           : "No unresolved bidder facts"],
-    ["2", "Draft bid", fullBid?.content?.trim() ? "Draft ready" : inputsReady ? "Ready to draft" : "Waiting for inputs"],
+    ["2", "Draft bid", fullBid?.content?.trim()
+      ? "Draft ready"
+      : !inputsReady
+        ? "Waiting for inputs"
+        : sourcePackageReady
+          ? "Ready to draft"
+          : "Source files blocked"],
     ["3", "Review & edit bid", fullBid?.content?.trim() ? "Review saved draft" : "Waiting for draft"],
     ["4", "Supporting documents", "Review below"],
     ["5", "Final approval & download", "Review below"],
@@ -496,13 +503,13 @@ export function BidPackageControl({
           <button
             type="button"
             onClick={draftBid}
-            disabled={!sourceReady || pending || changed || !inputsReady}
+            disabled={!sourcePackageReady || pending || changed || !inputsReady}
             className="shrink-0 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-50"
           >
             {pending ? "Working…" : fullBid?.content?.trim() ? "Draft bid again" : "Draft bid"}
           </button>
         </div>
-        {!sourceReady ? (
+        {!sourcePackageReady ? (
           <p role="status" className="mt-3 text-sm text-[var(--muted-foreground)]">
             {sourceBlockers[0] ?? "The retained solicitation package is not ready for drafting yet."}
           </p>
