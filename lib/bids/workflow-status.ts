@@ -29,7 +29,7 @@ const STATUS: Record<BidWorkflowStatusKey, BidWorkflowStatus> = {
   inputs_ready: {
     key: "inputs_ready",
     label: "Inputs ready",
-    description: "Bidder facts and choices are resolved and the bid is ready to draft.",
+    description: "Bidder facts and choices are resolved. Drafting also requires the current source package to be retained and available.",
   },
   draft_ready: {
     key: "draft_ready",
