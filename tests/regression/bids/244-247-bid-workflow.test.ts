@@ -167,12 +167,11 @@ test("question cards keep bidder identity fixed and make fact provenance optiona
 });
 
 test("draft step does not claim readiness while the retained source package is blocked", () => {
-  const page = read("app/bids/[id]/page.tsx");
   const control = read("components/bid-package-control.tsx");
 
-  assert.match(page, /snapshot\.snapshotStatus === "complete"/);
-  assert.match(page, /snapshot\.storedDocumentCount === snapshot\.totalDocumentCount/);
-  assert.match(control, /sourceReady\s*\?\s*"Ready to draft"\s*:\s*"Source files blocked"/);
+  assert.match(control, /sourcePackageReady = sourceReady && sourceBlockers\.length === 0/);
+  assert.match(control, /sourcePackageReady\s*\?\s*"Ready to draft"\s*:\s*"Source files blocked"/);
+  assert.match(control, /disabled=\{!sourcePackageReady \|\| pending \|\| changed \|\| !inputsReady\}/);
 });
 
 test("primary workflow ends with external submission and advanced diagnostics do not interrupt it", () => {
