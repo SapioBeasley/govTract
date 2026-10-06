@@ -9,6 +9,7 @@ import {
   type BidRequirementQuestion,
   type BidResponseSourceType,
 } from "@/lib/bids/requirement-question-rules";
+import { bidQuestionProgress } from "@/lib/bids/question-progress";
 import type { BidWorkspaceSection } from "@/lib/bids/workspace";
 
 const SOURCE_LABELS: Record<BidResponseSourceType, string> = {
@@ -96,7 +97,7 @@ function RequirementQuestionCard({
     <article className="rounded-xl border p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--muted-foreground)]">
         <span className="rounded-full border px-2 py-1">
-          {item.isRequired ? "Required bidder fact" : "Optional / choice"}
+          {item.isRequired ? "Required bidder fact" : "Optional buyer item / bidder choice"}
         </span>
         {item.responseNotes?.trim() ? (
           <span className="rounded-full border px-2 py-1">Response saved</span>
@@ -295,11 +296,8 @@ export function BidPackageControl({
   }, [fullBid?.id, fullBid?.content]);
 
   const changed = content !== savedContent;
-  const answeredCount = initialQuestions.filter((question) => Boolean(question.responseNotes?.trim())).length;
-  const requiredQuestions = initialQuestions.filter((question) => question.isRequired);
-  const requiredAnswered = requiredQuestions.filter((question) => Boolean(question.responseNotes?.trim())).length;
-  const unansweredRequired = requiredQuestions.length - requiredAnswered;
-  const inputsReady = questionSetPrepared && unansweredRequired === 0;
+  const inputProgress = bidQuestionProgress(initialQuestions);
+  const inputsReady = questionSetPrepared && inputProgress.unansweredQuestionCount === 0;
 
   async function generateQuestions() {
     if (!questionSourceReady || pending || inFlight.current) return;
@@ -393,8 +391,8 @@ export function BidPackageControl({
   const steps = [
     ["1", "Bid inputs", !questionSetPrepared
       ? "Not prepared"
-      : unansweredRequired > 0
-        ? `${unansweredRequired} required fact${unansweredRequired === 1 ? "" : "s"} remaining`
+      : inputProgress.unansweredQuestionCount > 0
+        ? `${inputProgress.unansweredQuestionCount} bid input${inputProgress.unansweredQuestionCount === 1 ? "" : "s"} remaining`
         : initialQuestions.length
           ? "Inputs ready"
           : "No unresolved bidder facts"],
@@ -467,9 +465,9 @@ export function BidPackageControl({
 
         {initialQuestions.length ? (
           <div className="mt-4">
-            <h4 className="font-semibold">Required bidder facts</h4>
+            <h4 className="font-semibold">Bidder facts & choices</h4>
             <p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">
-              Save factual answers for pricing, delivery, product choices, exceptions, or third-party facts that materially change the offer.
+              Save an answer for every item shown here. These questions exist only where a bidder-specific fact or choice is needed for a complete draft.
               Drafting again will not erase these saved responses.
             </p>
             <div className="mt-4 grid gap-3">
@@ -489,9 +487,9 @@ export function BidPackageControl({
               AI drafts one editable response from retained solicitation evidence, inferred required scope, and your saved bidder facts.
               Saved responses remain separate and are never cleared when the draft is replaced.
             </p>
-            {unansweredRequired > 0 ? (
+            {inputProgress.unansweredQuestionCount > 0 ? (
               <p className="mt-2 text-xs font-medium">
-                Save {unansweredRequired} required bidder fact{unansweredRequired === 1 ? "" : "s"} before drafting.
+                Save {inputProgress.unansweredQuestionCount} bid input{inputProgress.unansweredQuestionCount === 1 ? "" : "s"} before drafting.
               </p>
             ) : null}
           </div>
@@ -551,7 +549,7 @@ export function BidPackageControl({
       )}
 
       <div className="sr-only" aria-live="polite">
-        {questionSetPrepared ? `${answeredCount} of ${initialQuestions.length} bidder questions answered.` : "Bid inputs not prepared."}
+        {questionSetPrepared ? `${inputProgress.answeredQuestionCount} of ${inputProgress.questionCount} bidder questions answered.` : "Bid inputs not prepared."}
       </div>
       {message ? <p role="status" className="text-sm">{message}</p> : null}
     </div>
