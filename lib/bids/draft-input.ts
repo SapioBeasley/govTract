@@ -287,6 +287,7 @@ export function prepareBidDraftInput(input: {
       .filter((requirement) => !answeredSourceIds.has(requirement.id))
       .filter((requirement) => requirementNeedsBidderQuestion({
         requirementType: requirement.type,
+        text: requirement.text,
       } as BidWorkspaceRequirement))
       .map((requirement) => questionForBidRequirement({
         requirementType: requirement.type,
