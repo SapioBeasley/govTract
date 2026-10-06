@@ -53,9 +53,11 @@ const bidderCredentialTypes = new Set([
 const choicePattern = /\b(?:alternate|alternative|substitut(?:e|ion)|option(?:al)?|partial\s+bid|line\s+item\s+choice|brand\s+name\s+or\s+equal|or\s+equal|make\s*(?:\/|and)?\s*model|manufacturer\s*(?:\/|and)?\s*model|identify\s+(?:the\s+)?(?:make|model|manufacturer|product))\b/i;
 const exceptionPattern = /\b(?:exception|deviation|take\s+exception|variance|non[- ]?compliance|does\s+not\s+meet)\b/i;
 const deliveryPattern = /\b(?:delivery|lead\s*time|after\s+receipt\s+of\s+order|\baro\b|ship(?:ping)?|freight|fob|inside\s+delivery|loading\s+dock|receiv(?:e|ing))\b/i;
+const bidderScheduleInputPattern = /\b(?:state|provide|identify|propose|specify|indicate|submit|enter)\b[^.\n]{0,80}\b(?:schedule|timeline|completion\s+(?:date|time)|lead\s*time|delivery\s+(?:date|time))\b/i;
+const mandatoryLanguagePattern = /\b(?:shall|must|required\s+to|is\s+required|are\s+required|will\s+be\s+(?:provided|performed|completed|installed|delivered|planted|applied))\b/i;
 const manufacturerAuthorizationPattern = /\b(?:authorized|approved)\s+(?:dealer|distributor|reseller)\b|\bmanufacturer(?:'s)?\s+(?:authorization|authorisation)\b/i;
 const warrantyPattern = /\b(?:warranty|warranties)\b/i;
-const returnSupportPattern = /\b(?:dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement)\b/i;
+const returnSupportPattern = /\b(?:dead\s+on\s+arrival|\bdoa\b|defective|return\s+policy|replacement|replaces?|replace)\b/i;
 const manufacturerCertificationPattern = /\b(?:manufacturer\s+certification|factory\s+certification)\b/i;
 const reusableManufacturerFactPattern = new RegExp(
   `${warrantyPattern.source}|${returnSupportPattern.source}|${manufacturerCertificationPattern.source}`,
@@ -66,27 +68,35 @@ export function requirementNeedsBidderQuestion(requirement: BidQuestionCandidate
   if (packageOnlyTypes.has(requirement.requirementType)) return false;
 
   const text = requirement.text?.trim() ?? "";
-  const isRequired = requirement.isRequired ?? true;
   if (requirement.requirementType === "pricing") return true;
   if (bidderCredentialTypes.has(requirement.requirementType)) return true;
-  if (["schedule", "mandatory_event"].includes(requirement.requirementType)) return true;
+  if (requirement.requirementType === "mandatory_event") return true;
+  if (requirement.requirementType === "schedule") {
+    return bidderScheduleInputPattern.test(text) || choicePattern.test(text) || exceptionPattern.test(text);
+  }
   if (deliveryPattern.test(text)) return true;
   if (manufacturerAuthorizationPattern.test(text) || reusableManufacturerFactPattern.test(text)) return true;
   if (choicePattern.test(text) || exceptionPattern.test(text)) return true;
 
-  if (inferableScopeTypes.has(requirement.requirementType)) {
-    return !isRequired;
-  }
+  // Scope, work, deliverables, and quantities describe what the buyer wants. They are
+  // included by default unless the solicitation explicitly asks the bidder to choose,
+  // identify, substitute, or take an exception. `isRequired: false` can mean the source
+  // understanding was uncertain; it must not be interpreted as "optional" by itself.
+  if (inferableScopeTypes.has(requirement.requirementType)) return false;
 
   return true;
 }
 
 export function inferredBidAssumptionForRequirement(requirement: BidQuestionCandidate) {
-  if ((requirement.isRequired ?? true) !== true || !inferableScopeTypes.has(requirement.requirementType) ||
-      requirementNeedsBidderQuestion(requirement)) {
+  const text = requirement.text?.trim() ?? "";
+  const inferableType = inferableScopeTypes.has(requirement.requirementType) ||
+    requirement.requirementType === "schedule";
+  if (!inferableType || requirementNeedsBidderQuestion(requirement)) return null;
+  if ((requirement.isRequired ?? true) !== true && !mandatoryLanguagePattern.test(text) &&
+      requirement.requirementType === "schedule") {
     return null;
   }
-  return "Included in the bid by default because the solicitation requires it.";
+  return "Included in the bid by default because the solicitation prescribes it; record an exception only if the bid will differ.";
 }
 
 function reusableManufacturerFactKind(text: string) {
@@ -94,6 +104,30 @@ function reusableManufacturerFactKind(text: string) {
   if (warrantyPattern.test(text)) return "manufacturer_warranty";
   if (returnSupportPattern.test(text)) return "manufacturer_return_support";
   if (manufacturerCertificationPattern.test(text)) return "manufacturer_certification";
+  return null;
+}
+
+const numberWords: Record<string, string> = {
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+  ten: "10",
+};
+
+function warrantyDurationKey(text: string) {
+  const normalized = text.toLocaleLowerCase("en-US");
+  const numeric = normalized.match(/\b(\d+)\s*[- ]?years?\b/);
+  if (numeric?.[1]) return `${numeric[1]}-year`;
+  const parenthetical = normalized.match(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s*\((\d+)\)\s*[- ]?years?\b/);
+  if (parenthetical?.[1]) return `${parenthetical[1]}-year`;
+  const word = normalized.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*[- ]?years?\b/);
+  if (word?.[1] && numberWords[word[1]]) return `${numberWords[word[1]]}-year`;
   return null;
 }
 
@@ -109,6 +143,10 @@ export function bidQuestionDeduplicationKey(requirement: BidQuestionCandidate) {
   const text = requirement.text ?? "";
   const kind = reusableManufacturerFactKind(text);
   if (!kind) return null;
+  if (kind === "manufacturer_warranty") {
+    const duration = warrantyDurationKey(text);
+    if (duration) return `${kind}:${duration}`;
+  }
   return `${kind}:${normalizedReusableFactText(text)}`;
 }
 
@@ -191,9 +229,6 @@ export function questionForBidRequirement(
   }
   if (exceptionPattern.test(text)) {
     return "Does the bidder take any exception or deviation from this requirement? State the exact exception or confirm that none is being taken.";
-  }
-  if ((requirement.isRequired ?? true) !== true && inferableScopeTypes.has(type)) {
-    return "Will the bidder include this optional or conditional item? If yes, state exactly what is being offered and any requested make/model, quantity, or pricing detail.";
   }
   if (inferableScopeTypes.has(type)) {
     return "What bidder-specific fact is needed to distinguish the offered scope from the buyer's required scope?";
