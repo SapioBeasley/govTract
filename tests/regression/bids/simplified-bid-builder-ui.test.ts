@@ -12,7 +12,7 @@ test("bid preparation leads with exception-driven inputs, then one editable full
   assert.match(page, /<BidPackageControl/);
   assert.match(control, /Generate questions/);
   assert.match(control, /Inferred assumptions/);
-  assert.match(control, /Required bidder facts/);
+  assert.match(control, /Bidder facts & choices/);
   assert.match(control, /Draft bid/);
   assert.match(control, /Review & edit bid/);
   assert.match(control, /Save bid/);
