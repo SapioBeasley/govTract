@@ -16,7 +16,7 @@ test("bid workspace exposes the exception-driven full-bid flow instead of the su
 
   assert.match(control, /Generate questions/);
   assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/questions/);
-  assert.match(control, /Required bidder facts/);
+  assert.match(control, /Bidder facts & choices/);
   assert.match(control, /Inferred assumptions/);
   assert.match(control, /\/api\/bids\/\$\{workspaceId\}\/requirements\/\$\{item\.id\}\/response/);
   assert.match(control, /Draft bid/);

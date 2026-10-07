@@ -42,6 +42,13 @@ test("workflow status advances from inputs through explicit submission", () => {
   }).key, "submitted");
 });
 
+test("inputs-ready status does not claim the source package is draft-ready", () => {
+  const status = deriveBidWorkflowStatus(base);
+  assert.equal(status.key, "inputs_ready");
+  assert.doesNotMatch(status.description, /ready to draft/i);
+  assert.match(status.description, /source package/i);
+});
+
 test("new unresolved inputs roll a previously drafted workspace back without deleting history", () => {
   const status = deriveBidWorkflowStatus({
     ...base,

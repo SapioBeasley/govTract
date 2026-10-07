@@ -170,7 +170,7 @@ test("letter-leading product and certification identifiers remain protected agai
 
 test("primary bid UI persists bidder facts while provenance remains optional metadata", () => {
   const control = read("components/bid-package-control.tsx");
-  assert.match(control, /Required bidder facts/);
+  assert.match(control, /Bidder facts & choices/);
   assert.doesNotMatch(control, /Who should answer this\?/);
   assert.match(control, /Fact source \(optional\)/);
   assert.match(control, /The bidder is your company/);

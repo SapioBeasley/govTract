@@ -84,6 +84,12 @@ export function isBeaconRegistrationRequiredResponse(status: number, body: strin
   return /register|registration/i.test(message) && /request/i.test(message);
 }
 
+export function isBeaconPlanholderRegistrationResponse(status: number, body: string) {
+  if (isBeaconRegistrationRequiredResponse(status, body)) return true;
+  if (![400, 403].includes(status)) return false;
+  return /planholder|interest\s+list/i.test(responseMessage(body));
+}
+
 export function isBeaconPermissionResponse(status: number, body: string) {
   if (![400, 401, 403].includes(status)) return false;
 
