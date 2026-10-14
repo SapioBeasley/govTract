@@ -202,12 +202,15 @@ test("question cards keep bidder identity fixed and make fact provenance optiona
   assert.match(control, /Inferred assumptions/i);
 });
 
-test("draft step does not claim readiness while the retained source package is blocked", () => {
+test("draft step distinguishes retained source readiness from a recoverable source state", () => {
   const control = read("components/bid-package-control.tsx");
 
   assert.match(control, /sourcePackageReady = sourceReady && sourceBlockers\.length === 0/);
-  assert.match(control, /sourcePackageReady\s*\?\s*"Ready to draft"\s*:\s*"Source files blocked"/);
-  assert.match(control, /disabled=\{!sourcePackageReady \|\| pending \|\| changed \|\| !inputsReady\}/);
+  assert.match(control, /const canAttemptDraft = sourceReady/);
+  assert.match(
+    control,
+    /sourcePackageReady\s*\?\s*"Ready to draft"\s*:\s*canAttemptDraft\s*\?\s*"Source recovery required"\s*:\s*"Source files blocked"/,
+  );
 });
 
 test("pending source files remain recoverable through the explicit Draft bid action", () => {
