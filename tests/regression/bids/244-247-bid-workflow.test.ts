@@ -210,6 +210,16 @@ test("draft step does not claim readiness while the retained source package is b
   assert.match(control, /disabled=\{!sourcePackageReady \|\| pending \|\| changed \|\| !inputsReady\}/);
 });
 
+test("pending source files remain recoverable through the explicit Draft bid action", () => {
+  const control = read("components/bid-package-control.tsx");
+  const route = read("app/api/bids/[id]/draft/route.ts");
+
+  assert.match(route, /refreshBidSourceSnapshot\(id\)/);
+  assert.match(control, /const canAttemptDraft = sourceReady/);
+  assert.match(control, /if \(!canAttemptDraft \|\| pending \|\| inFlight\.current \|\| changed \|\| !inputsReady\) return/);
+  assert.match(control, /disabled=\{!canAttemptDraft \|\| pending \|\| changed \|\| !inputsReady\}/);
+});
+
 test("primary workflow ends with external submission and advanced diagnostics do not interrupt it", () => {
   const review = read("components/bid-final-review.tsx");
   const page = read("app/bids/[id]/page.tsx");
