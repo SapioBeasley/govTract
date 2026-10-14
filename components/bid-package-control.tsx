@@ -299,6 +299,7 @@ export function BidPackageControl({
   const inputProgress = bidQuestionProgress(initialQuestions);
   const inputsReady = questionSetPrepared && inputProgress.unansweredQuestionCount === 0;
   const sourcePackageReady = sourceReady && sourceBlockers.length === 0;
+  const canAttemptDraft = sourceReady;
 
   async function generateQuestions() {
     if (!questionSourceReady || pending || inFlight.current) return;
@@ -323,7 +324,7 @@ export function BidPackageControl({
   }
 
   async function draftBid() {
-    if (!sourcePackageReady || pending || inFlight.current || changed || !inputsReady) return;
+    if (!canAttemptDraft || pending || inFlight.current || changed || !inputsReady) return;
     const replace = Boolean(fullBid?.content?.trim());
     const understandingNote = requiresUnderstandingRefresh
       ? " The retained solicitation understanding will be refreshed first if required; that may add model cost."
@@ -403,7 +404,9 @@ export function BidPackageControl({
         ? "Waiting for inputs"
         : sourcePackageReady
           ? "Ready to draft"
-          : "Source files blocked"],
+          : canAttemptDraft
+            ? "Source recovery required"
+            : "Source files blocked"],
     ["3", "Review & edit bid", fullBid?.content?.trim() ? "Review saved draft" : "Waiting for draft"],
     ["4", "Supporting documents", "Review below"],
     ["5", "Final approval & download", "Review below"],
@@ -503,7 +506,7 @@ export function BidPackageControl({
           <button
             type="button"
             onClick={draftBid}
-            disabled={!sourcePackageReady || pending || changed || !inputsReady}
+            disabled={!canAttemptDraft || pending || changed || !inputsReady}
             className="shrink-0 rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-50"
           >
             {pending ? "Working…" : fullBid?.content?.trim() ? "Draft bid again" : "Draft bid"}
@@ -511,7 +514,9 @@ export function BidPackageControl({
         </div>
         {!sourcePackageReady ? (
           <p role="status" className="mt-3 text-sm text-[var(--muted-foreground)]">
-            {sourceBlockers[0] ?? "The retained solicitation package is not ready for drafting yet."}
+            {canAttemptDraft
+              ? `Drafting will first attempt to retain the current source files. ${sourceBlockers[0] ?? "The retained solicitation package is not ready yet."}`
+              : sourceBlockers[0] ?? "The authoritative solicitation document inventory is not ready for drafting yet."}
           </p>
         ) : changed ? (
           <p className="mt-3 text-xs text-[var(--muted-foreground)]">Save your current bid edits before drafting again.</p>
